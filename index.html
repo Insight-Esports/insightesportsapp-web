@@ -1,1 +1,243 @@
+<style>
+  .ie-home {
+    --violet: #7C5CFC;
+    --violet-dim: #6a4ce0;
+    --violet-glow: rgba(124,92,252,0.13);
+    --ink: #0f0f14;
+    --body: #3a3a48;
+    --muted: #7a7a88;
+    --line: #e8e8f0;
+    --bg-soft: #faf9ff;
 
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    color: var(--body);
+    margin: 0;
+    padding: 0;
+  }
+
+  /* ── Hero ── */
+  .ie-hero {
+    text-align: center;
+    padding: 96px 24px 80px;
+    position: relative;
+  }
+  .ie-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 60% 50% at 50% 0%, var(--violet-glow), transparent 70%);
+    pointer-events: none;
+  }
+  .ie-eyebrow {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--violet);
+    background: var(--violet-glow);
+    border: 1px solid rgba(124,92,252,.2);
+    border-radius: 100px;
+    padding: 5px 14px;
+    margin-bottom: 28px;
+  }
+  .ie-hero h1 {
+    font-size: clamp(40px, 7vw, 72px);
+    font-weight: 900;
+    line-height: 1.06;
+    letter-spacing: -.03em;
+    color: var(--ink);
+    margin: 0 auto 20px;
+    max-width: 740px;
+  }
+  .ie-hero h1 em {
+    font-style: normal;
+    color: var(--violet);
+  }
+  .ie-hero p {
+    font-size: 19px;
+    line-height: 1.6;
+    color: var(--muted);
+    max-width: 480px;
+    margin: 0 auto 40px;
+  }
+  .ie-badge-row {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .ie-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--body);
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 100px;
+    padding: 7px 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.05);
+  }
+  .ie-badge .ie-pip {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--violet);
+    opacity: .7;
+  }
+
+  /* ── Feature strip ── */
+  .ie-features {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    margin: 0;
+  }
+  .ie-feature {
+    background: #fff;
+    padding: 36px 30px;
+    text-align: left;
+  }
+  .ie-feature-icon {
+    font-size: 26px;
+    margin-bottom: 14px;
+    display: block;
+  }
+  .ie-feature h3 {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--ink);
+    margin: 0 0 8px;
+    letter-spacing: -.01em;
+  }
+  .ie-feature p {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--muted);
+    margin: 0;
+  }
+
+  /* ── Coming soon banner ── */
+  .ie-cta {
+    text-align: center;
+    padding: 72px 24px;
+    background: var(--bg-soft);
+    border-top: 1px solid var(--line);
+  }
+  .ie-cta h2 {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--ink);
+    letter-spacing: -.02em;
+    margin: 0 0 10px;
+  }
+  .ie-cta p {
+    font-size: 16px;
+    color: var(--muted);
+    margin: 0 0 28px;
+  }
+  .ie-cta a {
+    display: inline-block;
+    background: var(--violet);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    text-decoration: none;
+    padding: 13px 28px;
+    border-radius: 10px;
+    letter-spacing: -.01em;
+    transition: background .15s;
+  }
+  .ie-cta a:hover { background: var(--violet-dim); }
+
+  /* ── Footer ── */
+  .ie-footer {
+    border-top: 1px solid var(--line);
+    padding: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .ie-footer a { color: var(--muted); text-decoration: none; margin-left: 16px; }
+  .ie-footer a:hover { color: var(--violet); }
+  .ie-wordmark {
+    font-weight: 800;
+    font-size: 14px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--ink);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ie-wordmark .ie-dot {
+    width: 10px; height: 10px; border-radius: 3px;
+    background: var(--violet);
+  }
+
+  @media (max-width: 640px) {
+    .ie-hero { padding: 64px 20px 56px; }
+    .ie-features { grid-template-columns: 1fr; }
+    .ie-footer { flex-direction: column; align-items: flex-start; }
+  }
+</style>
+
+<div class="ie-home">
+
+  <!-- Hero -->
+  <section class="ie-hero">
+    <span class="ie-eyebrow">Coming Soon to iOS</span>
+    <h1>Esports stats.<br><em>Predictions.</em> Community.</h1>
+    <p>Live match data, win probability, fan polls, and more — all in one place for esports fans.</p>
+    <div class="ie-badge-row">
+      <span class="ie-badge"><span class="ie-pip"></span>VALORANT</span>
+      <span class="ie-badge"><span class="ie-pip"></span>CS2</span>
+      <span class="ie-badge"><span class="ie-pip"></span>League of Legends</span>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <div class="ie-features">
+    <div class="ie-feature">
+      <span class="ie-feature-icon">📊</span>
+      <h3>Live Stats &amp; Win Probability</h3>
+      <p>Real-time match data and live win probability updated as the game unfolds.</p>
+    </div>
+    <div class="ie-feature">
+      <span class="ie-feature-icon">🎯</span>
+      <h3>Stat Predictor</h3>
+      <p>Predict player and team performance with agent and map-specific filters before the match begins.</p>
+    </div>
+    <div class="ie-feature">
+      <span class="ie-feature-icon">🏆</span>
+      <h3>Fan Community</h3>
+      <p>Live chat, polls, points, and leaderboards — compete with other fans in real time.</p>
+    </div>
+  </div>
+
+  <!-- CTA -->
+  <section class="ie-cta">
+    <h2>Launching on the App Store</h2>
+    <p>Questions or partnership inquiries? Reach out to our team.</p>
+    <a href="mailto:support@insightesportsapp.com">Get in touch</a>
+  </section>
+
+  <!-- Footer -->
+  <footer class="ie-footer">
+    <span class="ie-wordmark"><span class="ie-dot"></span>INSIGHT ESPORTS</span>
+    <div>
+      <span>© 2026 Insight GG LLC</span>
+      <a href="/privacy">Privacy</a>
+      <a href="/terms">Terms</a>
+    </div>
+  </footer>
+
+</div>
