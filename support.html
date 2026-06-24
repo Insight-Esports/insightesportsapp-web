@@ -1,0 +1,298 @@
+<style>
+  .ie-support {
+    --violet: #7C5CFC;
+    --violet-dim: #6a4ce0;
+    --violet-glow: rgba(124,92,252,0.12);
+    --ink: #0f0f14;
+    --body: #3a3a48;
+    --muted: #7a7a88;
+    --line: #e8e8f0;
+    --bg-soft: #faf9ff;
+
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 80px 24px 60px;
+    font-size: 17px;
+    line-height: 1.7;
+    color: var(--body);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .ie-support h1 {
+    font-size: 38px; line-height: 1.15; margin: 0 0 10px;
+    color: var(--ink); letter-spacing: -.02em; font-weight: 800;
+  }
+  .ie-support .ie-subtitle {
+    color: var(--muted); font-size: 18px; margin: 0 0 48px;
+  }
+
+  /* Contact card */
+  .ie-contact-card {
+    background: var(--violet);
+    border-radius: 14px;
+    padding: 28px 32px;
+    margin: 0 0 48px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+  .ie-contact-card h2 {
+    color: #fff; margin: 0 0 4px; font-size: 20px; font-weight: 700;
+  }
+  .ie-contact-card p {
+    color: rgba(255,255,255,0.8); margin: 0; font-size: 15px;
+  }
+  .ie-contact-card a.ie-btn {
+    display: inline-block;
+    background: #fff;
+    color: var(--violet);
+    font-size: 15px;
+    font-weight: 700;
+    text-decoration: none;
+    padding: 12px 24px;
+    border-radius: 10px;
+    white-space: nowrap;
+    transition: opacity .15s;
+  }
+  .ie-contact-card a.ie-btn:hover { opacity: .9; }
+
+  /* Section headers */
+  .ie-support h2.ie-section {
+    font-size: 24px; color: var(--ink); margin: 0 0 20px;
+    letter-spacing: -.01em; font-weight: 700;
+  }
+
+  /* FAQ */
+  .ie-faq { margin: 0 0 48px; }
+  .ie-faq-item {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+  .ie-faq-item summary {
+    padding: 18px 20px;
+    font-weight: 600;
+    color: var(--ink);
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 16px;
+  }
+  .ie-faq-item summary::-webkit-details-marker { display: none; }
+  .ie-faq-item summary::after {
+    content: '+';
+    font-size: 20px;
+    color: var(--violet);
+    font-weight: 400;
+    flex-shrink: 0;
+    margin-left: 12px;
+  }
+  .ie-faq-item[open] summary::after { content: '−'; }
+  .ie-faq-item[open] summary {
+    border-bottom: 1px solid var(--line);
+  }
+  .ie-faq-body {
+    padding: 16px 20px;
+    font-size: 15px;
+    color: var(--body);
+    background: var(--bg-soft);
+  }
+  .ie-faq-body p { margin: 0; }
+  .ie-faq-body a { color: var(--violet-dim); }
+
+  /* Bug report form */
+  .ie-bug-form {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 28px 32px;
+    background: var(--bg-soft);
+  }
+  .ie-bug-form p.ie-form-desc {
+    font-size: 15px; color: var(--muted); margin: 0 0 24px;
+  }
+  .ie-field { margin-bottom: 18px; }
+  .ie-field label {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 6px;
+  }
+  .ie-field input, .ie-field select, .ie-field textarea {
+    width: 100%;
+    padding: 11px 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: inherit;
+    color: var(--ink);
+    background: #fff;
+    box-sizing: border-box;
+    transition: border-color .15s;
+    appearance: none;
+  }
+  .ie-field input:focus, .ie-field select:focus, .ie-field textarea:focus {
+    outline: none;
+    border-color: var(--violet);
+    box-shadow: 0 0 0 3px var(--violet-glow);
+  }
+  .ie-field textarea { resize: vertical; min-height: 120px; }
+  .ie-field select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a7a88' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    padding-right: 36px;
+  }
+  .ie-submit {
+    display: inline-block;
+    background: var(--violet);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 13px 28px;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background .15s;
+    text-decoration: none;
+  }
+  .ie-submit:hover { background: var(--violet-dim); }
+
+  @media (max-width: 600px) {
+    .ie-support { font-size: 16px; padding: 60px 20px 48px; }
+    .ie-support h1 { font-size: 30px; }
+    .ie-contact-card { flex-direction: column; align-items: flex-start; }
+    .ie-bug-form { padding: 20px; }
+  }
+</style>
+
+<div class="ie-support">
+
+  <h1>Support</h1>
+  <p class="ie-subtitle">We're here to help. Browse the FAQ or reach out directly.</p>
+
+  <!-- Contact -->
+  <div class="ie-contact-card">
+    <div>
+      <h2>Contact Support</h2>
+      <p>Our team usually responds within 1–2 business days.</p>
+    </div>
+    <a class="ie-btn" href="mailto:support@insightesportsapp.com">Email Us</a>
+  </div>
+
+  <!-- FAQ -->
+  <h2 class="ie-section">Frequently Asked Questions</h2>
+  <div class="ie-faq">
+
+    <details class="ie-faq-item">
+      <summary>What games does Insight Esports cover?</summary>
+      <div class="ie-faq-body"><p>Insight Esports currently covers VALORANT, CS2, and League of Legends professional esports — including live match data, schedules, team rosters, and player statistics.</p></div>
+    </details>
+
+    <details class="ie-faq-item">
+      <summary>What is Insight Premium and what does it include?</summary>
+      <div class="ie-faq-body"><p>Insight Premium unlocks the live win probability predictor, stat predictor with agent and map filters, and personalized weekly reports powered by AI. Premium is available for $5.99/month on iOS or $4.99/month on web.</p></div>
+    </details>
+
+    <details class="ie-faq-item">
+      <summary>How do I cancel my Premium subscription?</summary>
+      <div class="ie-faq-body"><p>If you subscribed through the App Store, go to <strong>Settings → Apple ID → Subscriptions</strong> on your iPhone and cancel from there. If you subscribed through our website, go to your account settings and cancel under the Billing section. Your access continues until the end of the current billing period.</p></div>
+    </details>
+
+    <details class="ie-faq-item">
+      <summary>What are Insight Points?</summary>
+      <div class="ie-faq-body"><p>Insight Points are our in-app engagement currency. You earn points by making correct predictions — the more unlikely your prediction, the more points you earn. Points appear on our community leaderboard. Points have no real-world monetary value and cannot be redeemed for cash or prizes.</p></div>
+    </details>
+
+    <details class="ie-faq-item">
+      <summary>How accurate are the predictions and win probability?</summary>
+      <div class="ie-faq-body"><p>Our predictions and win probability are generated for entertainment purposes only and are not guaranteed. They are based on live match data and statistical models but should not be used for any financial or wagering decisions.</p></div>
+    </details>
+
+    <details class="ie-faq-item">
+      <summary>How do I delete my account?</summary>
+      <div class="ie-faq-body"><p>You can request account deletion from within the app under Settings → Account → Delete Account. You can also email us at <a href="mailto:support@insightesportsapp.com">support@insightesportsapp.com</a> and we will process your request within 30 days.</p></div>
+    </details>
+
+    <details class="ie-faq-item">
+      <summary>The app isn't loading data — what should I do?</summary>
+      <div class="ie-faq-body"><p>First try closing and reopening the app. If data still isn't loading, check your internet connection and make sure you're on the latest version of the app. If the issue persists, use the bug report form below and we'll look into it.</p></div>
+    </details>
+
+  </div>
+
+  <!-- Bug Report -->
+  <h2 class="ie-section">Report a Bug</h2>
+  <div class="ie-bug-form">
+    <p class="ie-form-desc">Found something broken? Let us know and we'll get it fixed.</p>
+
+    <div class="ie-field">
+      <label for="ie-name">Your Name</label>
+      <input type="text" id="ie-name" placeholder="John Smith">
+    </div>
+
+    <div class="ie-field">
+      <label for="ie-email">Your Email</label>
+      <input type="email" id="ie-email" placeholder="you@example.com">
+    </div>
+
+    <div class="ie-field">
+      <label for="ie-platform">Platform</label>
+      <select id="ie-platform">
+        <option value="">Select a platform</option>
+        <option>iOS App</option>
+        <option>Web</option>
+      </select>
+    </div>
+
+    <div class="ie-field">
+      <label for="ie-category">Bug Category</label>
+      <select id="ie-category">
+        <option value="">Select a category</option>
+        <option>Live match data not loading</option>
+        <option>Predictions not working</option>
+        <option>Login / account issue</option>
+        <option>Premium subscription issue</option>
+        <option>Live chat issue</option>
+        <option>App crash</option>
+        <option>Other</option>
+      </select>
+    </div>
+
+    <div class="ie-field">
+      <label for="ie-desc">Describe the issue</label>
+      <textarea id="ie-desc" placeholder="What happened? What were you doing when it occurred? What did you expect to happen?"></textarea>
+    </div>
+
+    <a class="ie-submit" id="ie-submit-btn" href="#">Submit Report</a>
+  </div>
+
+</div>
+
+<script>
+  document.getElementById('ie-submit-btn').addEventListener('click', function(e) {
+    e.preventDefault();
+    var name = document.getElementById('ie-name').value || 'Not provided';
+    var email = document.getElementById('ie-email').value || 'Not provided';
+    var platform = document.getElementById('ie-platform').value || 'Not provided';
+    var category = document.getElementById('ie-category').value || 'Not provided';
+    var desc = document.getElementById('ie-desc').value || 'Not provided';
+
+    var subject = encodeURIComponent('Bug Report — Insight Esports');
+    var body = encodeURIComponent(
+      'Name: ' + name + '\n' +
+      'Email: ' + email + '\n' +
+      'Platform: ' + platform + '\n' +
+      'Category: ' + category + '\n\n' +
+      'Description:\n' + desc
+    );
+
+    window.location.href = 'mailto:support@insightesportsapp.com?subject=' + subject + '&body=' + body;
+  });
+</script>
