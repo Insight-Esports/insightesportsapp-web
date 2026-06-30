@@ -1,150 +1,135 @@
 <style>
   .ie-home {
-    --violet: #7C5CFC;
-    --violet-dim: #6a4ce0;
-    --violet-glow: rgba(124,92,252,0.13);
-    --ink: #0f0f14;
-    --body: #3a3a48;
-    --muted: #7a7a88;
-    --line: #e8e8f0;
-    --bg-soft: #faf9ff;
+    --bg: #000000;
+    --text: #FFFFFF;
+    --purple: #7C5CFC;
+    --purple-dim: #6a4ce0;
+    --line: #7C5CFC;
 
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --fs: 17px;
+
+    font-family: "Google Sans", "Product Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
-    color: var(--body);
+    background: var(--bg);
+    color: var(--text);
     margin: 0;
     padding: 0;
+    font-size: var(--fs);
+    line-height: 1.6;
   }
 
   /* ── Hero ── */
-  .ie-hero {
+  .ie-home .ie-hero {
     text-align: center;
     padding: 96px 24px 80px;
-    position: relative;
+    background: var(--bg);
   }
-  .ie-hero::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(ellipse 60% 50% at 50% 0%, var(--violet-glow), transparent 70%);
-    pointer-events: none;
-  }
-  .ie-eyebrow {
+  .ie-home .ie-eyebrow {
     display: inline-block;
-    font-size: 11px;
-    font-weight: 700;
+    font-size: var(--fs);
+    font-weight: 400;
     letter-spacing: .14em;
     text-transform: uppercase;
-    color: var(--violet);
-    background: var(--violet-glow);
-    border: 1px solid rgba(124,92,252,.2);
-    border-radius: 100px;
-    padding: 5px 14px;
+    color: var(--text);
     margin-bottom: 28px;
   }
-  .ie-hero h1 {
+  .ie-home .ie-hero h1 {
     font-size: clamp(40px, 7vw, 72px);
-    font-weight: 900;
+    font-weight: 800;
     line-height: 1.06;
     letter-spacing: -.03em;
-    color: var(--ink);
+    color: var(--text);
     margin: 0 auto 20px;
     max-width: 740px;
   }
-  .ie-hero h1 em {
-    font-style: normal;
-    color: var(--violet);
-  }
-  .ie-hero p {
-    font-size: 19px;
+  .ie-home .ie-hero p {
+    font-size: var(--fs);
+    font-weight: 400;
     line-height: 1.6;
-    color: var(--muted);
+    color: var(--text);
     max-width: 480px;
     margin: 0 auto 40px;
   }
-  .ie-badge-row {
+  .ie-home .ie-badge-row {
     display: flex;
     justify-content: center;
-    gap: 10px;
+    align-items: center;
+    gap: 18px;
     flex-wrap: wrap;
   }
-  .ie-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--body);
-    background: #fff;
-    border: 1px solid var(--line);
-    border-radius: 100px;
-    padding: 7px 16px;
-    box-shadow: 0 1px 4px rgba(0,0,0,.05);
+  .ie-home .ie-badge {
+    font-size: var(--fs);
+    font-weight: 400;
+    color: var(--text);
   }
-  .ie-badge .ie-pip {
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--violet);
-    opacity: .7;
+  .ie-home .ie-badge-sep {
+    width: 1px;
+    height: 16px;
+    background: var(--purple);
+    display: inline-block;
   }
 
   /* ── Feature strip ── */
-  .ie-features {
+  .ie-home .ie-features {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 1px;
-    background: var(--line);
     border-top: 1px solid var(--line);
     border-bottom: 1px solid var(--line);
-    margin: 0;
   }
-  .ie-feature {
-    background: #fff;
-    padding: 36px 30px;
+  .ie-home .ie-feature {
+    background: var(--bg);
+    padding: 40px 30px;
     text-align: left;
+    border-left: 1px solid var(--line);
   }
-  .ie-feature-icon {
-    font-size: 26px;
-    margin-bottom: 14px;
-    display: block;
+  .ie-home .ie-feature:first-child {
+    border-left: none;
   }
-  .ie-feature h3 {
-    font-size: 16px;
+  .ie-home .ie-feature-rule {
+    width: 28px;
+    height: 2px;
+    background: var(--purple);
+    margin: 0 0 18px;
+  }
+  .ie-home .ie-feature h3 {
+    font-size: 18px;
     font-weight: 700;
-    color: var(--ink);
+    color: var(--text);
     margin: 0 0 8px;
     letter-spacing: -.01em;
   }
-  .ie-feature p {
-    font-size: 14px;
+  .ie-home .ie-feature p {
+    font-size: var(--fs);
+    font-weight: 400;
     line-height: 1.6;
-    color: var(--muted);
+    color: var(--text);
     margin: 0;
   }
 
   /* ── CTA section ── */
-  .ie-cta {
+  .ie-home .ie-cta {
     text-align: center;
     padding: 72px 24px;
-    background: var(--bg-soft);
-    border-top: 1px solid var(--line);
+    background: var(--bg);
   }
-  .ie-cta h2 {
-    font-size: 28px;
-    font-weight: 800;
-    color: var(--ink);
+  .ie-home .ie-cta h2 {
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--text);
     letter-spacing: -.02em;
     margin: 0 0 10px;
   }
-  .ie-cta p {
-    font-size: 16px;
-    color: var(--muted);
+  .ie-home .ie-cta p {
+    font-size: var(--fs);
+    font-weight: 400;
+    color: var(--text);
     margin: 0 0 28px;
   }
-  .ie-cta-btn {
+  .ie-home .ie-cta-btn {
     display: inline-block;
-    background: var(--violet);
-    color: #fff;
-    font-size: 15px;
+    background: var(--purple);
+    color: var(--text);
+    font-size: var(--fs);
     font-weight: 700;
     text-decoration: none;
     padding: 13px 28px;
@@ -155,10 +140,10 @@
     font-family: inherit;
     transition: background .15s;
   }
-  .ie-cta-btn:hover { background: var(--violet-dim); }
+  .ie-home .ie-cta-btn:hover { background: var(--purple-dim); }
 
   /* ── Footer ── */
-  .ie-footer {
+  .ie-home .ie-footer {
     border-top: 1px solid var(--line);
     padding: 24px;
     display: flex;
@@ -166,67 +151,71 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 12px;
-    font-size: 13px;
-    color: var(--muted);
+    font-size: var(--fs);
+    color: var(--text);
   }
-  .ie-footer a { color: var(--muted); text-decoration: none; margin-left: 16px; }
-  .ie-footer a:hover { color: var(--violet); }
-  .ie-wordmark {
-    font-weight: 800;
-    font-size: 14px;
+  .ie-home .ie-footer a {
+    color: var(--text);
+    text-decoration: underline;
+    margin-left: 16px;
+  }
+  .ie-home .ie-wordmark {
+    font-weight: 700;
+    font-size: var(--fs);
     letter-spacing: .04em;
     text-transform: uppercase;
-    color: var(--ink);
+    color: var(--text);
     display: flex;
     align-items: center;
     gap: 8px;
   }
-  .ie-wordmark .ie-dot {
-    width: 10px; height: 10px; border-radius: 3px;
-    background: var(--violet);
+  .ie-home .ie-wordmark .ie-dot {
+    width: 10px; height: 10px;
+    background: var(--purple);
   }
 
   /* ── Modal overlay ── */
-  .ie-modal-overlay {
+  .ie-home .ie-modal-overlay {
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.5);
+    background: rgba(0,0,0,0.8);
     z-index: 1000;
     align-items: center;
     justify-content: center;
     padding: 24px;
   }
-  .ie-modal-overlay.ie-open {
+  .ie-home .ie-modal-overlay.ie-open {
     display: flex;
   }
-  .ie-modal {
-    background: #fff;
+  .ie-home .ie-modal {
+    background: var(--bg);
+    border: 1px solid var(--purple);
     border-radius: 16px;
     padding: 32px;
     width: 100%;
     max-width: 500px;
     position: relative;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.15);
   }
-  .ie-modal h3 {
+  .ie-home .ie-modal h3 {
     font-size: 22px;
-    font-weight: 800;
-    color: var(--ink);
+    font-weight: 700;
+    color: var(--text);
     margin: 0 0 6px;
     letter-spacing: -.01em;
   }
-  .ie-modal .ie-modal-sub {
-    font-size: 15px;
-    color: var(--muted);
+  .ie-home .ie-modal .ie-modal-sub {
+    font-size: var(--fs);
+    font-weight: 400;
+    color: var(--text);
     margin: 0 0 24px;
   }
-  .ie-modal-close {
+  .ie-home .ie-modal-close {
     position: absolute;
     top: 16px;
     right: 16px;
-    background: var(--bg-soft);
-    border: 1px solid var(--line);
+    background: var(--bg);
+    border: 1px solid var(--purple);
     border-radius: 8px;
     width: 32px;
     height: 32px;
@@ -235,57 +224,59 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--muted);
+    color: var(--text);
     line-height: 1;
     font-family: inherit;
     transition: background .15s;
   }
-  .ie-modal-close:hover { background: var(--line); }
+  .ie-home .ie-modal-close:hover { background: var(--purple); }
 
   /* ── Form fields ── */
-  .ie-cf-field { margin-bottom: 14px; }
-  .ie-cf-field label {
+  .ie-home .ie-cf-field { margin-bottom: 14px; }
+  .ie-home .ie-cf-field label {
     display: block;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--ink);
+    font-size: var(--fs);
+    font-weight: 400;
+    color: var(--text);
     margin-bottom: 5px;
   }
-  .ie-cf-field input,
-  .ie-cf-field select,
-  .ie-cf-field textarea {
+  .ie-home .ie-cf-field input,
+  .ie-home .ie-cf-field select,
+  .ie-home .ie-cf-field textarea {
     width: 100%;
     padding: 10px 13px;
-    border: 1px solid var(--line);
+    border: 1px solid var(--purple);
     border-radius: 8px;
-    font-size: 15px;
+    font-size: var(--fs);
     font-family: inherit;
-    color: var(--ink);
-    background: #fff;
+    color: var(--text);
+    background: var(--bg);
     box-sizing: border-box;
     transition: border-color .15s;
     appearance: none;
   }
-  .ie-cf-field input:focus,
-  .ie-cf-field select:focus,
-  .ie-cf-field textarea:focus {
+  .ie-home .ie-cf-field input::placeholder,
+  .ie-home .ie-cf-field textarea::placeholder { color: var(--text); opacity: .55; }
+  .ie-home .ie-cf-field input:focus,
+  .ie-home .ie-cf-field select:focus,
+  .ie-home .ie-cf-field textarea:focus {
     outline: none;
-    border-color: var(--violet);
-    box-shadow: 0 0 0 3px var(--violet-glow);
+    border-color: var(--text);
   }
-  .ie-cf-field textarea { resize: vertical; min-height: 100px; }
-  .ie-cf-field select {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a7a88' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  .ie-home .ie-cf-field textarea { resize: vertical; min-height: 100px; }
+  .ie-home .ie-cf-field select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23FFFFFF' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 13px center;
     padding-right: 36px;
   }
-  .ie-cf-submit {
+  .ie-home .ie-cf-field select option { background: var(--bg); color: var(--text); }
+  .ie-home .ie-cf-submit {
     display: block;
     width: 100%;
-    background: var(--violet);
-    color: #fff;
-    font-size: 15px;
+    background: var(--purple);
+    color: var(--text);
+    font-size: var(--fs);
     font-weight: 700;
     padding: 13px;
     border-radius: 10px;
@@ -298,14 +289,16 @@
     margin-top: 4px;
     text-decoration: none;
   }
-  .ie-cf-submit:hover { background: var(--violet-dim); }
+  .ie-home .ie-cf-submit:hover { background: var(--purple-dim); }
 
   @media (max-width: 640px) {
-    .ie-hero { padding: 64px 20px 56px; }
-    .ie-features { grid-template-columns: 1fr; }
-    .ie-footer { flex-direction: column; align-items: flex-start; }
-    .ie-footer a { margin-left: 0; margin-right: 16px; }
-    .ie-modal { padding: 24px; }
+    .ie-home .ie-hero { padding: 64px 20px 56px; }
+    .ie-home .ie-features { grid-template-columns: 1fr; }
+    .ie-home .ie-feature { border-left: none; border-top: 1px solid var(--line); }
+    .ie-home .ie-feature:first-child { border-top: none; }
+    .ie-home .ie-footer { flex-direction: column; align-items: flex-start; }
+    .ie-home .ie-footer a { margin-left: 0; margin-right: 16px; }
+    .ie-home .ie-modal { padding: 24px; }
   }
 </style>
 
@@ -314,29 +307,31 @@
   <!-- Hero -->
   <section class="ie-hero">
     <span class="ie-eyebrow">Coming Soon to iOS</span>
-    <h1>Esports stats.<br><em>Predictions.</em> Community.</h1>
+    <h1>Esports stats.<br>Predictions. Community.</h1>
     <p>Live match data, win probability, fan polls, and more — all in one place for esports fans.</p>
     <div class="ie-badge-row">
-      <span class="ie-badge"><span class="ie-pip"></span>VALORANT</span>
-      <span class="ie-badge"><span class="ie-pip"></span>CS2</span>
-      <span class="ie-badge"><span class="ie-pip"></span>League of Legends</span>
+      <span class="ie-badge">VALORANT</span>
+      <span class="ie-badge-sep"></span>
+      <span class="ie-badge">CS2</span>
+      <span class="ie-badge-sep"></span>
+      <span class="ie-badge">League of Legends</span>
     </div>
   </section>
 
   <!-- Features -->
   <div class="ie-features">
     <div class="ie-feature">
-      <span class="ie-feature-icon">📊</span>
+      <div class="ie-feature-rule"></div>
       <h3>Live Stats &amp; Win Probability</h3>
       <p>Real-time match data and live win probability updated as the game unfolds.</p>
     </div>
     <div class="ie-feature">
-      <span class="ie-feature-icon">🎯</span>
+      <div class="ie-feature-rule"></div>
       <h3>Stat Predictor</h3>
       <p>Predict player and team performance with agent and map-specific filters before the match begins.</p>
     </div>
     <div class="ie-feature">
-      <span class="ie-feature-icon">🏆</span>
+      <div class="ie-feature-rule"></div>
       <h3>Fan Community</h3>
       <p>Live chat, polls, points, and leaderboards — compete with other fans in real time.</p>
     </div>
@@ -363,9 +358,10 @@
 </div>
 
 <!-- Modal -->
+<div class="ie-home">
 <div class="ie-modal-overlay" id="ie-modal-overlay">
   <div class="ie-modal">
-    <button class="ie-modal-close" id="ie-close-modal">✕</button>
+    <button class="ie-modal-close" id="ie-close-modal">&times;</button>
     <h3>Get in Touch</h3>
     <p class="ie-modal-sub">We usually respond within 1–2 business days.</p>
     <div class="ie-cf-field">
@@ -393,6 +389,7 @@
     </div>
     <a class="ie-cf-submit" id="ie-cf-btn" href="#">Send Message</a>
   </div>
+</div>
 </div>
 
 <script>
