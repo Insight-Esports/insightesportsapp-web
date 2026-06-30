@@ -1,35 +1,35 @@
 <style>
   .ie-privacy {
-    --violet: #7C5CFC;
-    --violet-dim: #6a4ce0;
-    --ink: #16161d;
-    --body: #3a3a44;
-    --muted: #6b6b76;
-    --line: #e7e7ee;
-    --bg-soft: #faf9ff;
+    --bg: #000000;
+    --text: #FFFFFF;
+    --purple: #7C5CFC;
+    --line: #7C5CFC;
+    --fs: 17px;
+
     max-width: 760px;
     margin: 0 auto;
     padding: 80px 24px 60px;
-    font-size: 17px;
+    font-size: var(--fs);
     line-height: 1.7;
-    color: var(--body);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    font-family: "Google Sans", "Product Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
   .ie-privacy h1 {
     font-size: 38px; line-height: 1.15; margin: 0 0 10px;
-    color: var(--ink); letter-spacing: -.02em; font-weight: 800;
+    color: var(--text); letter-spacing: -.02em; font-weight: 800;
   }
   .ie-privacy .ie-updated {
-    color: var(--muted); font-size: 14px; margin: 0 0 32px;
+    color: var(--text); font-size: var(--fs); font-weight: 400; margin: 0 0 32px;
   }
   .ie-privacy .ie-intro {
-    background: var(--bg-soft);
-    border: 1px solid var(--line);
-    border-left: 3px solid var(--violet);
-    border-radius: 10px;
-    padding: 18px 22px;
+    background: var(--bg);
+    border-left: 3px solid var(--purple);
+    padding: 4px 0 4px 22px;
     margin: 0 0 32px;
-    font-size: 16px;
+    font-size: var(--fs);
+    font-weight: 400;
   }
   .ie-privacy .ie-toc {
     border: 1px solid var(--line);
@@ -38,41 +38,40 @@
     margin: 0 0 32px;
   }
   .ie-privacy .ie-toc-label {
-    font-size: 14px; text-transform: uppercase; letter-spacing: .06em;
-    color: var(--muted); font-weight: 700; margin: 0 0 12px;
+    font-size: var(--fs); text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text); font-weight: 700; margin: 0 0 12px;
   }
   .ie-privacy .ie-toc ol {
-    margin: 0; padding-left: 20px; columns: 2; column-gap: 32px; font-size: 15px;
+    margin: 0; padding-left: 20px; columns: 2; column-gap: 32px; font-size: var(--fs);
   }
   .ie-privacy .ie-toc li { margin: 4px 0; }
-  .ie-privacy .ie-toc a { text-decoration: none; color: var(--violet-dim); }
-  .ie-privacy .ie-toc a:hover { text-decoration: underline; }
+  .ie-privacy .ie-toc a { text-decoration: underline; color: var(--text); }
   .ie-privacy h2 {
-    font-size: 22px; color: var(--ink); margin: 44px 0 12px;
+    font-size: 22px; color: var(--text); margin: 44px 0 12px;
     letter-spacing: -.01em; font-weight: 700;
     scroll-margin-top: 20px;
   }
   .ie-privacy h3 {
-    font-size: 17px; color: var(--ink); margin: 26px 0 6px; font-weight: 700;
+    font-size: 18px; color: var(--text); margin: 26px 0 6px; font-weight: 700;
   }
-  .ie-privacy p { margin: 12px 0; }
+  .ie-privacy p { margin: 12px 0; font-weight: 400; }
   .ie-privacy ul { margin: 12px 0; padding-left: 22px; }
-  .ie-privacy li { margin: 7px 0; }
-  .ie-privacy a { color: var(--violet-dim); }
-  .ie-privacy strong { color: var(--ink); }
+  .ie-privacy li { margin: 7px 0; font-weight: 400; }
+  .ie-privacy a { color: var(--text); text-decoration: underline; }
+  .ie-privacy strong { color: var(--text); font-weight: 700; }
   .ie-privacy .ie-contact {
-    background: var(--ink);
-    color: #e9e9f2;
+    background: var(--bg);
+    border: 1px solid var(--purple);
+    color: var(--text);
     border-radius: 12px;
     padding: 26px 28px;
     margin: 36px 0 0;
   }
-  .ie-privacy .ie-contact h2 { color: #fff; margin: 0 0 8px; }
-  .ie-privacy .ie-contact a { color: #b9a6ff; }
+  .ie-privacy .ie-contact h2 { color: var(--text); margin: 0 0 8px; }
+  .ie-privacy .ie-contact a { color: var(--text); text-decoration: underline; }
   .ie-privacy .ie-contact p { margin: 6px 0 0; }
-  .ie-privacy .ie-contact .ie-entity { color: #9a9ab0; font-size: 14px; }
+  .ie-privacy .ie-contact .ie-entity { color: var(--text); font-size: var(--fs); }
   @media (max-width: 600px) {
-    .ie-privacy { font-size: 16px; }
     .ie-privacy h1 { font-size: 30px; }
     .ie-privacy .ie-toc ol { columns: 1; }
   }
