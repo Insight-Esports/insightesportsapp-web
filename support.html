@@ -307,3 +307,16 @@
     window.location.href = 'mailto:support@insightesportsapp.com?subject=' + subject + '&body=' + body;
   });
 </script>
+
+<script>
+  // Ensure mobile-responsive rendering even if the host page <head> is missing the viewport tag.
+  (function() {
+    var vp = document.querySelector('meta[name="viewport"]');
+    if (!vp) {
+      vp = document.createElement('meta');
+      vp.name = 'viewport';
+      (document.head || document.getElementsByTagName('head')[0]).appendChild(vp);
+    }
+    vp.setAttribute('content', 'width=device-width, initial-scale=1');
+  })();
+</script>
