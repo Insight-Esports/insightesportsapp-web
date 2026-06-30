@@ -5,7 +5,6 @@
     --purple: #7C5CFC;
     --purple-dim: #6a4ce0;
     --line: #7C5CFC;
-
     --fs: 17px;
 
     font-family: "Google Sans", "Product Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
@@ -21,7 +20,7 @@
   /* ── Hero ── */
   .ie-home .ie-hero {
     text-align: center;
-    padding: 96px 24px 80px;
+    padding: 80px 24px 64px;
     background: var(--bg);
   }
   .ie-home .ie-eyebrow {
@@ -31,15 +30,15 @@
     letter-spacing: .14em;
     text-transform: uppercase;
     color: var(--text);
-    margin-bottom: 28px;
+    margin-bottom: 24px;
   }
   .ie-home .ie-hero h1 {
-    font-size: clamp(40px, 7vw, 72px);
+    font-size: clamp(34px, 5.5vw, 52px);
     font-weight: 800;
-    line-height: 1.06;
-    letter-spacing: -.03em;
+    line-height: 1.1;
+    letter-spacing: -.02em;
     color: var(--text);
-    margin: 0 auto 20px;
+    margin: 0 auto 18px;
     max-width: 740px;
   }
   .ie-home .ie-hero p {
@@ -47,8 +46,8 @@
     font-weight: 400;
     line-height: 1.6;
     color: var(--text);
-    max-width: 480px;
-    margin: 0 auto 40px;
+    max-width: 520px;
+    margin: 0 auto 32px;
   }
   .ie-home .ie-badge-row {
     display: flex;
@@ -56,6 +55,7 @@
     align-items: center;
     gap: 18px;
     flex-wrap: wrap;
+    margin-bottom: 36px;
   }
   .ie-home .ie-badge {
     font-size: var(--fs);
@@ -69,83 +69,73 @@
     display: inline-block;
   }
 
-  /* ── Feature strip ── */
-  .ie-home .ie-features {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    border-top: 1px solid var(--line);
-    border-bottom: 1px solid var(--line);
-  }
-  .ie-home .ie-feature {
-    background: var(--bg);
-    padding: 40px 30px;
-    text-align: left;
-    border-left: 1px solid var(--line);
-  }
-  .ie-home .ie-feature:first-child {
-    border-left: none;
-  }
-  .ie-home .ie-feature-rule {
-    width: 28px;
-    height: 2px;
-    background: var(--purple);
-    margin: 0 0 18px;
-  }
-  .ie-home .ie-feature h3 {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text);
-    margin: 0 0 8px;
-    letter-spacing: -.01em;
-  }
-  .ie-home .ie-feature p {
-    font-size: var(--fs);
-    font-weight: 400;
-    line-height: 1.6;
-    color: var(--text);
-    margin: 0;
-  }
-
-  /* ── CTA section ── */
-  .ie-home .ie-cta {
-    text-align: center;
-    padding: 72px 24px;
-    background: var(--bg);
-  }
-  .ie-home .ie-cta h2 {
-    font-size: 30px;
-    font-weight: 700;
-    color: var(--text);
-    letter-spacing: -.02em;
-    margin: 0 0 10px;
-  }
-  .ie-home .ie-cta p {
-    font-size: var(--fs);
-    font-weight: 400;
-    color: var(--text);
-    margin: 0 0 28px;
-  }
-  .ie-home .ie-cta-btn {
+  /* ── Buttons (pill) ── */
+  .ie-home .ie-btn {
     display: inline-block;
     background: var(--purple);
     color: var(--text);
     font-size: var(--fs);
     font-weight: 700;
     text-decoration: none;
-    padding: 13px 28px;
-    border-radius: 10px;
+    padding: 14px 32px;
+    border-radius: 100px;
     letter-spacing: -.01em;
     border: none;
     cursor: pointer;
     font-family: inherit;
     transition: background .15s;
   }
-  .ie-home .ie-cta-btn:hover { background: var(--purple-dim); }
+  .ie-home .ie-btn:hover { background: var(--purple-dim); }
+
+  /* ── Vertical feature sections ── */
+  .ie-home .ie-section {
+    text-align: center;
+    padding: 72px 24px;
+    border-top: 1px solid var(--line);
+  }
+  .ie-home .ie-section h2 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -.01em;
+    margin: 0 auto 14px;
+    max-width: 640px;
+  }
+  .ie-home .ie-section p {
+    font-size: var(--fs);
+    font-weight: 400;
+    line-height: 1.6;
+    color: var(--text);
+    margin: 0 auto;
+    max-width: 560px;
+  }
+
+  /* ── Closing CTA ── */
+  .ie-home .ie-cta {
+    text-align: center;
+    padding: 80px 24px;
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+  }
+  .ie-home .ie-cta h2 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -.01em;
+    margin: 0 0 12px;
+  }
+  .ie-home .ie-cta p {
+    font-size: var(--fs);
+    font-weight: 400;
+    color: var(--text);
+    margin: 0 auto 28px;
+    max-width: 520px;
+  }
 
   /* ── Footer ── */
   .ie-home .ie-footer {
     border-top: 1px solid var(--line);
-    padding: 24px;
+    padding: 28px 24px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -153,6 +143,8 @@
     gap: 12px;
     font-size: var(--fs);
     color: var(--text);
+    max-width: 1100px;
+    margin: 0 auto;
   }
   .ie-home .ie-footer a {
     color: var(--text);
@@ -185,9 +177,7 @@
     justify-content: center;
     padding: 24px;
   }
-  .ie-home .ie-modal-overlay.ie-open {
-    display: flex;
-  }
+  .ie-home .ie-modal-overlay.ie-open { display: flex; }
   .ie-home .ie-modal {
     background: var(--bg);
     border: 1px solid var(--purple);
@@ -279,7 +269,7 @@
     font-size: var(--fs);
     font-weight: 700;
     padding: 13px;
-    border-radius: 10px;
+    border-radius: 100px;
     border: none;
     cursor: pointer;
     font-family: inherit;
@@ -292,10 +282,9 @@
   .ie-home .ie-cf-submit:hover { background: var(--purple-dim); }
 
   @media (max-width: 640px) {
-    .ie-home .ie-hero { padding: 64px 20px 56px; }
-    .ie-home .ie-features { grid-template-columns: 1fr; }
-    .ie-home .ie-feature { border-left: none; border-top: 1px solid var(--line); }
-    .ie-home .ie-feature:first-child { border-top: none; }
+    .ie-home .ie-hero { padding: 56px 20px 48px; }
+    .ie-home .ie-section { padding: 56px 20px; }
+    .ie-home .ie-cta { padding: 56px 20px; }
     .ie-home .ie-footer { flex-direction: column; align-items: flex-start; }
     .ie-home .ie-footer a { margin-left: 0; margin-right: 16px; }
     .ie-home .ie-modal { padding: 24px; }
@@ -307,8 +296,8 @@
   <!-- Hero -->
   <section class="ie-hero">
     <span class="ie-eyebrow">Coming Soon to iOS</span>
-    <h1>Esports stats.<br>Predictions. Community.</h1>
-    <p>Live match data, win probability, fan polls, and more, all in one place for esports fans.</p>
+    <h1>Insight Esports</h1>
+    <p>Live match data, win probability, fan polls, and more — all in one place for esports fans.</p>
     <div class="ie-badge-row">
       <span class="ie-badge">VALORANT</span>
       <span class="ie-badge-sep"></span>
@@ -316,32 +305,30 @@
       <span class="ie-badge-sep"></span>
       <span class="ie-badge">League of Legends</span>
     </div>
+    <button class="ie-btn" id="ie-open-modal-hero">Get in Touch</button>
   </section>
 
-  <!-- Features -->
-  <div class="ie-features">
-    <div class="ie-feature">
-      <div class="ie-feature-rule"></div>
-      <h3>Live Stats &amp; Win Probability</h3>
-      <p>Real-time match data and live win probability updated as the game unfolds.</p>
-    </div>
-    <div class="ie-feature">
-      <div class="ie-feature-rule"></div>
-      <h3>Stat Predictor</h3>
-      <p>Predict player and team performance with agent and map-specific filters before the match begins.</p>
-    </div>
-    <div class="ie-feature">
-      <div class="ie-feature-rule"></div>
-      <h3>Fan Community</h3>
-      <p>Live chat, polls, points, and leaderboards. Compete with other fans in real time.</p>
-    </div>
-  </div>
+  <!-- Feature sections (vertical) -->
+  <section class="ie-section">
+    <h2>Live Stats &amp; Win Probability</h2>
+    <p>Real-time match data and live win probability updated as the game unfolds.</p>
+  </section>
 
-  <!-- CTA -->
+  <section class="ie-section">
+    <h2>Stat Predictor</h2>
+    <p>Predict player and team performance with agent and map-specific filters before the match begins.</p>
+  </section>
+
+  <section class="ie-section">
+    <h2>Fan Community</h2>
+    <p>Live chat, polls, points, and leaderboards — compete with other fans in real time.</p>
+  </section>
+
+  <!-- Closing CTA -->
   <section class="ie-cta">
     <h2>Launching on the App Store</h2>
     <p>Questions or partnership inquiries? Reach out to our team.</p>
-    <button class="ie-cta-btn" id="ie-open-modal">Get in Touch</button>
+    <button class="ie-btn" id="ie-open-modal">Get in Touch</button>
   </section>
 
   <!-- Footer -->
@@ -394,9 +381,9 @@
 
 <script>
   var overlay = document.getElementById('ie-modal-overlay');
-  document.getElementById('ie-open-modal').addEventListener('click', function() {
-    overlay.classList.add('ie-open');
-  });
+  function openModal() { overlay.classList.add('ie-open'); }
+  document.getElementById('ie-open-modal').addEventListener('click', openModal);
+  document.getElementById('ie-open-modal-hero').addEventListener('click', openModal);
   document.getElementById('ie-close-modal').addEventListener('click', function() {
     overlay.classList.remove('ie-open');
   });
