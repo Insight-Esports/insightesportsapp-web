@@ -1,4 +1,6 @@
 <style>
+  html, body { margin: 0; padding: 0; background: #000000; }
+
   .ie-home {
     --bg: #000000;
     --text: #FFFFFF;
@@ -87,30 +89,43 @@
   }
   .ie-home .ie-btn:hover { background: var(--purple-dim); }
 
-  /* ── Vertical feature sections ── */
+  /* ── Feature sections (left / right zigzag, no dividers) ── */
   .ie-home .ie-section {
-    text-align: center;
-    padding: 72px 24px;
-    border-top: 1px solid var(--line);
+    padding: 60px 24px;
+    background: var(--bg);
+  }
+  .ie-home .ie-section-row {
+    max-width: 1080px;
+    margin: 0 auto;
+  }
+  .ie-home .ie-section-inner {
+    max-width: 560px;
+  }
+  .ie-home .ie-section.ie-left .ie-section-inner {
+    margin-right: auto;
+    text-align: left;
+  }
+  .ie-home .ie-section.ie-right .ie-section-inner {
+    margin-left: auto;
+    text-align: right;
   }
   .ie-home .ie-section h2 {
-    font-size: 28px;
-    font-weight: 700;
-    color: var(--text);
+    font-size: clamp(28px, 3.6vw, 36px);
+    font-weight: 800;
+    line-height: 1.15;
     letter-spacing: -.01em;
-    margin: 0 auto 14px;
-    max-width: 640px;
+    color: var(--text);
+    margin: 0 0 14px;
   }
   .ie-home .ie-section p {
     font-size: var(--fs);
     font-weight: 400;
     line-height: 1.6;
     color: var(--text);
-    margin: 0 auto;
-    max-width: 560px;
+    margin: 0;
   }
 
-  /* ── Closing CTA ── */
+  /* ── Closing CTA (keeps top line) ── */
   .ie-home .ie-cta {
     text-align: center;
     padding: 80px 24px;
@@ -132,7 +147,7 @@
     max-width: 520px;
   }
 
-  /* ── Footer ── */
+  /* ── Footer (keeps top line) ── */
   .ie-home .ie-footer {
     border-top: 1px solid var(--line);
     padding: 28px 24px;
@@ -281,9 +296,15 @@
   }
   .ie-home .ie-cf-submit:hover { background: var(--purple-dim); }
 
-  @media (max-width: 640px) {
+  @media (max-width: 720px) {
     .ie-home .ie-hero { padding: 56px 20px 48px; }
-    .ie-home .ie-section { padding: 56px 20px; }
+    .ie-home .ie-section { padding: 44px 20px; }
+    .ie-home .ie-section.ie-left .ie-section-inner,
+    .ie-home .ie-section.ie-right .ie-section-inner {
+      margin: 0;
+      text-align: left;
+      max-width: 100%;
+    }
     .ie-home .ie-cta { padding: 56px 20px; }
     .ie-home .ie-footer { flex-direction: column; align-items: flex-start; }
     .ie-home .ie-footer a { margin-left: 0; margin-right: 16px; }
@@ -297,7 +318,7 @@
   <section class="ie-hero">
     <span class="ie-eyebrow">Coming Soon to iOS</span>
     <h1>Insight Esports</h1>
-    <p>Live match data, win probability, fan polls and more, all in one place for esports fans.</p>
+    <p>Live match data, win probability, fan polls, and more, all in one place for esports fans.</p>
     <div class="ie-badge-row">
       <span class="ie-badge">VALORANT</span>
       <span class="ie-badge-sep"></span>
@@ -308,20 +329,41 @@
     <button class="ie-btn" id="ie-open-modal-hero">Get in Touch</button>
   </section>
 
-  <!-- Feature sections (vertical) -->
-  <section class="ie-section">
-    <h2>Live Stats &amp; Win Probability</h2>
-    <p>Real-time match data and live win probability updated as the game unfolds.</p>
+  <!-- Feature sections (left / right, no dividers) -->
+  <section class="ie-section ie-left">
+    <div class="ie-section-row">
+      <div class="ie-section-inner">
+        <h2>Live Stats &amp; Win Probability</h2>
+        <p>Real time match data, scores, and win probability for every team. See upcoming games with win predictions, plus past games with all the important stats.</p>
+      </div>
+    </div>
   </section>
 
-  <section class="ie-section">
-    <h2>Stat Predictor</h2>
-    <p>Predict player and team performance with agent and map-specific filters before the match begins.</p>
+  <section class="ie-section ie-right">
+    <div class="ie-section-row">
+      <div class="ie-section-inner">
+        <h2>Team and Player Info</h2>
+        <p>Get team and player stats, records, and history from past games, all in one place.</p>
+      </div>
+    </div>
   </section>
 
-  <section class="ie-section">
-    <h2>Fan Community</h2>
-    <p>Live chat, polls, points, and leaderboards. Compete with other fans in real time.</p>
+  <section class="ie-section ie-left">
+    <div class="ie-section-row">
+      <div class="ie-section-inner">
+        <h2>Fan Community</h2>
+        <p>Live chat, polls, and leaderboards where you compete with other fans in real time.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="ie-section ie-right">
+    <div class="ie-section-row">
+      <div class="ie-section-inner">
+        <h2>Stat Predictor</h2>
+        <p>Choose any team or player from our games and get full stat breakdowns. You can also see the odds of them hitting a specific number for a chosen stat.</p>
+      </div>
+    </div>
   </section>
 
   <!-- Closing CTA -->
