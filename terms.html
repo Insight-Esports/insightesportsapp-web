@@ -6,9 +6,9 @@
     --line: #7C5CFC;
     --fs: 17px;
 
-    max-width: 760px;
-    margin: 0 auto;
-    padding: 80px 24px 60px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 80px 32px 64px;
     font-size: var(--fs);
     line-height: 1.7;
     color: var(--text);
@@ -16,8 +16,9 @@
     font-family: "Google Sans", "Product Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
+  .ie-terms .ie-wrap { max-width: 880px; margin: 0 auto; }
   .ie-terms h1 {
-    font-size: 38px; line-height: 1.15; margin: 0 0 10px;
+    font-size: 40px; line-height: 1.15; margin: 0 0 10px;
     color: var(--text); letter-spacing: -.02em; font-weight: 800;
   }
   .ie-terms .ie-updated {
@@ -47,7 +48,7 @@
   .ie-terms .ie-toc li { margin: 4px 0; }
   .ie-terms .ie-toc a { text-decoration: underline; color: var(--text); }
   .ie-terms h2 {
-    font-size: 22px; color: var(--text); margin: 44px 0 12px;
+    font-size: 24px; color: var(--text); margin: 48px 0 12px;
     letter-spacing: -.01em; font-weight: 700;
     scroll-margin-top: 20px;
   }
@@ -62,19 +63,21 @@
     color: var(--text);
     border-radius: 12px;
     padding: 26px 28px;
-    margin: 36px 0 0;
+    margin: 40px 0 0;
   }
   .ie-terms .ie-contact h2 { color: var(--text); margin: 0 0 8px; }
   .ie-terms .ie-contact a { color: var(--text); text-decoration: underline; }
   .ie-terms .ie-contact p { margin: 6px 0 0; }
   .ie-terms .ie-contact .ie-entity { color: var(--text); font-size: var(--fs); }
   @media (max-width: 600px) {
-    .ie-terms h1 { font-size: 30px; }
+    .ie-terms { padding: 60px 20px 48px; }
+    .ie-terms h1 { font-size: 32px; }
     .ie-terms .ie-toc ol { columns: 1; }
   }
 </style>
 
 <div class="ie-terms">
+ <div class="ie-wrap">
   <h1>Terms of Service</h1>
   <p class="ie-updated">Last updated: June 12, 2026</p>
 
@@ -168,4 +171,5 @@
     <p><a href="mailto:legal@insightesportsapp.com">legal@insightesportsapp.com</a></p>
     <p class="ie-entity">Insight GG LLC, doing business as Insight Esports</p>
   </div>
+ </div>
 </div>
