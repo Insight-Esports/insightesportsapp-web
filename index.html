@@ -308,7 +308,7 @@
     .ie-home .ie-hero { padding: 64px 22px 52px; }
     .ie-home .ie-hero h1 { font-size: 40px; }
 
-    .ie-home .ie-section { padding: 76px 22px; }
+    .ie-home .ie-section { padding: 100px 22px; }
     .ie-home .ie-section.ie-left .ie-section-inner,
     .ie-home .ie-section.ie-right .ie-section-inner {
       margin: 0 auto;
@@ -338,7 +338,6 @@
       <span class="ie-badge-sep"></span>
       <span class="ie-badge">League of Legends</span>
     </div>
-    <button class="ie-btn" id="ie-open-modal-hero">Get in Touch</button>
   </section>
 
   <!-- Feature sections -->
@@ -452,7 +451,6 @@
   var overlay = document.getElementById('ie-modal-overlay');
   function openModal() { overlay.classList.add('ie-open'); }
   document.getElementById('ie-open-modal').addEventListener('click', openModal);
-  document.getElementById('ie-open-modal-hero').addEventListener('click', openModal);
   document.getElementById('ie-close-modal').addEventListener('click', function() {
     overlay.classList.remove('ie-open');
   });
