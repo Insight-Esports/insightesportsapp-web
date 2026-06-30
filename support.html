@@ -1,34 +1,33 @@
 <style>
   .ie-support {
-    --violet: #7C5CFC;
-    --violet-dim: #6a4ce0;
-    --violet-glow: rgba(124,92,252,0.12);
-    --ink: #0f0f14;
-    --body: #3a3a48;
-    --muted: #7a7a88;
-    --line: #e8e8f0;
-    --bg-soft: #faf9ff;
+    --bg: #000000;
+    --text: #FFFFFF;
+    --purple: #7C5CFC;
+    --purple-dim: #6a4ce0;
+    --line: #7C5CFC;
+    --fs: 17px;
 
     max-width: 760px;
     margin: 0 auto;
     padding: 80px 24px 60px;
-    font-size: 17px;
+    font-size: var(--fs);
     line-height: 1.7;
-    color: var(--body);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    font-family: "Google Sans", "Product Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
   .ie-support h1 {
     font-size: 38px; line-height: 1.15; margin: 0 0 10px;
-    color: var(--ink); letter-spacing: -.02em; font-weight: 800;
+    color: var(--text); letter-spacing: -.02em; font-weight: 800;
   }
   .ie-support .ie-subtitle {
-    color: var(--muted); font-size: 18px; margin: 0 0 48px;
+    color: var(--text); font-size: var(--fs); font-weight: 400; margin: 0 0 48px;
   }
 
-  /* Contact card */
-  .ie-contact-card {
-    background: var(--violet);
+  /* Contact card — solid purple */
+  .ie-support .ie-contact-card {
+    background: var(--purple);
     border-radius: 14px;
     padding: 28px 32px;
     margin: 0 0 48px;
@@ -38,17 +37,17 @@
     flex-wrap: wrap;
     gap: 16px;
   }
-  .ie-contact-card h2 {
-    color: #fff; margin: 0 0 4px; font-size: 20px; font-weight: 700;
+  .ie-support .ie-contact-card h2 {
+    color: var(--text); margin: 0 0 4px; font-size: 20px; font-weight: 700;
   }
-  .ie-contact-card p {
-    color: rgba(255,255,255,0.8); margin: 0; font-size: 15px;
+  .ie-support .ie-contact-card p {
+    color: var(--text); margin: 0; font-size: var(--fs); font-weight: 400;
   }
-  .ie-contact-card a.ie-btn {
+  .ie-support .ie-contact-card a.ie-btn {
     display: inline-block;
-    background: #fff;
-    color: var(--violet);
-    font-size: 15px;
+    background: var(--text);
+    color: var(--purple);
+    font-size: var(--fs);
     font-weight: 700;
     text-decoration: none;
     padding: 12px 24px;
@@ -56,103 +55,110 @@
     white-space: nowrap;
     transition: opacity .15s;
   }
-  .ie-contact-card a.ie-btn:hover { opacity: .9; }
+  .ie-support .ie-contact-card a.ie-btn:hover { opacity: .9; }
 
   /* Section headers */
   .ie-support h2.ie-section {
-    font-size: 24px; color: var(--ink); margin: 0 0 20px;
+    font-size: 24px; color: var(--text); margin: 0 0 20px;
     letter-spacing: -.01em; font-weight: 700;
   }
 
   /* FAQ */
-  .ie-faq { margin: 0 0 48px; }
-  .ie-faq-item {
+  .ie-support .ie-faq { margin: 0 0 48px; }
+  .ie-support .ie-faq-item {
     border: 1px solid var(--line);
     border-radius: 10px;
     margin-bottom: 10px;
     overflow: hidden;
   }
-  .ie-faq-item summary {
+  .ie-support .ie-faq-item summary {
     padding: 18px 20px;
-    font-weight: 600;
-    color: var(--ink);
+    font-weight: 700;
+    color: var(--text);
     cursor: pointer;
     list-style: none;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    font-size: 16px;
+    font-size: var(--fs);
   }
-  .ie-faq-item summary::-webkit-details-marker { display: none; }
-  .ie-faq-item summary::after {
+  .ie-support .ie-faq-item summary::-webkit-details-marker { display: none; }
+  .ie-support .ie-faq-item summary::after {
     content: '+';
     font-size: 20px;
-    color: var(--violet);
+    color: var(--purple);
     font-weight: 400;
     flex-shrink: 0;
     margin-left: 12px;
   }
-  .ie-faq-item[open] summary::after { content: '−'; }
-  .ie-faq-item[open] summary {
+  .ie-support .ie-faq-item[open] summary::after { content: '−'; }
+  .ie-support .ie-faq-item[open] summary {
     border-bottom: 1px solid var(--line);
   }
-  .ie-faq-body {
+  .ie-support .ie-faq-body {
     padding: 16px 20px;
-    font-size: 15px;
-    color: var(--body);
-    background: var(--bg-soft);
+    font-size: var(--fs);
+    font-weight: 400;
+    color: var(--text);
+    background: var(--bg);
   }
-  .ie-faq-body p { margin: 0; }
-  .ie-faq-body a { color: var(--violet-dim); }
+  .ie-support .ie-faq-body p { margin: 0; }
+  .ie-support .ie-faq-body a { color: var(--text); text-decoration: underline; }
 
   /* Bug report form */
-  .ie-bug-form {
+  .ie-support .ie-bug-form {
     border: 1px solid var(--line);
     border-radius: 14px;
     padding: 28px 32px;
-    background: var(--bg-soft);
+    background: var(--bg);
   }
-  .ie-bug-form p.ie-form-desc {
-    font-size: 15px; color: var(--muted); margin: 0 0 24px;
+  .ie-support .ie-bug-form p.ie-form-desc {
+    font-size: var(--fs); font-weight: 400; color: var(--text); margin: 0 0 24px;
   }
-  .ie-field { margin-bottom: 18px; }
-  .ie-field label {
+  .ie-support .ie-field { margin-bottom: 18px; }
+  .ie-support .ie-field label {
     display: block;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--ink);
+    font-size: var(--fs);
+    font-weight: 400;
+    color: var(--text);
     margin-bottom: 6px;
   }
-  .ie-field input, .ie-field select, .ie-field textarea {
+  .ie-support .ie-field input,
+  .ie-support .ie-field select,
+  .ie-support .ie-field textarea {
     width: 100%;
     padding: 11px 14px;
-    border: 1px solid var(--line);
+    border: 1px solid var(--purple);
     border-radius: 8px;
-    font-size: 15px;
+    font-size: var(--fs);
     font-family: inherit;
-    color: var(--ink);
-    background: #fff;
+    color: var(--text);
+    background: var(--bg);
     box-sizing: border-box;
     transition: border-color .15s;
     appearance: none;
   }
-  .ie-field input:focus, .ie-field select:focus, .ie-field textarea:focus {
+  .ie-support .ie-field input::placeholder,
+  .ie-support .ie-field textarea::placeholder { color: var(--text); opacity: .55; }
+  .ie-support .ie-field input:focus,
+  .ie-support .ie-field select:focus,
+  .ie-support .ie-field textarea:focus {
     outline: none;
-    border-color: var(--violet);
-    box-shadow: 0 0 0 3px var(--violet-glow);
+    border-color: var(--text);
   }
-  .ie-field textarea { resize: vertical; min-height: 120px; }
-  .ie-field select {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a7a88' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  .ie-support .ie-field textarea { resize: vertical; min-height: 120px; }
+  .ie-support .ie-field select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23FFFFFF' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 14px center;
     padding-right: 36px;
   }
-  .ie-submit {
+  .ie-support .ie-field select option { background: var(--bg); color: var(--text); }
+  .ie-support .ie-submit {
     display: inline-block;
-    background: var(--violet);
-    color: #fff;
-    font-size: 15px;
+    background: var(--purple);
+    color: var(--text);
+    font-size: var(--fs);
     font-weight: 700;
     padding: 13px 28px;
     border-radius: 10px;
@@ -162,13 +168,13 @@
     transition: background .15s;
     text-decoration: none;
   }
-  .ie-submit:hover { background: var(--violet-dim); }
+  .ie-support .ie-submit:hover { background: var(--purple-dim); }
 
   @media (max-width: 600px) {
-    .ie-support { font-size: 16px; padding: 60px 20px 48px; }
+    .ie-support { padding: 60px 20px 48px; }
     .ie-support h1 { font-size: 30px; }
-    .ie-contact-card { flex-direction: column; align-items: flex-start; }
-    .ie-bug-form { padding: 20px; }
+    .ie-support .ie-contact-card { flex-direction: column; align-items: flex-start; }
+    .ie-support .ie-bug-form { padding: 20px; }
   }
 </style>
 
