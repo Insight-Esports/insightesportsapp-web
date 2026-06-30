@@ -89,17 +89,20 @@
   }
   .ie-home .ie-btn:hover { background: var(--purple-dim); }
 
-  /* ── Feature sections (left / right zigzag, no dividers) ── */
+  /* ── Feature sections (left / right zigzag) ── */
   .ie-home .ie-section {
-    padding: 60px 24px;
+    padding: 88px 24px;
     background: var(--bg);
+  }
+  .ie-home .ie-section-top {
+    border-top: 1px solid var(--line);
   }
   .ie-home .ie-section-row {
     max-width: 1080px;
     margin: 0 auto;
   }
   .ie-home .ie-section-inner {
-    max-width: 560px;
+    max-width: 460px;
   }
   .ie-home .ie-section.ie-left .ie-section-inner {
     margin-right: auto;
@@ -115,12 +118,12 @@
     line-height: 1.15;
     letter-spacing: -.01em;
     color: var(--text);
-    margin: 0 0 14px;
+    margin: 0 0 16px;
   }
   .ie-home .ie-section p {
     font-size: var(--fs);
     font-weight: 400;
-    line-height: 1.6;
+    line-height: 1.65;
     color: var(--text);
     margin: 0;
   }
@@ -147,10 +150,15 @@
     max-width: 520px;
   }
 
-  /* ── Footer (keeps top line) ── */
+  /* ── Footer (full-width top line) ── */
   .ie-home .ie-footer {
     border-top: 1px solid var(--line);
     padding: 28px 24px;
+    background: var(--bg);
+  }
+  .ie-home .ie-footer-inner {
+    max-width: 1100px;
+    margin: 0 auto;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -158,8 +166,6 @@
     gap: 12px;
     font-size: var(--fs);
     color: var(--text);
-    max-width: 1100px;
-    margin: 0 auto;
   }
   .ie-home .ie-footer a {
     color: var(--text);
@@ -298,15 +304,15 @@
 
   @media (max-width: 720px) {
     .ie-home .ie-hero { padding: 56px 20px 48px; }
-    .ie-home .ie-section { padding: 44px 20px; }
+    .ie-home .ie-section { padding: 64px 20px; }
     .ie-home .ie-section.ie-left .ie-section-inner,
     .ie-home .ie-section.ie-right .ie-section-inner {
-      margin: 0;
-      text-align: left;
+      margin: 0 auto;
+      text-align: center;
       max-width: 100%;
     }
-    .ie-home .ie-cta { padding: 56px 20px; }
-    .ie-home .ie-footer { flex-direction: column; align-items: flex-start; }
+    .ie-home .ie-cta { padding: 64px 20px; }
+    .ie-home .ie-footer-inner { flex-direction: column; align-items: center; text-align: center; }
     .ie-home .ie-footer a { margin-left: 0; margin-right: 16px; }
     .ie-home .ie-modal { padding: 24px; }
   }
@@ -329,12 +335,12 @@
     <button class="ie-btn" id="ie-open-modal-hero">Get in Touch</button>
   </section>
 
-  <!-- Feature sections (left / right, no dividers) -->
-  <section class="ie-section ie-left">
+  <!-- Feature sections -->
+  <section class="ie-section ie-left ie-section-top">
     <div class="ie-section-row">
       <div class="ie-section-inner">
         <h2>Live Stats &amp; Win Probability</h2>
-        <p>Real time match data, scores, and win probability for every team. See upcoming games with win predictions, plus past games with all the important stats.</p>
+        <p>Real time match data, live scores, and win probability for every team. Browse upcoming games with win predictions before they start, then break down past games with every important stat.</p>
       </div>
     </div>
   </section>
@@ -343,7 +349,7 @@
     <div class="ie-section-row">
       <div class="ie-section-inner">
         <h2>Team and Player Info</h2>
-        <p>Get team and player stats, records, and history from past games, all in one place.</p>
+        <p>Dig into detailed team and player stats, head to head records, recent form, and full match history. See exactly how your favorite teams and players have performed across past games, all in one place.</p>
       </div>
     </div>
   </section>
@@ -352,7 +358,7 @@
     <div class="ie-section-row">
       <div class="ie-section-inner">
         <h2>Fan Community</h2>
-        <p>Live chat, polls, and leaderboards where you compete with other fans in real time.</p>
+        <p>Join live chat during games, vote in polls, and climb the leaderboards. Earn points for getting your poll predictions right, then compete with other fans in real time to top the rankings.</p>
       </div>
     </div>
   </section>
@@ -361,7 +367,7 @@
     <div class="ie-section-row">
       <div class="ie-section-inner">
         <h2>Stat Predictor</h2>
-        <p>Choose any team or player from our games and get full stat breakdowns. You can also see the odds of them hitting a specific number for a chosen stat.</p>
+        <p>Choose any team or player from our games and get a full stat breakdown. You can also check the odds of them hitting a specific number for a chosen stat, so you know how likely it really is.</p>
       </div>
     </div>
   </section>
@@ -375,12 +381,14 @@
 
   <!-- Footer -->
   <footer class="ie-footer">
-    <span class="ie-wordmark"><span class="ie-dot"></span>INSIGHT ESPORTS</span>
-    <div>
-      <span>© 2026 Insight GG LLC</span>
-      <a href="/support">Support</a>
-      <a href="/privacy">Privacy</a>
-      <a href="/terms">Terms</a>
+    <div class="ie-footer-inner">
+      <span class="ie-wordmark"><span class="ie-dot"></span>INSIGHT ESPORTS</span>
+      <div>
+        <span>© 2026 Insight GG LLC</span>
+        <a href="/support">Support</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+      </div>
     </div>
   </footer>
 
@@ -422,6 +430,17 @@
 </div>
 
 <script>
+  // Safety net: ensure the page is mobile-responsive even if the host page
+  // is missing the viewport meta tag (the usual cause of a tiny zoomed-out phone view).
+  (function() {
+    if (!document.querySelector('meta[name="viewport"]')) {
+      var vp = document.createElement('meta');
+      vp.name = 'viewport';
+      vp.setAttribute('content', 'width=device-width, initial-scale=1');
+      (document.head || document.getElementsByTagName('head')[0]).appendChild(vp);
+    }
+  })();
+
   var overlay = document.getElementById('ie-modal-overlay');
   function openModal() { overlay.classList.add('ie-open'); }
   document.getElementById('ie-open-modal').addEventListener('click', openModal);
