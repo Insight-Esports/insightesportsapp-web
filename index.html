@@ -4,9 +4,9 @@
   .ie-home {
     --bg: #000000;
     --text: #FFFFFF;
-    --purple: #7C5CFC;
-    --purple-dim: #6a4ce0;
-    --line: #7C5CFC;
+    --purple: #e600ff;
+    --purple-dim: #c400d9;
+    --line: #e600ff;
     --fs: 17px;
 
     font-family: "Google Sans", "Product Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
@@ -91,15 +91,14 @@
 
   /* ── Feature sections (left / right placement, text always left-aligned) ── */
   .ie-home .ie-section {
-    padding: 108px 24px;
+    padding: 108px clamp(24px, 7vw, 180px);
     background: var(--bg);
   }
   .ie-home .ie-section-top {
     border-top: 1px solid var(--line);
   }
   .ie-home .ie-section-row {
-    max-width: 1080px;
-    margin: 0 auto;
+    width: 100%;
   }
   .ie-home .ie-section-inner {
     max-width: 460px;
@@ -152,12 +151,11 @@
   /* ── Footer (full-width top line) ── */
   .ie-home .ie-footer {
     border-top: 1px solid var(--line);
-    padding: 28px 24px;
+    padding: 28px clamp(24px, 7vw, 180px);
     background: var(--bg);
   }
   .ie-home .ie-footer-inner {
-    max-width: 1100px;
-    margin: 0 auto;
+    width: 100%;
     display: flex;
     justify-content: space-between;
     align-items: center;
