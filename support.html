@@ -172,6 +172,27 @@
     text-decoration: none;
   }
   .ie-support .ie-submit:hover { background: var(--purple-dim); }
+  .ie-support .ie-submit.ie-sending { opacity: .6; pointer-events: none; }
+
+  /* Result message under the form */
+  .ie-support .ie-form-status {
+    display: none;
+    margin: 0 0 16px;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: var(--fs);
+    border: 1px solid var(--purple);
+  }
+  .ie-support .ie-form-status.ie-error { border-color: #ff6b6b; }
+
+  /* Honeypot: off-screen for people, visible to bots that fill every field */
+  .ie-support .ie-hp {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+  }
 
   @media (max-width: 600px) {
     .ie-support { padding: 60px 20px 48px; }
@@ -280,6 +301,15 @@
       <textarea id="ie-desc" placeholder="What happened? What were you doing when it occurred? What did you expect to happen?"></textarea>
     </div>
 
+    <!-- Bots fill in every field they find. People never see this one, so
+         anything that arrives with it filled is discarded by the server. -->
+    <div class="ie-hp" aria-hidden="true">
+      <label for="ie-website">Website</label>
+      <input type="text" id="ie-website" name="website" tabindex="-1" autocomplete="off">
+    </div>
+
+    <p id="ie-form-status" class="ie-form-status"></p>
+
     <a class="ie-submit" id="ie-submit-btn" href="#">Submit Report</a>
   </div>
 
@@ -287,25 +317,102 @@
 </div>
 
 <script>
-  document.getElementById('ie-submit-btn').addEventListener('click', function(e) {
-    e.preventDefault();
-    var name = document.getElementById('ie-name').value || 'Not provided';
-    var email = document.getElementById('ie-email').value || 'Not provided';
-    var platform = document.getElementById('ie-platform').value || 'Not provided';
-    var category = document.getElementById('ie-category').value || 'Not provided';
-    var desc = document.getElementById('ie-desc').value || 'Not provided';
+(function () {
+  var API = 'https://esports-app-production.up.railway.app/api/support/bug-report';
 
-    var subject = encodeURIComponent('Bug Report — Insight Esports');
+  var btn = document.getElementById('ie-submit-btn');
+  var statusEl = document.getElementById('ie-form-status');
+  var sending = false;
+
+  function show(message, isError) {
+    statusEl.textContent = message;
+    statusEl.className = 'ie-form-status' + (isError ? ' ie-error' : '');
+    statusEl.style.display = 'block';
+  }
+
+  function value(id) {
+    var el = document.getElementById(id);
+    return el && el.value ? el.value.trim() : '';
+  }
+
+  // If the API can't be reached, fall back to the old mail behaviour rather
+  // than losing what the person just wrote.
+  function mailFallback(payload) {
     var body = encodeURIComponent(
-      'Name: ' + name + '\n' +
-      'Email: ' + email + '\n' +
-      'Platform: ' + platform + '\n' +
-      'Category: ' + category + '\n\n' +
-      'Description:\n' + desc
+      'Name: ' + (payload.name || 'Not provided') + '\n' +
+      'Email: ' + (payload.email || 'Not provided') + '\n' +
+      'Platform: ' + (payload.platform || 'Not provided') + '\n' +
+      'Category: ' + (payload.category || 'Not provided') + '\n\n' +
+      'Description:\n' + payload.description
     );
+    window.location.href = 'mailto:support@insightesportsapp.com'
+      + '?subject=' + encodeURIComponent('Bug Report — Insight Esports')
+      + '&body=' + body;
+  }
 
-    window.location.href = 'mailto:support@insightesportsapp.com?subject=' + subject + '&body=' + body;
+  btn.addEventListener('click', function (e) {
+    e.preventDefault();
+    if (sending) return;
+
+    var payload = {
+      name: value('ie-name'),
+      email: value('ie-email'),
+      platform: value('ie-platform'),
+      category: value('ie-category'),
+      description: value('ie-desc'),
+      website: value('ie-website')
+    };
+
+    if (payload.description.length < 10) {
+      show('Please describe what went wrong in a sentence or two.', true);
+      return;
+    }
+    if (payload.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(payload.email)) {
+      show('That email address does not look right.', true);
+      return;
+    }
+
+    sending = true;
+    btn.classList.add('ie-sending');
+    btn.textContent = 'Sending…';
+
+    var done = function () {
+      sending = false;
+      btn.classList.remove('ie-sending');
+      btn.textContent = 'Submit Report';
+    };
+
+    if (!window.fetch) { done(); mailFallback(payload); return; }
+
+    fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+      .then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (data) {
+          return { status: res.status, data: data };
+        });
+      })
+      .then(function (result) {
+        done();
+        if (result.status === 200 || result.status === 201) {
+          show("Thanks. We've got your report and we'll look into it.", false);
+          document.getElementById('ie-desc').value = '';
+          return;
+        }
+        show(
+          result.data.error || 'Something went wrong. Please email support@insightesportsapp.com.',
+          true
+        );
+      })
+      .catch(function () {
+        done();
+        show('We could not reach our servers. Opening your email app instead…', true);
+        mailFallback(payload);
+      });
   });
+})();
 </script>
 
 <script>
