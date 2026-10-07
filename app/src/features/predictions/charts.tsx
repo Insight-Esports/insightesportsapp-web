@@ -16,6 +16,13 @@ const BAR_MAX = 90;
 const LABEL_H = 14;
 const LABEL_LIMIT = 12;
 
+/** The dial shows only the percentage ("72%"), never the backend's full
+ *  sentence ("72% chance of 20+ kills") — the line is shown elsewhere. */
+function percentOnly(text: string | null, exact: number | null, confidence: number): string {
+  const m = text?.match(/~?\d+(?:\.\d+)?%/);
+  return m ? m[0] : PredictionFormat.percent(exact, confidence);
+}
+
 export function ProbabilityDial({ confidence, exact, prediction, probabilityText }: { confidence: number; exact: number | null; prediction: string; probabilityText: string | null }) {
   const pct = Math.min(0.995, (exact ?? confidence) / 100);
   const color = prediction === "LIKELY" ? "var(--success)" : prediction === "UNLIKELY" ? "var(--error)" : "var(--gold)";
@@ -28,7 +35,7 @@ export function ProbabilityDial({ confidence, exact, prediction, probabilityText
           <circle cx="75" cy="75" r={r} fill="none" stroke={color} strokeWidth="8" strokeDasharray={`${Math.max(0.003, pct) * c} ${c}`} />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-5">
-          <span className="t-score text-[34px] text-primary leading-none whitespace-nowrap">{probabilityText ?? PredictionFormat.percent(exact, confidence)}</span>
+          <span className="t-score text-[34px] text-primary leading-none whitespace-nowrap">{percentOnly(probabilityText, exact, confidence)}</span>
           <span className="text-[10px] font-semibold tracking-[0.14em] text-muted">CHANCE</span>
         </div>
       </div>

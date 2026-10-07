@@ -71,7 +71,7 @@ export function HomeScreen() {
 
   return (
     <Page>
-      <TabHeader title="Insight" tools={<HeaderTools />} />
+      <TabHeader title="Live" tools={<HeaderTools />} />
       <div className="flex flex-col gap-5 pt-2">
         <GameTabBar selected={game} onChange={setGame} liveGames={liveGames} />
 

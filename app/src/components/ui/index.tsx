@@ -155,12 +155,17 @@ export function TeamBadge({ abbreviation, color = "var(--violet)", size = 36, cl
 }
 
 /** Image with a graceful fallback (CachedAsyncImage + placeholder). */
-export function Img({ src, alt, fallback, className, style, fit = "contain" }: { src: string | null | undefined; alt: string; fallback: ReactNode; className?: string; style?: CSSProperties; fit?: "contain" | "cover" }) {
+export function Img({ src, alt, fallback, className, style, fit = "contain", lazy = false }: { src: string | null | undefined; alt: string; fallback: ReactNode; className?: string; style?: CSSProperties; fit?: "contain" | "cover"; lazy?: boolean }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
   if (!src || failed) return <>{fallback}</>;
+  // Eager by default (the app prefetches a list's pictures before showing
+  // it): logos and photos start downloading the moment the row renders
+  // rather than when the browser decides they are near the viewport. The
+  // backend serves them with a one-year immutable cache, so repeat views
+  // are instant. `lazy` is for long lists far below the fold.
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={src} alt={alt} className={className} style={{ objectFit: fit, ...style }} loading="lazy" decoding="async" onError={() => setFailed(true)} referrerPolicy="no-referrer" />;
+  return <img src={src} alt={alt} className={className} style={{ objectFit: fit, ...style }} loading={lazy ? "lazy" : "eager"} decoding="async" onError={() => setFailed(true)} referrerPolicy="no-referrer" />;
 }
 
 /** Team mark: the real logo when there is one, the colored abbreviation otherwise. */
@@ -501,7 +506,9 @@ export function HScroll({ children, className }: { children: ReactNode; classNam
 
 /** Standard page column: full-bleed on phones, max 1100px on desktop. */
 export function Page({ children, className, wide }: { children: ReactNode; className?: string; wide?: boolean }) {
-  return <div className={clsx("w-full mx-auto pb-[calc(var(--tabbar-h)+24px)] md:pb-10", wide ? "max-w-[1280px]" : "max-w-[1100px]", className)}>{children}</div>;
+  // Left-aligned against the sidebar (not centered): on wide monitors the
+  // content stays next to the menu instead of floating in the middle.
+  return <div className={clsx("w-full pb-[calc(var(--tabbar-h)+24px)] md:pb-10", wide ? "max-w-[1400px]" : "max-w-[1200px]", className)}>{children}</div>;
 }
 
 /** Two-column layout on desktop (main + rail), single column on phones. */
