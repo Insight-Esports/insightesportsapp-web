@@ -1,0 +1,218 @@
+@import "tailwindcss";
+
+/* ── Insight design tokens — a 1:1 port of Color+Brand.swift ────────────────
+   Dark only. The iOS app forces .dark; the web does the same.           */
+:root {
+  --bg: #0a0a0f;            /* insightBackground */
+  --card: #13131a;          /* insightCard       */
+  --surface: #1c1c26;       /* insightSurface    */
+
+  --violet: #7c5cfc;        /* insightViolet      */
+  --violet-light: #a78bfa;  /* insightVioletLight */
+  --violet-deep: #6d28d9;   /* violetGradient end */
+  --gold: #f5a623;          /* insightGold        */
+  --gold-deep: #d97706;
+
+  --team1: #5b7fff;         /* team1Blue   */
+  --team2: #ff6b35;         /* team2Orange */
+
+  --live: #dc2626;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --error: #ef4444;
+
+  --text-primary: #f0f0f8;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+
+  --border-subtle: rgb(124 92 252 / 0.15);
+  --border-strong: rgb(124 92 252 / 0.35);
+  --border-gold: rgb(245 166 35 / 0.30);
+  /* The ledger hairline: textMuted at 55% (the September overhaul). */
+  --hairline: rgb(107 114 128 / 0.55);
+
+  /* Per-game side colors (Components.swift) */
+  --cs-t: rgb(204 171 107);
+  --cs-ct: rgb(74 107 176);
+  --val-attack: rgb(255 71 84);
+  --val-defense: rgb(33 204 184);
+
+  --tabbar-h: 56px;
+  --sidebar-w: 224px;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-surface: var(--surface);
+  --color-violet: var(--violet);
+  --color-violet-light: var(--violet-light);
+  --color-violet-deep: var(--violet-deep);
+  --color-gold: var(--gold);
+  --color-gold-deep: var(--gold-deep);
+  --color-team1: var(--team1);
+  --color-team2: var(--team2);
+  --color-live: var(--live);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --color-primary: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-muted: var(--text-muted);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-border-gold: var(--border-gold);
+  --color-hairline: var(--hairline);
+  --color-cs-t: var(--cs-t);
+  --color-cs-ct: var(--cs-ct);
+  --color-val-attack: var(--val-attack);
+  --color-val-defense: var(--val-defense);
+
+  /* SF Pro on Apple devices (what the iOS app uses); close metric
+     fallbacks elsewhere. Scores use the heavy rounded system face. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-rounded: -apple-system, BlinkMacSystemFont, "SF Pro Rounded",
+    "Inter", "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+
+  --radius-ledger: 12px;
+}
+
+html {
+  color-scheme: dark;
+  background: var(--bg);
+}
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ── Type scale — Font+Band.swift ─────────────────────────────────────── */
+@utility t-display-lg { font-size: 40px; font-weight: 700; line-height: 1.05; }
+@utility t-display-md { font-size: 32px; font-weight: 700; line-height: 1.1; }
+@utility t-headline-lg { font-size: 24px; font-weight: 600; line-height: 1.2; }
+@utility t-headline-md { font-size: 20px; font-weight: 600; line-height: 1.25; }
+@utility t-headline-sm { font-size: 17px; font-weight: 600; line-height: 1.3; }
+@utility t-body-lg { font-size: 16px; font-weight: 400; line-height: 1.4; }
+@utility t-body-md { font-size: 14px; font-weight: 400; line-height: 1.4; }
+@utility t-body-sm { font-size: 13px; font-weight: 400; line-height: 1.4; }
+@utility t-label-lg { font-size: 14px; font-weight: 500; line-height: 1.3; }
+@utility t-label-md { font-size: 12px; font-weight: 500; line-height: 1.3; }
+@utility t-label-sm { font-size: 11px; font-weight: 500; line-height: 1.3; }
+@utility t-mono-lg { font-family: var(--font-mono); font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+@utility t-mono-md { font-family: var(--font-mono); font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; }
+@utility t-mono-sm { font-family: var(--font-mono); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+/* Kicker: 11pt semibold, +1.4 tracking, uppercase, muted (FilterRow title) */
+@utility t-kicker { font-size: 11px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+/* Scoreboard digits: heavy + rounded + tabular (Font.score) */
+@utility t-score { font-family: var(--font-rounded); font-weight: 900; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+/* ── Ledger: the app's one container. Hairline border, 12pt radius,
+      striped rows (card / surface@50%), hairline between rows. ───────── */
+@utility ledger {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-ledger);
+  overflow: hidden;
+  background: var(--card);
+}
+@utility ledger-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  min-height: 48px;
+}
+@utility ledger-stripe {
+  & > * + * { border-top: 1px solid var(--border-subtle); }
+  & > *:nth-child(even) { background: color-mix(in srgb, var(--surface) 50%, transparent); }
+}
+@utility hairline-b { border-bottom: 1px solid var(--border-subtle); }
+@utility hairline-t { border-top: 1px solid var(--border-subtle); }
+
+/* Brand gradient text ("Insight" wordmark) */
+@utility text-brand-gradient {
+  background: linear-gradient(90deg, #7c5cfc, #a78bfa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@utility bg-violet-gradient { background: linear-gradient(135deg, #7c5cfc, #6d28d9); }
+@utility bg-gold-gradient { background: linear-gradient(135deg, #f5a623, #d97706); }
+
+/* The 2pt violet rule the app draws under titles and selected tabs */
+@utility violet-rule {
+  display: block;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--violet);
+}
+
+/* Pill button (primary) */
+@utility btn-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--violet);
+  transition: filter 120ms ease, opacity 120ms ease;
+  &:hover { filter: brightness(1.08); }
+  &:active { filter: brightness(0.95); }
+  &:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
+}
+@utility btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  border: 1px solid var(--hairline);
+  background: transparent;
+  transition: background 120ms ease;
+  &:hover { background: var(--card); }
+  &:disabled { opacity: 0.45; cursor: not-allowed; }
+}
+
+/* Inputs (InsightTextField) */
+@utility field {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--card);
+  border: 1px solid var(--border-subtle);
+  color: #fff;
+  font-size: 16px;
+  outline: none;
+  &:focus-within { border-color: var(--border-strong); }
+  & input { background: transparent; border: 0; outline: none; width: 100%; color: #fff; font-size: 16px; }
+  & input::placeholder { color: var(--text-muted); }
+}
+
+/* Live dot pulse */
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.live-dot { animation: live-pulse 1.8s ease-in-out infinite; }
+
+/* Thin, quiet scrollbars for horizontal chip strips */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+* { -webkit-tap-highlight-color: transparent; }
+button { cursor: pointer; }
+a { color: inherit; text-decoration: none; }
