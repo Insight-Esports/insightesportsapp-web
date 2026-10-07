@@ -1,0 +1,13 @@
+# Railway service for the web version of the Insight app.
+# Create the service from this repo with Root Directory = app, then set the
+# env vars from .env.example (API_BASE_URL, APP_API_KEY, ALLOWED_EMAIL_DOMAIN,
+# NEXT_PUBLIC_SOCKET_URL) in the service's Variables tab.
+[build]
+builder = "NIXPACKS"
+buildCommand = "npm ci && npm run build"
+
+[deploy]
+startCommand = "npm start -- -p ${PORT:-3000}"
+healthcheckPath = "/login"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
