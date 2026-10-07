@@ -56,7 +56,9 @@ app.get("/status", (_req, res) => res.json({
   maintenance: { active: process.env.MOCK_MAINTENANCE === "1", message: null, eta: null },
   update: { min_version: "0.0.0", latest_version: "1.0.0", message: null },
   banner: process.env.MOCK_BANNER ?? null,
-  features: {},
+  // DM attachments are flag-gated (dm_media photos, dm_video videos); both on
+  // here so the composer's attach button shows. MOCK_DM_VIDEO=off to test the gate.
+  features: { dm_media: { mode: "on" }, dm_video: { mode: process.env.MOCK_DM_VIDEO ?? "on" } },
 }));
 app.get("/health", (_req, res) => res.json({ ok: true }));
 

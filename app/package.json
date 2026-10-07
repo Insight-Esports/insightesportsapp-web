@@ -12,7 +12,10 @@
     "start:mock": "API_BASE_URL=http://localhost:4000/api NEXT_PUBLIC_SOCKET_URL=http://localhost:4000 next start"
   },
   "dependencies": {
+    "@noble/curves": "^2.4.0",
+    "@noble/hashes": "^2.4.0",
     "clsx": "^2.1.1",
+    "jsqr": "^1.4.0",
     "lucide-react": "^1.52.0",
     "next": "16.4.0",
     "react": "19.3.0",

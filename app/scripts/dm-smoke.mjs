@@ -1,0 +1,37 @@
+// Drives the DM flow against the mock: link via the mock key, inbox, open a thread, send a message, wait for the canned reply.
+import { chromium } from "playwright";
+const base = process.env.BASE_URL ?? "http://localhost:3100";
+const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-proxy-server"] });
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: "dark" });
+const page = await ctx.newPage();
+const errors = [];
+page.on("pageerror", (e) => errors.push("pageerror: " + e.message));
+page.on("console", (m) => { if (m.type() === "error") errors.push("console: " + m.text().slice(0, 200)); });
+await ctx.request.post(base + "/api/auth/login", { data: { email: "ivan@insightesportsapp.com", password: "insight" } });
+await page.goto(base + "/messages", { waitUntil: "load" });
+await page.waitForTimeout(1500);
+await page.screenshot({ path: "/tmp/shots/dm_unlinked.png" });
+await page.goto(base + "/messages/link", { waitUntil: "load" });
+await page.waitForTimeout(800);
+await page.screenshot({ path: "/tmp/shots/dm_link.png" });
+const payload = (await (await fetch("http://localhost:4000/mock/dm/link-payload")).json()).payload;
+await page.getByText("Paste code").click();
+await page.locator("textarea").fill(payload);
+await page.getByRole("button", { name: "Link" }).click();
+await page.waitForTimeout(2500);
+await page.screenshot({ path: "/tmp/shots/dm_linked.png" });
+await page.waitForURL("**/messages", { timeout: 8000 }).catch(() => {});
+await page.waitForTimeout(2000);
+await page.screenshot({ path: "/tmp/shots/dm_inbox.png" });
+// open first conversation
+await page.getByText("tarik", { exact: true }).first().click();
+await page.waitForTimeout(2500);
+await page.screenshot({ path: "/tmp/shots/dm_thread.png", fullPage: false });
+const ta = page.locator("textarea").first();
+await ta.fill("Testing from the web — this is encrypted end to end");
+await ta.press("Enter");
+await page.waitForTimeout(7000);
+await page.screenshot({ path: "/tmp/shots/dm_thread_after.png" });
+console.log("text present:", await page.getByText("Testing from the web").count());
+console.log(errors.length ? "ERRORS:\n" + errors.join("\n") : "no console errors");
+await browser.close();

@@ -14,7 +14,8 @@ import { useFetch } from "@/lib/use-fetch";
 import { normalizeUser, gameLabel, type Json } from "@/lib/types";
 import { clsx, formatDate } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
-import { AssetIcon, ConfirmDialog, EmptyState, GamePill, InitialAvatar, Ledger, LedgerRow, LoadFailure, Page, SkeletonBar, Toast, ToolButton } from "@/components/ui";
+import { AssetIcon, ConfirmDialog, EmptyState, GamePill, InitialAvatar, Ledger, LedgerRow, LoadFailure, Page, SkeletonBar, Spinner, Toast, ToolButton } from "@/components/ui";
+import { startConversation, startConversationMessage } from "@/features/messages/start-conversation";
 import { FollowButton } from "./FollowButton";
 import {
   activityFromNotifications, compactLabel, normalizeFollowedEntities, normalizePredictionStats, normalizePublicProfile,
@@ -92,12 +93,7 @@ export function ProfileDetail({ userId = null }: { userId?: string | null }) {
           <div className="min-w-0 flex flex-col gap-5">
             <ProfileHeader profile={data.profile} isOwnProfile={isOwn} />
 
-            {!isOwn ? (
-              <Link href="/messages" className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-card border border-border-subtle text-primary t-label-md hover:bg-surface/60 transition-colors">
-                <AssetIcon name="messages" height={15} />
-                Message
-              </Link>
-            ) : null}
+            {!isOwn ? <MessageButton userId={data.profile.id} onError={(m) => say(m, "error")} /> : null}
 
             <ProfileStatStrip profile={data.profile} />
             <PredictionStatsCard profile={data.profile} />
@@ -315,6 +311,29 @@ function ActivityFeed({ items }: { items: ProfileActivity[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Message (POST /dm/conversations → the thread) ─────────────────────────
+function MessageButton({ userId, onError }: { userId: string; onError: (message: string) => void }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const row = await startConversation(userId);
+      router.push(`/messages/${encodeURIComponent(row.id)}`);
+    } catch (e) {
+      onError(startConversationMessage(e));
+      setBusy(false);
+    }
+  };
+  return (
+    <button type="button" onClick={() => void go()} disabled={busy} className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-card border border-border-subtle text-primary t-label-md hover:bg-surface/60 transition-colors disabled:opacity-60">
+      {busy ? <Spinner size={14} /> : <AssetIcon name="messages" height={15} />}
+      Message
+    </button>
   );
 }
 

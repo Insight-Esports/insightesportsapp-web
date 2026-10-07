@@ -283,4 +283,20 @@ export const endpoints = {
   dmConversations: (before?: string | null) => `/dm/conversations?limit=50${before ? `&before=${q(before)}` : ""}`,
   dmUnreadCount: "/dm/unread-count",
   dmSettings: "/dm/settings",
+  dmPublishKey: "/dm/keys",
+  dmKey: (userId: string, version?: number | null) => `/dm/keys/${p(userId)}${version != null ? `?version=${version}` : ""}`,
+  dmCreateConversation: "/dm/conversations",
+  dmMessages: (conversationId: string, before?: string | null, beforeId?: string | null) => {
+    let s = `/dm/conversations/${p(conversationId)}/messages?limit=50`;
+    if (before) s += `&before=${q(before)}`;
+    if (beforeId) s += `&before_id=${q(beforeId)}`;
+    return s;
+  },
+  dmSend: (conversationId: string) => `/dm/conversations/${p(conversationId)}/messages`,
+  dmRead: (conversationId: string) => `/dm/conversations/${p(conversationId)}/read`,
+  dmRemove: (conversationId: string) => `/dm/conversations/${p(conversationId)}`,
+  dmBlock: "/dm/blocks",
+  dmUnblock: (userId: string) => `/dm/blocks/${p(userId)}`,
+  dmUploadCreate: "/dm/uploads",
+  dmUpload: (id: string) => `/dm/uploads/${p(id)}`,
 };

@@ -1,8 +1,9 @@
-// /messages — placeholder for MessagesInboxView (E2E DMs stay in the app).
+// /messages — MessagesInboxView. The inbox itself lives in the layout's
+// shell; this page fills the thread pane with "Select a conversation".
 "use client";
 
-import { MessagesPlaceholder } from "@/features/messages/MessagesPlaceholder";
+import { ThreadPlaceholder } from "@/features/messages/MessagesShell";
 
 export default function MessagesPage() {
-  return <MessagesPlaceholder />;
+  return <ThreadPlaceholder />;
 }

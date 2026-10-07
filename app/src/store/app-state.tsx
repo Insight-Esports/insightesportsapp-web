@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { api, endpoints, onApiEvent, setCachedPremium } from "@/lib/api";
 import { normalizeUser, type AppStatus, type InsightUser } from "@/lib/types";
 import { resetSocket } from "@/lib/socket";
+import { currentLinkState, forgetKeyState, startDM, subscribeUnread as subscribeDMUnread } from "@/features/messages/service";
 
 export type ProfileRoute = "profile" | "messages" | "leaderboard" | "weeklyReport" | "settings" | "premium";
 
@@ -77,6 +78,7 @@ export function AppStateProvider({ children, initialUser = null }: { children: R
   const logout = useCallback(async () => {
     try { await fetch("/api/auth/logout", { method: "POST" }); } catch { /* ignore */ }
     await resetSocket();
+    forgetKeyState();   // the linked key stays in IndexedDB (like the Keychain); only memory is cleared
     setUser(null);
     setProfilePanelOpen(false);
     router.replace("/login");
@@ -99,11 +101,23 @@ export function AppStateProvider({ children, initialUser = null }: { children: R
       const n = await api.get<{ count?: number; unread?: number }>(endpoints.notificationsUnreadCount);
       setUnreadNotifications(Number(n?.count ?? n?.unread ?? 0));
     } catch { /* ignore */ }
+    // DMs: the service's ledger-aware count (unread conversations) when the
+    // browser is linked; the server's raw count otherwise.
+    const link = currentLinkState().kind;
+    if (link === "linked" || link === "stale") return;
     try {
-      const d = await api.get<{ count?: number; unread?: number }>(endpoints.dmUnreadCount);
-      setUnreadDMs(Number(d?.count ?? d?.unread ?? 0));
+      const d = await api.get<{ unread_count?: number; count?: number; unread?: number }>(endpoints.dmUnreadCount);
+      setUnreadDMs(Number(d?.unread_count ?? d?.count ?? d?.unread ?? 0));
     } catch { /* ignore */ }
   }, []);
+
+  // DMService.publishKeyIfNeeded + DMSocketHolder.ensureConnected: once per
+  // signed-in user, start the personal socket relay and the unread store.
+  useEffect(() => {
+    if (!user) return;
+    void startDM(user.id);
+    return subscribeDMUnread((n) => setUnreadDMs(n));
+  }, [user?.id]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Launch: validate the session (AppState.checkAuthStatus) + /status.
   useEffect(() => {

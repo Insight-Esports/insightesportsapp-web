@@ -116,14 +116,32 @@ PORTING.md             the iOS → web porting contract (read before adding scre
 | NotificationsView | `/notifications` |
 | LeaderboardView | `/leaderboard` |
 | LoginView / ForgotPassword / ResetPassword / VerifyEmail | `/login`, `/forgot-password`, `/verify-email` |
-| MessagesView (DMs) | `/messages` — placeholder (see below) |
+| MessagesView (DMs, end-to-end encrypted) | `/messages`, `/messages/[id]`, `/messages/new`, `/messages/link` |
+
+## Direct messages on the web (linked device)
+
+DMs are end-to-end encrypted and the backend encrypts each message to ONE
+recipient key version, so a browser must use the *phone's* key rather than
+minting its own (that would cut the phone off). The web therefore works like
+WhatsApp Web:
+
+1. In the iOS app: Settings → Messages → **Link web** shows the key as a QR
+   code (`ios/LinkWebView.swift` in this folder is that screen — add it to
+   the Xcode target and the one `NavigationLink` the file's header describes).
+2. On the web: Messages → **Link this browser** scans it with the webcam (or
+   you paste the code). The browser checks the key against `GET /dm/keys/:me`
+   and stores it in IndexedDB. Nothing is published; the server never sees it.
+3. From then on `/messages` is the full app experience: inbox with previews
+   and unread dots, threads with read receipts and typing, links as cards,
+   encrypted photos/videos (upload + decrypt in the browser), block / remove,
+   new message with people search. Crypto lives in
+   `src/features/messages/crypto.ts` (X25519 + HKDF via `@noble`, AES-GCM via
+   WebCrypto) and matches `DirectMessages.swift` byte for byte.
+
+If the phone ever rotates its key, the inbox shows a "relink" banner.
 
 ## Intentionally not ported (iOS-only)
 
-- **Direct messages.** The app's DMs are end-to-end encrypted with keys that
-  live in the iPhone's Keychain; a browser has no access to them. `/messages`
-  explains this and shows the unread count. Porting would need a web key
-  pair per browser plus multi-device key support on the backend.
 - **StoreKit purchases.** On the web, `/premium/upgrade` shows the same
   plans/copy and goes through the backend's Stripe routes instead
   (`POST /payments/checkout` hosted checkout, `POST /payments/portal` to
@@ -139,4 +157,5 @@ npx tsc --noEmit
 npx eslint src
 npm run build
 node scripts/shot-all.mjs   # screenshots every route (needs mock + server on :3100)
+node scripts/dm-smoke.mjs   # links with the mock key, opens a thread, sends a message
 ```
