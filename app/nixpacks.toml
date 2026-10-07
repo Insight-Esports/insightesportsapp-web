@@ -1,0 +1,3 @@
+# Next.js 16 needs Node >= 20.9; Nixpacks defaults to 18 unless told otherwise.
+[variables]
+NIXPACKS_NODE_VERSION = "22"
