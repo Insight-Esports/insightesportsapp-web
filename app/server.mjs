@@ -52,6 +52,15 @@ app.prepare().then(() => {
   createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const p = url.pathname;
+    const host = (req.headers.host ?? "").toLowerCase();
+    // On the app subdomain (app.insightesportsapp.com, the Railway domain),
+    // the app is the whole site: root URLs go to /app/… instead of the
+    // marketing pages.
+    if (!host.startsWith("insightesportsapp.com") && !host.startsWith("www.") && p !== basePath && !p.startsWith(basePath + "/") && !p.startsWith("/_next/")) {
+      res.writeHead(302, { Location: `${basePath}${p === "/" ? "" : p}${url.search}` });
+      res.end();
+      return;
+    }
     if (p !== basePath && !p.startsWith(basePath + "/")) {
       const file = siteFile(p);
       if (file && serveFile(res, file)) return;
