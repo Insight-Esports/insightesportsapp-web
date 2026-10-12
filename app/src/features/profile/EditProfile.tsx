@@ -15,6 +15,8 @@ import { normalizeUser } from "@/lib/types";
 import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
 import { Img, InitialAvatar, Page, Spinner } from "@/components/ui";
+import { NavBar } from "@/components/shell/NavBar";
+import { withBase } from "@/lib/base-path";
 
 const ALLOWED = /^[A-Za-z0-9_]+$/;
 
@@ -56,7 +58,7 @@ export function EditProfile() {
       if (picked) {
         const fd = new FormData();
         fd.append("file", picked, picked.name || "avatar.jpg");
-        const r = await fetch("/api/avatar", { method: "POST", body: fd, credentials: "same-origin" });
+        const r = await fetch(withBase("/api/avatar"), { method: "POST", body: fd, credentials: "same-origin" });
         if (!r.ok) {
           const j = await r.json().catch(() => ({}));
           throw new ApiError(r.status, j?.message ?? j?.error ?? "Couldn't upload the image. Please try again.", j?.code ?? null);
@@ -88,13 +90,11 @@ export function EditProfile() {
   return (
     <Page>
       <form onSubmit={save} className="max-w-xl mx-auto">
-        <div className="flex items-center gap-3 px-4 pt-3 pb-2 hairline-b">
-          <button type="button" onClick={() => router.back()} className="t-label-lg text-secondary hover:text-primary">Cancel</button>
-          <span className="t-headline-sm text-primary flex-1 text-center">Edit Profile</span>
-          <button type="submit" disabled={!canSave || saving} className={clsx("t-label-lg min-w-12 text-right", canSave ? "text-violet" : "text-muted", "disabled:cursor-not-allowed")}>
-            {saving ? <Spinner size={16} className="inline-block" /> : "Save"}
-          </button>
-        </div>
+        <NavBar
+          title="Edit Profile"
+          leading={<button type="button" onClick={() => router.back()} className="t-label-lg text-violet md:text-secondary md:hover:text-primary px-3 md:px-0">Cancel</button>}
+          trailing={<button type="submit" disabled={!canSave || saving} className={clsx("t-label-lg min-w-12 text-right", canSave ? "text-violet" : "text-muted", "disabled:cursor-not-allowed")}>{saving ? <Spinner size={16} className="inline-block" /> : "Save"}</button>}
+        />
 
         <div className="flex flex-col gap-7 pt-5 px-4">
           {/* Avatar */}

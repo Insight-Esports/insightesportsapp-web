@@ -39,6 +39,7 @@ export function useTeamRecentGames(teamId: string, game: string | null) {
   useEffect(() => {
     let active = true;
     setLoaded(false); setRows([]); setReachedEnd(false);
+    if (!teamId) { setLoaded(true); setReachedEnd(true); return; }   // idle (the page owns the real pager)
     inFlight.current = true;
     api.get(endpoints.completedMatches(game, PAGE_SIZE, 0, teamId))
       .then((raw) => {
@@ -71,8 +72,11 @@ export function useTeamRecentGames(teamId: string, game: string | null) {
   return { rows, loaded, loadingMore, reachedEnd, loadMore };
 }
 
-export function TeamRecentGamesList({ teamId, game, perspective, title = "Recent Games", onRows }: { teamId: string; game: string | null; perspective: RecentGamesPerspective; title?: string; onRows?: (rows: Match[]) => void }) {
-  const pager = useTeamRecentGames(teamId, game);
+/** The list owns its pager unless the page passes one in (TeamDetail does,
+ *  so it can hold the whole screen until the first page is in). */
+export function TeamRecentGamesList({ teamId, game, perspective, title = "Recent Games", onRows, pager: external }: { teamId: string; game: string | null; perspective: RecentGamesPerspective; title?: string; onRows?: (rows: Match[]) => void; pager?: ReturnType<typeof useTeamRecentGames> }) {
+  const own = useTeamRecentGames(external ? "" : teamId, game);
+  const pager = external ?? own;
   const sentinel = useLoadMore(pager.loadMore, pager.loaded && !pager.reachedEnd && !pager.loadingMore);
   const onRowsRef = useRef(onRows);
   onRowsRef.current = onRows;

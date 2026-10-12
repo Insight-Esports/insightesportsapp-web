@@ -5,11 +5,14 @@
 // 3. Stores the Supabase access/refresh tokens in httpOnly cookies.
 import { NextResponse } from "next/server";
 import { callBackend, jsonOf } from "@/lib/server/backend";
-import { writeSession, isAllowedEmail, emailFromToken } from "@/lib/server/session";
+import { writeSession, isAllowedEmail, emailFromToken, gatePassed } from "@/lib/server/session";
 import { serverConfig } from "@/lib/server/config";
 import { normalizeUser } from "@/lib/types";
 
 export async function POST(req: Request) {
+  if (!(await gatePassed())) {
+    return NextResponse.json({ error: "Sign in with your Insight team Google account first.", code: "GATE_REQUIRED" }, { status: 403 });
+  }
   let body: { email?: string; password?: string };
   try {
     body = await req.json();

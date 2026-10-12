@@ -13,7 +13,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Bookmark, BookmarkX, ChevronLeft, ChevronRight, CirclePlus, Trash2 } from "lucide-react";
 import { api, ApiError, endpoints } from "@/lib/api";
 import { clsx } from "@/lib/format";
-import { AssetIcon, ConfirmDialog, FilterSegment, Img, Page, Spinner } from "@/components/ui";
+import { AssetIcon, ConfirmDialog, FilterSegment, Img, Page, SkeletonLedger, Spinner } from "@/components/ui";
+import { SkeletonReport } from "@/components/ui/skeletons";
+import { NavBar } from "@/components/shell/NavBar";
+import { useReveal } from "@/lib/use-reveal";
 import { PremiumGate } from "@/features/premium/PremiumGate";
 import { normalizeLatest, normalizeReport, normalizeReports, placeArticles, publishedLabel, reportStory, weekLabel, type ReportArticle, type WeeklyReport } from "./types";
 
@@ -30,20 +33,23 @@ export function WeeklyReportScreen() {
   const openSaved = (id: string) => router.push(`/weekly-report?tab=saved&id=${encodeURIComponent(id)}`);
   const selectedSaved = savedId ? vm.saved.find((r) => r.id === savedId) ?? null : null;
 
+  // Latest + saved land together (and the report's article thumbnails warm)
+  // before either column shows — the 5-15 s generating state is its own thing.
+  const revealed = useReveal(vm.isLoading, () => (vm.current?.articles ?? []).map((a) => a.imageURL));
+
   const thisWeek = (
     <PremiumGate feature="weeklyReport">
-      <CurrentReport vm={vm} />
+      <CurrentReport vm={vm} revealed={revealed} />
     </PremiumGate>
   );
-  const savedList = <SavedList reports={vm.saved} onOpen={openSaved} selectedId={savedId} />;
+  const savedList = revealed
+    ? <SavedList reports={vm.saved} onOpen={openSaved} selectedId={savedId} />
+    : <div className="px-4 lg:px-0 pt-3 lg:pt-0"><SkeletonLedger rows={5} avatar={0} /></div>;
   const savedDetail = selectedSaved ? <SavedReportDetail report={selectedSaved} vm={vm} onBack={() => setTab("saved")} /> : null;
 
   return (
     <Page wide>
-      <div className="flex items-center gap-2 px-3 pt-3">
-        <button type="button" onClick={() => router.back()} aria-label="Back" className="grid place-items-center size-8 rounded-lg text-secondary hover:text-primary hover:bg-card"><ChevronLeft size={20} /></button>
-        <span className="t-headline-sm text-primary">Weekly Report</span>
-      </div>
+      <NavBar title="Weekly Report" />
 
       {/* Phones / tablets: the segmented toggle. */}
       <div className="lg:hidden flex flex-col">
@@ -66,9 +72,10 @@ export function WeeklyReportScreen() {
 }
 
 // ── This week ─────────────────────────────────────────────────────────────
-function CurrentReport({ vm }: { vm: ReturnType<typeof useWeeklyReport> }) {
+function CurrentReport({ vm, revealed }: { vm: ReturnType<typeof useWeeklyReport>; revealed: boolean }) {
   const r = vm.current;
   if (vm.isGenerating) {
+    // The real 5-15 second Claude wait — an honest, calm progress state (the app's generatingState).
     return (
       <div className="flex flex-col items-center gap-3.5 py-20 px-11 text-center">
         <Spinner size={26} />
@@ -77,8 +84,8 @@ function CurrentReport({ vm }: { vm: ReturnType<typeof useWeeklyReport> }) {
       </div>
     );
   }
-  if (vm.isLoading && !r) {
-    return <div className="flex flex-col items-center gap-4 py-20"><Spinner /><span className="t-body-md text-muted">Loading your report…</span></div>;
+  if (!revealed) {
+    return <div className="px-4 lg:px-0"><SkeletonReport /></div>;
   }
   if (!r) {
     return (

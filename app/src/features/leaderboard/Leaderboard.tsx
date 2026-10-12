@@ -7,13 +7,15 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, Minus, Triangle } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { Minus, Triangle } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { bool, int, str, type Json } from "@/lib/types";
 import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
-import { CrownBadge, EmptyState, FilterSegment, InitialAvatar, LoadFailure, Page, SkeletonBar, Spinner } from "@/components/ui";
+import { CrownBadge, EmptyState, FilterSegment, InitialAvatar, LoadFailure, Page, Spinner } from "@/components/ui";
+import { SkeletonLeaderboard } from "@/components/ui/skeletons";
+import { NavBar } from "@/components/shell/NavBar";
+import { useReveal } from "@/lib/use-reveal";
 
 export interface LeaderboardEntry {
   id: string;
@@ -40,7 +42,6 @@ function monthFraming() {
 }
 
 export function Leaderboard() {
-  const router = useRouter();
   const { user, status } = useAppState();
   const [period, setPeriod] = useState<Period>("monthly");
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -115,6 +116,11 @@ export function Leaderboard() {
     } catch { /* keep what we have */ } finally { setLoadingMore(false); }
   }
 
+  // LeaderboardView: the board (and your own row) land, the first page's
+  // avatars warm, then podium + rows appear together. Period switches clear
+  // the board and start again.
+  const revealed = useReveal(loading, () => [...entries.map((e) => e.avatarURL), myRow?.avatarURL]);
+
   const podium = entries.slice(0, 3);
   const rest = entries.slice(3);
   const framing = useMemo(() => monthFraming(), []);
@@ -127,10 +133,7 @@ export function Leaderboard() {
 
   return (
     <Page>
-      <div className="flex items-center gap-2 px-4 pt-3 pb-2 hairline-b">
-        <button type="button" onClick={() => router.back()} aria-label="Back" className="grid place-items-center size-8 -ml-2 text-secondary hover:text-primary md:hidden"><ChevronLeft size={20} /></button>
-        <span className="t-headline-sm text-primary flex-1">Leaderboard</span>
-      </div>
+      <NavBar title="Leaderboard" hideBackOnDesktop />
 
       <div className="px-4 pt-3 max-w-3xl flex flex-col gap-3">
         <FilterSegment options={PERIODS} value={period} onChange={setPeriod} />
@@ -144,8 +147,8 @@ export function Leaderboard() {
 
         {featureOff ? (
           <EmptyState className="!mx-0 mt-6" title="Temporarily unavailable" subtitle={featureMessage ?? "This feature is temporarily unavailable."} actionTitle="Try again" onAction={() => setTick((t) => t + 1)} />
-        ) : loading ? (
-          <LeaderboardSkeleton />
+        ) : !revealed ? (
+          <SkeletonLeaderboard />
         ) : error ? (
           <LoadFailure error={error} connectionProblem={connectionProblem} onRetry={() => setTick((t) => t + 1)} />
         ) : entries.length === 0 ? (
@@ -172,7 +175,7 @@ export function Leaderboard() {
         )}
       </div>
 
-      {myRow && !me ? (
+      {revealed && myRow && !me ? (
         <div className="fixed bottom-[calc(var(--tabbar-h)+12px)] md:bottom-5 inset-x-4 md:left-[calc(var(--sidebar-w)+16px)] md:right-auto md:w-[min(720px,calc(100vw-var(--sidebar-w)-32px))] z-20">
           <YourRankBar entry={myRow} />
         </div>
@@ -242,21 +245,5 @@ function YourRankBar({ entry }: { entry: LeaderboardEntry }) {
       <span className="flex flex-col flex-1"><span className="t-body-md text-primary">You</span></span>
       <span className="t-mono-md text-primary">{entry.points} pts</span>
     </Link>
-  );
-}
-
-function LeaderboardSkeleton() {
-  return (
-    <div className="flex flex-col">
-      {Array.from({ length: 10 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 py-3">
-          <SkeletonBar width={28} height={14} />
-          <span className="size-11 rounded-full bg-surface shrink-0" />
-          <SkeletonBar width={120} height={12} />
-          <span className="flex-1" />
-          <SkeletonBar width={50} height={12} />
-        </div>
-      ))}
-    </div>
   );
 }

@@ -6,13 +6,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Page, SkeletonStatRow, SplitLayout } from "@/components/ui";
+import { Page, SplitLayout } from "@/components/ui";
 import { api, endpoints } from "@/lib/api";
 import { team1Color, team2Color, type Json, type Match } from "@/lib/types";
+import { useReveal } from "@/lib/use-reveal";
 import { FollowTeamsRow } from "./FollowTeams";
 import { GoldChart } from "./GoldChart";
 import { MatchTitleStrip } from "./LiveMatchScreen";
 import { MatchCommentsSection } from "./MatchComments";
+import { MatchMainSkeleton, MatchRailSkeleton } from "./MatchSkeleton";
 import { LeagueObjectives, RoundTracker, ScoreHUD, StatsTableSection } from "./sections";
 import { formatGameTime, isRoundBasedGame, mapTeamRows, normalizeMatchDetail, normalizeStatRows, splitStatRows, viewerLabel, type GoldTimelinePoint, type LeagueObjective, type LivePlayerStat, type LiveRound } from "./types";
 
@@ -116,6 +118,12 @@ export function CompletedMatchScreen({ match }: { match: Match }) {
   const c2 = team2Color(match);
   const winnerSide: 1 | 2 | null = vm.team1Score > vm.team2Score ? 1 : vm.team2Score > vm.team1Score ? 2 : null;
 
+  // Detail + stats land, the scoreboard's faces warm, THEN the screen appears.
+  const revealed = useReveal(vm.loading, () => [
+    match.team1LogoURL, match.team2LogoURL,
+    ...vm.team1Stats.map((s) => s.imageURL), ...vm.team2Stats.map((s) => s.imageURL),
+  ]);
+
   const main = (
     <div className="flex flex-col gap-4">
       <ScoreHUD
@@ -131,9 +139,7 @@ export function CompletedMatchScreen({ match }: { match: Match }) {
         winnerSide={winnerSide}
       />
       <FollowTeamsRow match={match} team1Id={vm.team1Id} team2Id={vm.team2Id} />
-      {vm.loading ? (
-        <SkeletonStatRow columns={4} />
-      ) : isRoundBased ? (
+      {isRoundBased ? (
         <RoundTracker team1Color={c1} team2Color={c2} rounds={vm.rounds} isComplete />
       ) : (
         <>
@@ -148,7 +154,9 @@ export function CompletedMatchScreen({ match }: { match: Match }) {
   return (
     <Page wide>
       <MatchTitleStrip match={match} isComplete />
-      <SplitLayout main={main} rail={<MatchCommentsSection matchId={match.id} />} />
+      {revealed
+        ? <SplitLayout main={main} rail={<MatchCommentsSection matchId={match.id} />} />
+        : <SplitLayout main={<MatchMainSkeleton variant="completed" />} rail={<MatchRailSkeleton variant="completed" />} />}
     </Page>
   );
 }

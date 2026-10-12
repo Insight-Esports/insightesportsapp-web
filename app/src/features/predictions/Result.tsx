@@ -14,11 +14,12 @@ import { clsx } from "@/lib/format";
 import { gameLabel } from "@/lib/types";
 import { useAppState } from "@/store/app-state";
 import { FilterSegment } from "@/components/ui";
+import { SkeletonPredictionResult } from "@/components/ui/skeletons";
 import { PredictScreen } from "./PredictScreen";
 import { flowHref, qs, readDirection, readNumber, readTarget, targetParams, PREDICT_BASE } from "./flow";
 import { BreakdownPanel } from "./Breakdown";
 import { GamesBars, GamesCard, GamesLegend, ProbabilityDial } from "./charts";
-import { AccentRead, Caps, Disclaimer, FlowError, LoadingLine, NoteCard, Section, StatRow, StepHeader, WarningCard, type Cell } from "./shared";
+import { AccentRead, Caps, Disclaimer, FlowError, NoteCard, Section, StatRow, StepHeader, WarningCard, type Cell } from "./shared";
 import { normalizePrediction, PredictionFormat, PredictionStatCatalog, projectionLabel, type OutlierItem, type PredictionGame, type PredictionResponse } from "./types";
 
 const WINDOW_OPTIONS = [10, 15, 25]; // must match backend VALID_WINDOWS
@@ -101,7 +102,9 @@ export function ResultScreen() {
         {limitReached ? (
           <FlowError title="You've used today's free predictions." detail="Insight Pro removes the daily limit." icon={<Hourglass />} />
         ) : loading ? (
-          <LoadingLine text="Crunching the numbers…" />
+          // The result's own silhouette (dial only when a line was set) — the
+          // app's "Crunching the numbers…" wait, drawn as the shape to come.
+          <SkeletonPredictionResult dial={baseline != null} />
         ) : error ? (
           <ResultError message={error} targetName={t.targetName} isLive={t.isLive} />
         ) : result ? (
@@ -115,7 +118,7 @@ export function ResultScreen() {
   // Wide screens: the result beside the target's full breakdown.
   return (
     <PredictScreen title="Prediction" back={`${PREDICT_BASE}/stat${qs({ ...targetParams(t), stat, baseline, direction: baseline != null ? direction : null })}`} wide>
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)] pt-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)] pt-2">
         <div className="min-w-0">{main}</div>
         {!t.isLive ? (
           <aside className="hidden xl:block min-w-0 border-l border-border-subtle">

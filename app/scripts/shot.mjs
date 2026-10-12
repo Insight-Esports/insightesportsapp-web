@@ -4,7 +4,7 @@
 import { chromium } from "playwright";
 
 const [route = "/", out = "shot.png", w = "1280", hgt = "900", full = "1", settle = "1500"] = process.argv.slice(2);
-const base = process.env.BASE_URL ?? "http://localhost:3100";
+const base = process.env.BASE_URL ?? "http://localhost:3100/app";
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH || "/opt/pw-browsers/chromium",
   args: ["--no-proxy-server", "--disable-background-networking", "--disable-component-update", "--disable-sync", "--no-first-run"],

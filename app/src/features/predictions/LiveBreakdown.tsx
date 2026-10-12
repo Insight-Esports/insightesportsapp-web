@@ -13,7 +13,8 @@ import { api, endpoints, errorMessage } from "@/lib/api";
 import { clsx } from "@/lib/format";
 import { int, normalizeMatches, str, team1Color, team2Color, type Json, type Match } from "@/lib/types";
 import { useInterval } from "@/lib/use-fetch";
-import { LiveBadge, Spinner, TeamMark } from "@/components/ui";
+import { LiveBadge, TeamMark } from "@/components/ui";
+import { SkeletonLiveBreakdown } from "@/components/ui/skeletons";
 import { PredictScreen } from "./PredictScreen";
 import { flowHref, readGame } from "./flow";
 import { Caps, Disclaimer, FlowError, Section, StatRow, StripedTable, type Cell } from "./shared";
@@ -183,7 +184,7 @@ export function LiveBreakdownScreen() {
 
         <div className="px-4 flex flex-col gap-4">
           {loading && !state?.row ? (
-            <div className="flex justify-center py-16"><Spinner /></div>
+            <SkeletonLiveBreakdown />
           ) : error ? (
             <FlowError title={error} />
           ) : state?.row ? (

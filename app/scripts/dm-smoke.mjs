@@ -1,6 +1,6 @@
 // Drives the DM flow against the mock: link via the mock key, inbox, open a thread, send a message, wait for the canned reply.
 import { chromium } from "playwright";
-const base = process.env.BASE_URL ?? "http://localhost:3100";
+const base = process.env.BASE_URL ?? "http://localhost:3100/app";
 const browser = await chromium.launch({ executablePath: "/opt/pw-browsers/chromium", args: ["--no-proxy-server"] });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, colorScheme: "dark" });
 const page = await ctx.newPage();

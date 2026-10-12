@@ -5,6 +5,8 @@
 // secret api key + JWT and handles token refresh. Errors reproduce the iOS
 // APIClientError messages so copy stays identical across platforms.
 
+import { withBase } from "./base-path";
+
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 export class ApiError extends Error {
@@ -53,7 +55,7 @@ function messageOf(obj: Record<string, unknown> | null): string | null {
 }
 
 export async function request<T = unknown>(path: string, method: HttpMethod = "GET", body?: unknown, opts: { signal?: AbortSignal; raw?: boolean } = {}): Promise<T> {
-  const url = "/api/backend" + (path.startsWith("/") ? path : "/" + path);
+  const url = withBase("/api/backend" + (path.startsWith("/") ? path : "/" + path));
   const isForm = typeof FormData !== "undefined" && body instanceof FormData;
   let res: Response;
   try {

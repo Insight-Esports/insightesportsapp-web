@@ -12,12 +12,24 @@ import { HeaderTools } from "@/components/shell/AppShell";
 import { clsx } from "@/lib/format";
 import { gameLabel, type Match } from "@/lib/types";
 import { useAppState } from "@/store/app-state";
+import { useReveal } from "@/lib/use-reveal";
 import { dayLoadOf, useCalendarData } from "./calendar-data";
 import { DayStrip, MonthGrid } from "./calendar";
 import { CompletedMatchRow, UpcomingMatchCard } from "./cards";
 import { CardGrid, ScheduleTabs, calendarDayTitle, dayKey, filterByGame, isSameLocalDay, parseDayKey, parseGameParam, startOfDay, startOfMonth, useGameParam } from "./shared";
+import { useIsPhone } from "@/components/shell/use-phone";
+import { CalendarPhone, SchedulePhone } from "./schedule-phone";
 
 export function ScheduleScreen() {
+  const phone = useIsPhone();
+  const params0 = useSearchParams();
+  const [game0, setGame0] = useGameParam();
+  // Phones replicate the iPhone screens one for one; desktop merges them.
+  if (phone) return params0.get("view") === "calendar" ? <CalendarPhone game={game0} /> : <SchedulePhone game={game0} setGame={setGame0} />;
+  return <ScheduleDesktop />;
+}
+
+function ScheduleDesktop() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -81,7 +93,10 @@ export function ScheduleScreen() {
   const beyondWindow = isPast && data.pastWindowStart !== null && selectedDay < data.pastWindowStart;
 
   const calendarProps = { selected: selectedDay, onSelect: selectDay, dayLoad };
-  const showSkeleton = data.loading && data.byDay.size === 0;
+  // CalendarScheduleView: the grid stays, the day list waits for the month's
+  // feeds — and, here, for the selected day's crests to be warm.
+  const revealed = useReveal(data.loading, () => dayMatchesAll.flatMap((m) => [m.team1LogoURL, m.team2LogoURL]));
+  const showSkeleton = !revealed;
 
   return (
     <Page>

@@ -7,6 +7,7 @@ import { Hand } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { type Json } from "@/lib/types";
 import { useFetch } from "@/lib/use-fetch";
+import { useReveal } from "@/lib/use-reveal";
 import { EmptyState, InitialAvatar, LoadFailure, SkeletonLedger } from "@/components/ui";
 import { normalizeFollowRows, type FollowUser } from "@/features/profile/types";
 import { SettingsFrame } from "./components";
@@ -14,7 +15,10 @@ import { SettingsFrame } from "./components";
 export function BlockedUsers() {
   const fetched = useFetch(async (signal) => normalizeFollowRows(await api.get<Json>(endpoints.blockedUsers, { signal })), []);
   const [users, setUsers] = useState<FollowUser[] | null>(null);
-  useEffect(() => { if (fetched.data) setUsers(fetched.data); }, [fetched.data]);
+  // Rows appear with their avatars in place: the page's copy of the list
+  // only updates once the fetched avatars are warm.
+  const revealed = useReveal(fetched.loading, () => (fetched.data ?? []).map((u) => u.avatarURL));
+  useEffect(() => { if (revealed && fetched.data) setUsers(fetched.data); }, [revealed, fetched.data]);
 
   async function unblock(u: FollowUser) {
     const previous = users;
@@ -24,7 +28,7 @@ export function BlockedUsers() {
 
   return (
     <SettingsFrame title="Blocked Users" backHref="/settings">
-      {fetched.loading && !users ? (
+      {!users && !fetched.error ? (
         <SkeletonLedger rows={5} avatar={44} />
       ) : fetched.error && !users ? (
         <LoadFailure error={fetched.error} connectionProblem={fetched.connectionProblem} onRetry={fetched.reload} />

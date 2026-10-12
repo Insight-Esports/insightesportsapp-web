@@ -7,6 +7,7 @@ import { api, endpoints, onApiEvent, setCachedPremium } from "@/lib/api";
 import { normalizeUser, type AppStatus, type InsightUser } from "@/lib/types";
 import { resetSocket } from "@/lib/socket";
 import { currentLinkState, forgetKeyState, startDM, subscribeUnread as subscribeDMUnread } from "@/features/messages/service";
+import { withBase } from "@/lib/base-path";
 
 export type ProfileRoute = "profile" | "messages" | "leaderboard" | "weeklyReport" | "settings" | "premium";
 
@@ -76,7 +77,7 @@ export function AppStateProvider({ children, initialUser = null }: { children: R
   }, [setUser]);
 
   const logout = useCallback(async () => {
-    try { await fetch("/api/auth/logout", { method: "POST" }); } catch { /* ignore */ }
+    try { await fetch(withBase("/api/auth/logout"), { method: "POST" }); } catch { /* ignore */ }
     await resetSocket();
     forgetKeyState();   // the linked key stays in IndexedDB (like the Keychain); only memory is cleared
     setUser(null);
@@ -86,7 +87,7 @@ export function AppStateProvider({ children, initialUser = null }: { children: R
 
   const checkStatus = useCallback(async () => {
     try {
-      const r = await fetch("/api/status", { cache: "no-store" });
+      const r = await fetch(withBase("/api/status"), { cache: "no-store" });
       if (!r.ok) throw new Error("status");
       const s = (await r.json()) as AppStatus;
       setStatus(s);
@@ -126,7 +127,7 @@ export function AppStateProvider({ children, initialUser = null }: { children: R
       await checkStatus();
       if (initialUser) { setChecking(false); return; }
       try {
-        const r = await fetch("/api/auth/session", { cache: "no-store" });
+        const r = await fetch(withBase("/api/auth/session"), { cache: "no-store" });
         const j = await r.json();
         if (cancelled) return;
         if (r.ok && j.user) setUser(j.user as InsightUser);

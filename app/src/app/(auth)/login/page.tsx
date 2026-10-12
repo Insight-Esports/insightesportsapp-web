@@ -5,11 +5,12 @@
 // account they already use in the app.
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Mail, Lock, AlertCircle } from "lucide-react";
+import { Mail, Lock, AlertCircle, ShieldCheck } from "lucide-react";
 import { BrandMark, Field } from "@/components/ui";
+import { withBase } from "@/lib/base-path";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -21,6 +22,21 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(reason === "expired" ? "Your session ended. Please log in again." : null);
   const valid = email.trim() !== "" && password !== "";
+  // Step 1 (the Google team gate) — shown as a small verified line so it's
+  // clear this login is the Insight account, not the Google one.
+  const [gate, setGate] = useState<{ enabled: boolean; email: string | null } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(withBase("/api/auth/gate"), { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (!cancelled) setGate({ enabled: !!j.enabled, email: j.email ?? null }); })
+      .catch(() => { if (!cancelled) setGate({ enabled: false, email: null }); });
+    return () => { cancelled = true; };
+  }, []);
+  async function switchGoogle() {
+    await fetch(withBase("/api/auth/gate"), { method: "DELETE" }).catch(() => {});
+    window.location.assign(withBase("/gate"));
+  }
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -32,7 +48,7 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch("/api/auth/login", {
+      const r = await fetch(withBase("/api/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
@@ -63,6 +79,13 @@ export default function LoginPage() {
         {/* The app's Log In / Sign Up segment: with sign-up off on the web, a
             single selected segment is just noise — a plain title instead. */}
         <h1 className="t-headline-md text-primary text-center mb-1">Log In</h1>
+        {gate?.enabled && gate.email ? (
+          <div className="flex items-center justify-center gap-2 t-body-sm text-muted -mt-2">
+            <ShieldCheck size={14} className="text-success" />
+            <span>Team access verified as <span className="text-secondary">{gate.email}</span></span>
+            <button type="button" onClick={switchGoogle} className="text-violet hover:underline">Not you?</button>
+          </div>
+        ) : null}
 
         <Field type="email" name="username" autoComplete="username" placeholder="Email" icon={<Mail />} value={email} onChange={(e) => setEmail(e.target.value)} autoCapitalize="none" spellCheck={false} />
         <Field type="password" name="password" autoComplete="current-password" placeholder="Password" icon={<Lock />} value={password} onChange={(e) => setPassword(e.target.value)} />
@@ -83,7 +106,7 @@ export default function LoginPage() {
         </button>
 
         <p className="t-body-sm text-muted text-center mt-2">
-          The web version is currently available to Insight team accounts only.
+          {gate?.enabled ? "Log in with the account you use in the Insight app." : "The web version is currently available to Insight team accounts only."}
         </p>
       </form>
     </div>

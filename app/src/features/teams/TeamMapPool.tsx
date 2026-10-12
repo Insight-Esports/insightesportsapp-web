@@ -38,9 +38,11 @@ export function useTeamMapPool(teamId: string, game: string) {
   }, [teamId, game]);
 }
 
-export function TeamMapPool({ teamId, game, title = "Map Pool", maxRows = 5 }: { teamId: string; game: string; teamName?: string; title?: string; maxRows?: number }) {
-  const { data } = useTeamMapPool(teamId, game);
-  const entries = (data ?? []).slice(0, maxRows);
+/** Fetches its own rows unless the page passes `entries` (TeamDetail does, so
+ *  the whole screen can wait for them). */
+export function TeamMapPool({ teamId, game, title = "Map Pool", maxRows = 5, entries: external }: { teamId: string; game: string; teamName?: string; title?: string; maxRows?: number; entries?: MapPoolEntry[] | null }) {
+  const { data } = useTeamMapPool(external !== undefined ? "" : teamId, game);
+  const entries = (external ?? data ?? []).slice(0, maxRows);
   if (entries.length === 0) return null;
   return (
     <section className="flex flex-col gap-2.5">

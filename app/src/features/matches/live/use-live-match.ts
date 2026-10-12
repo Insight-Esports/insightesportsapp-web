@@ -45,6 +45,8 @@ export interface LiveMatchState {
   poll: FanPoll | null;
   chatMessages: LiveChatMessage[];
   socketConnected: boolean;
+  /** Every first-screen request (progress, detail, stats, odds, poll, chat history) has settled. */
+  initialLoaded: boolean;
 }
 
 const STATS_POLL_MS = 8000;
@@ -74,6 +76,7 @@ export function useLiveMatch(match: Match) {
     poll: null,
     chatMessages: [],
     socketConnected: false,
+    initialLoaded: false,
   }));
 
   // Mutable bookkeeping that must not trigger renders.
@@ -490,6 +493,7 @@ export function useLiveMatch(match: Match) {
       await Promise.all([loadProgress(), loadDetail()]);
       if (!active) return;
       await Promise.all([loadStats(), loadWinProbability(), loadPoll(), loadChatHistory()]);
+      if (active) patch({ initialLoaded: true });
     })();
 
     const poll = setInterval(() => {

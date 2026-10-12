@@ -6,6 +6,7 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { serverConfig } from "./config";
+import { GATE_COOKIE, gateEnabled, verifyGate } from "@/lib/gate";
 
 export const ACCESS_COOKIE = "insight_at";
 export const REFRESH_COOKIE = "insight_rt";
@@ -59,10 +60,22 @@ export function emailFromToken(token: string): string | null {
   return typeof email === "string" ? email : null;
 }
 
-/** The web gate: only @insightesportsapp.com accounts (ALLOWED_EMAIL_DOMAIN). */
+/** Which Insight accounts may log in on the web.
+ *  With the Google team gate on (GOOGLE_CLIENT_ID set) any app account is
+ *  fine unless ALLOWED_EMAIL_DOMAIN is explicitly set; with the gate off,
+ *  the account itself must be on the team domain (the original web gate). */
 export function isAllowedEmail(email: string | null | undefined): boolean {
+  const domain = serverConfig.allowedEmailDomain;
+  if (domain === null) return !!email;
   if (!email) return false;
   const at = email.lastIndexOf("@");
   if (at < 0) return false;
-  return email.slice(at + 1).toLowerCase() === serverConfig.allowedEmailDomain;
+  return email.slice(at + 1).toLowerCase() === domain;
+}
+
+/** True when the request passed the Google team gate (or the gate is off). */
+export async function gatePassed(): Promise<boolean> {
+  if (!gateEnabled()) return true;
+  const jar = await cookies();
+  return (await verifyGate(jar.get(GATE_COOKIE)?.value)) !== null;
 }

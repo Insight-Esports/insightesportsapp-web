@@ -61,11 +61,12 @@ export function FollowButton({ teamId, compact = true, className }: { teamId: st
   );
 }
 
-/** "Follow the teams" strip: one compact follow button per side. */
+/** "Follow the teams" strip: one compact follow button per side. A web
+ *  addition (the app's match screens have none), so phones don't show it. */
 export function FollowTeamsRow({ match, team1Id, team2Id }: { match: Match; team1Id: string | null; team2Id: string | null }) {
   if (!team1Id && !team2Id) return null;
   return (
-    <div className="flex items-center gap-2.5 px-1">
+    <div className="hidden md:flex items-center gap-2.5 px-1">
       <span className="t-label-sm text-muted">Follow the teams</span>
       <span className="flex-1" />
       {team1Id ? <span className="flex items-center gap-1.5"><span className="t-label-sm text-secondary truncate max-w-[90px]">{match.team1Name}</span><FollowButton teamId={team1Id} /></span> : null}

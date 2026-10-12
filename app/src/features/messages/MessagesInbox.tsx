@@ -9,7 +9,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, SquarePen, Ellipsis, Hand, Trash2, TriangleAlert } from "lucide-react";
 import { clsx } from "@/lib/format";
-import { AssetIcon, ConfirmDialog, EmptyState, InitialAvatar, LoadFailure, SkeletonLedger, TabHeaderTitle, Toast } from "@/components/ui";
+import { useReveal } from "@/lib/use-reveal";
+import { AssetIcon, ConfirmDialog, EmptyState, InitialAvatar, LoadFailure, TabHeaderTitle, Toast } from "@/components/ui";
+import { SkeletonThreadRows } from "@/components/ui/skeletons";
 import { readLedger, type LinkState } from "./service";
 import { useInbox, threadUnread, type InboxThread } from "./use-inbox";
 import { useNow } from "./hooks";
@@ -38,12 +40,18 @@ export function MessagesInbox({ selectedId, linkState }: { selectedId: string | 
   };
 
   const showSuggested = suggested.length > 0 && threads.length < 5;
+  // MessagesInboxView: row silhouettes until the key check + the first inbox
+  // load settle and the first page of avatars is warm.
+  const checking = linkState.kind === "checking";
+  const revealed = useReveal(checking || (isLoading && threads.length === 0 && suggested.length === 0), () => [
+    ...threads.map((t) => t.row.otherAvatarURL), ...suggested.map((u) => u.avatarURL),
+  ]);
 
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* In-content header — back arrow, title, compose */}
       <div className="flex items-center gap-2.5 px-3 pt-1.5 pb-2 shrink-0">
-        <button type="button" onClick={() => router.back()} aria-label="Back" className="grid place-items-center size-8 text-primary hover:text-violet md:hidden"><ChevronLeft size={20} /></button>
+        <button type="button" onClick={() => router.back()} aria-label="Back" className="grid place-items-center size-8 text-primary hover:text-violet md:hidden"><ChevronLeft size={20} strokeWidth={2.5} /></button>
         <TabHeaderTitle text="Messages" />
         <span className="flex-1 min-w-2" />
         <Link href="/messages/new" aria-label="New message" title="New message" className="grid place-items-center size-8 rounded-lg text-violet hover:bg-card transition-colors"><SquarePen size={18} /></Link>
@@ -59,9 +67,9 @@ export function MessagesInbox({ selectedId, linkState }: { selectedId: string | 
         </div>
       ) : null}
 
-      <div className="flex-1 min-h-0 overflow-y-auto pb-[calc(var(--tabbar-h)+16px)] md:pb-4">
-        {linkState.kind === "checking" || (isLoading && threads.length === 0 && suggested.length === 0) ? (
-          <div className="px-3 pt-1"><SkeletonLedger rows={7} avatar={44} /></div>
+      <div className="flex-1 min-h-0 overflow-y-auto pb-[calc(var(--tabbar-h)+16px)] md:pb-4 overscroll-contain">
+        {!revealed ? (
+          <SkeletonThreadRows rows={7} />
         ) : error && threads.length === 0 ? (
           <div className="pt-6"><LoadFailure error={error} connectionProblem={connectionProblem} onRetry={() => void load()} /></div>
         ) : (

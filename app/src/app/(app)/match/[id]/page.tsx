@@ -1,17 +1,22 @@
 // /match/[id] — CompletedMatchLoaderView: fetches the full Match and
 // routes by state. A live match opens the live screen, an upcoming one
-// its preview, a finished one its result.
+// its preview, a finished one its result. While the Match loads (and its
+// two crests warm) the page is the match screen's own silhouette; the
+// screen it routes to keeps that silhouette up until ITS first requests
+// have landed, so the reveal is one step, not two.
 "use client";
 
 import { useParams } from "next/navigation";
 import { WifiOff } from "lucide-react";
-import { Page, SkeletonMatchCard, SkeletonStatRow, Spinner } from "@/components/ui";
+import { Page } from "@/components/ui";
 import { api, endpoints } from "@/lib/api";
 import { useFetch } from "@/lib/use-fetch";
+import { useReveal } from "@/lib/use-reveal";
 import { normalizeMatch, type Json } from "@/lib/types";
 import { LiveMatchScreen } from "@/features/matches/live/LiveMatchScreen";
 import { CompletedMatchScreen } from "@/features/matches/live/CompletedMatchScreen";
 import { UpcomingMatchScreen } from "@/features/matches/live/UpcomingMatchScreen";
+import { MatchScreenSkeleton } from "@/features/matches/live/MatchSkeleton";
 
 export default function MatchPage() {
   const params = useParams<{ id: string }>();
@@ -21,19 +26,9 @@ export default function MatchPage() {
     [id],
     { enabled: !!id },
   );
+  const revealed = useReveal(loading || (!match && !error), () => [match?.team1LogoURL, match?.team2LogoURL]);
 
-  if (loading || (!match && !error)) {
-    return (
-      <Page wide>
-        <div className="flex items-center gap-2 px-4 pt-3 pb-2"><Spinner size={14} /><span className="t-label-md text-muted">Loading match</span></div>
-        <div className="px-4 flex flex-col gap-4 max-w-[760px]">
-          <SkeletonMatchCard />
-          <SkeletonStatRow columns={4} />
-          <SkeletonStatRow columns={6} />
-        </div>
-      </Page>
-    );
-  }
+  if (!revealed && !error) return <MatchScreenSkeleton />;
 
   if (!match) {
     return (

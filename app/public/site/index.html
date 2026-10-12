@@ -1,0 +1,474 @@
+<style>
+  html, body { margin: 0; padding: 0; background: #000000; }
+
+  .ie-home {
+    --bg: #000000;
+    --text: #FFFFFF;
+    --purple: #7C5CFC;
+    --purple-dim: #6a4ce0;
+    --line: #7C5CFC;
+    --fs: 17px;
+
+    font-family: "Google Sans", "Product Sans", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    background: var(--bg);
+    color: var(--text);
+    margin: 0;
+    padding: 0;
+    font-size: var(--fs);
+    line-height: 1.6;
+  }
+
+  /* ─ Hero ─ */
+  .ie-home .ie-hero {
+    text-align: center;
+    padding: 80px 24px 64px;
+    background: var(--bg);
+  }
+  .ie-home .ie-eyebrow {
+    display: inline-block;
+    font-size: var(--fs);
+    font-weight: 400;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--text);
+    margin-bottom: 24px;
+  }
+  .ie-home .ie-hero h1 {
+    font-size: clamp(34px, 5.5vw, 52px);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -.02em;
+    color: var(--text);
+    margin: 0 auto 18px;
+    max-width: 740px;
+  }
+  .ie-home .ie-hero p {
+    font-size: var(--fs);
+    font-weight: 400;
+    line-height: 1.6;
+    color: var(--text);
+    max-width: 520px;
+    margin: 0 auto 32px;
+  }
+  .ie-home .ie-badge-row {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 36px;
+  }
+  .ie-home .ie-badge {
+    font-size: var(--fs);
+    font-weight: 400;
+    color: var(--text);
+  }
+  .ie-home .ie-badge-sep {
+    width: 1px;
+    height: 16px;
+    background: var(--purple);
+    display: inline-block;
+  }
+
+  /* ── Buttons (pill) ── */
+  .ie-home .ie-btn {
+    display: inline-block;
+    background: var(--purple);
+    color: var(--text);
+    font-size: var(--fs);
+    font-weight: 700;
+    text-decoration: none;
+    padding: 14px 32px;
+    border-radius: 100px;
+    letter-spacing: -.01em;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background .15s;
+  }
+  .ie-home .ie-btn:hover { background: var(--purple-dim); }
+
+  /* ── Feature sections (left / right placement, text always left-aligned) ── */
+  .ie-home .ie-section {
+    padding: 108px clamp(24px, 7vw, 180px);
+    background: var(--bg);
+  }
+  .ie-home .ie-section-top {
+    border-top: 1px solid var(--line);
+  }
+  .ie-home .ie-section-row {
+    width: 100%;
+  }
+  .ie-home .ie-section-inner {
+    max-width: 460px;
+    text-align: left;
+  }
+  .ie-home .ie-section.ie-left .ie-section-inner {
+    margin-right: auto;
+  }
+  .ie-home .ie-section.ie-right .ie-section-inner {
+    margin-left: auto;
+  }
+  .ie-home .ie-section h2 {
+    font-size: clamp(28px, 3.6vw, 36px);
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: -.01em;
+    color: var(--text);
+    margin: 0 0 16px;
+  }
+  .ie-home .ie-section p {
+    font-size: var(--fs);
+    font-weight: 400;
+    line-height: 1.65;
+    color: var(--text);
+    margin: 0;
+  }
+
+  /* ── Closing CTA (keeps top line) ── */
+  .ie-home .ie-cta {
+    text-align: center;
+    padding: 80px 24px;
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+  }
+  .ie-home .ie-cta h2 {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -.01em;
+    margin: 0 0 12px;
+  }
+  .ie-home .ie-cta p {
+    font-size: var(--fs);
+    font-weight: 400;
+    color: var(--text);
+    margin: 0 auto 28px;
+    max-width: 520px;
+  }
+
+  /* ── Footer (full-width top line) ── */
+  .ie-home .ie-footer {
+    border-top: 1px solid var(--line);
+    padding: 28px clamp(24px, 7vw, 180px);
+    background: var(--bg);
+  }
+  .ie-home .ie-footer-inner {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    font-size: var(--fs);
+    color: var(--text);
+  }
+  .ie-home .ie-footer a {
+    color: var(--text);
+    text-decoration: underline;
+    margin-left: 16px;
+  }
+  .ie-home .ie-wordmark {
+    font-weight: 700;
+    font-size: var(--fs);
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .ie-home .ie-wordmark .ie-dot {
+    width: 10px; height: 10px;
+    background: var(--purple);
+  }
+
+  /* ── Modal overlay ── */
+  .ie-home .ie-modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .ie-home .ie-modal-overlay.ie-open { display: flex; }
+  .ie-home .ie-modal {
+    background: var(--bg);
+    border: 1px solid var(--purple);
+    border-radius: 16px;
+    padding: 32px;
+    width: 100%;
+    max-width: 500px;
+    position: relative;
+  }
+  .ie-home .ie-modal h3 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 0 0 6px;
+    letter-spacing: -.01em;
+  }
+  .ie-home .ie-modal .ie-modal-sub {
+    font-size: var(--fs);
+    font-weight: 400;
+    color: var(--text);
+    margin: 0 0 24px;
+  }
+  .ie-home .ie-modal-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: var(--bg);
+    border: 1px solid var(--purple);
+    border-radius: 8px;
+    width: 32px;
+    height: 32px;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text);
+    line-height: 1;
+    font-family: inherit;
+    transition: background .15s;
+  }
+  .ie-home .ie-modal-close:hover { background: var(--purple); }
+
+  /* ── Form fields ── */
+  .ie-home .ie-cf-field { margin-bottom: 14px; }
+  .ie-home .ie-cf-field label {
+    display: block;
+    font-size: var(--fs);
+    font-weight: 400;
+    color: var(--text);
+    margin-bottom: 5px;
+  }
+  .ie-home .ie-cf-field input,
+  .ie-home .ie-cf-field select,
+  .ie-home .ie-cf-field textarea {
+    width: 100%;
+    padding: 10px 13px;
+    border: 1px solid var(--purple);
+    border-radius: 8px;
+    font-size: var(--fs);
+    font-family: inherit;
+    color: var(--text);
+    background: var(--bg);
+    box-sizing: border-box;
+    transition: border-color .15s;
+    appearance: none;
+  }
+  .ie-home .ie-cf-field input::placeholder,
+  .ie-home .ie-cf-field textarea::placeholder { color: var(--text); opacity: .55; }
+  .ie-home .ie-cf-field input:focus,
+  .ie-home .ie-cf-field select:focus,
+  .ie-home .ie-cf-field textarea:focus {
+    outline: none;
+    border-color: var(--text);
+  }
+  .ie-home .ie-cf-field textarea { resize: vertical; min-height: 100px; }
+  .ie-home .ie-cf-field select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23FFFFFF' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 13px center;
+    padding-right: 36px;
+  }
+  .ie-home .ie-cf-field select option { background: var(--bg); color: var(--text); }
+  .ie-home .ie-cf-submit {
+    display: block;
+    width: 100%;
+    background: var(--purple);
+    color: var(--text);
+    font-size: var(--fs);
+    font-weight: 700;
+    padding: 13px;
+    border-radius: 100px;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background .15s;
+    text-align: center;
+    box-sizing: border-box;
+    margin-top: 4px;
+    text-decoration: none;
+  }
+  .ie-home .ie-cf-submit:hover { background: var(--purple-dim); }
+
+  /* ── Phone layout: centered + zoomed in (like Google's mobile page) ── */
+  @media (max-width: 720px) {
+    .ie-home { --fs: 18px; }
+
+    .ie-home .ie-hero { padding: 64px 22px 52px; }
+    .ie-home .ie-hero h1 { font-size: 40px; }
+
+    .ie-home .ie-section { padding: 100px 22px; }
+    .ie-home .ie-section.ie-left .ie-section-inner,
+    .ie-home .ie-section.ie-right .ie-section-inner {
+      margin: 0 auto;
+      max-width: 100%;
+      text-align: center;
+    }
+    .ie-home .ie-section h2 { font-size: 31px; }
+
+    .ie-home .ie-cta { padding: 72px 22px; }
+    .ie-home .ie-footer-inner { flex-direction: column; align-items: center; text-align: center; }
+    .ie-home .ie-footer a { margin-left: 0; margin-right: 16px; }
+    .ie-home .ie-modal { padding: 24px; }
+  }
+</style>
+
+<div class="ie-home">
+
+  <!-- Hero -->
+  <section class="ie-hero">
+    <span class="ie-eyebrow">Coming Soon to iOS</span>
+    <h1>Insight Esports</h1>
+    <p>Live match data, win probability, fan polls, and more, all in one place for esports fans.</p>
+    <div class="ie-badge-row">
+      <span class="ie-badge">VALORANT</span>
+      <span class="ie-badge-sep"></span>
+      <span class="ie-badge">CS2</span>
+      <span class="ie-badge-sep"></span>
+      <span class="ie-badge">League of Legends</span>
+    </div>
+  </section>
+
+  <!-- Feature sections -->
+  <section class="ie-section ie-left ie-section-top">
+    <div class="ie-section-row">
+      <div class="ie-section-inner">
+        <h2>Live Stats &amp; Win Probability</h2>
+        <p>Real time match data, live scores, and win probability for every team. Browse upcoming games with win predictions before they start, then break down past games with every important stat.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="ie-section ie-right">
+    <div class="ie-section-row">
+      <div class="ie-section-inner">
+        <h2>Team and Player Info</h2>
+        <p>Dig into detailed team and player stats, head to head records, recent form, and full match history. See exactly how your favorite teams and players have performed across past games, all in one place.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="ie-section ie-left">
+    <div class="ie-section-row">
+      <div class="ie-section-inner">
+        <h2>Fan Community</h2>
+        <p>Join live chat during games, vote in polls, and climb the leaderboards. Earn points for getting your poll predictions right, then compete with other fans in real time to top the rankings.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="ie-section ie-right">
+    <div class="ie-section-row">
+      <div class="ie-section-inner">
+        <h2>Stat Predictor</h2>
+        <p>Choose any team or player from our games and get a full stat breakdown. You can also check the odds of them hitting a specific number for a chosen stat, so you know how likely it really is.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Closing CTA -->
+  <section class="ie-cta">
+    <h2>Launching on the App Store</h2>
+    <p>Questions or partnership inquiries? Reach out to our team.</p>
+    <button class="ie-btn" id="ie-open-modal">Get in Touch</button>
+  </section>
+
+  <!-- Footer -->
+  <footer class="ie-footer">
+    <div class="ie-footer-inner">
+      <span class="ie-wordmark"><span class="ie-dot"></span>INSIGHT ESPORTS</span>
+      <div>
+        <span>© 2026 Insight GG LLC</span>
+        <a href="/support">Support</a>
+        <a href="/privacy">Privacy</a>
+        <a href="/terms">Terms</a>
+      </div>
+    </div>
+  </footer>
+
+</div>
+
+<!-- Modal -->
+<div class="ie-home">
+<div class="ie-modal-overlay" id="ie-modal-overlay">
+  <div class="ie-modal">
+    <button class="ie-modal-close" id="ie-close-modal">&times;</button>
+    <h3>Get in Touch</h3>
+    <p class="ie-modal-sub">We usually respond within 1–2 business days.</p>
+    <div class="ie-cf-field">
+      <label for="ie-cf-name">Your Name</label>
+      <input type="text" id="ie-cf-name" placeholder="John Smith">
+    </div>
+    <div class="ie-cf-field">
+      <label for="ie-cf-email">Your Email</label>
+      <input type="email" id="ie-cf-email" placeholder="you@example.com">
+    </div>
+    <div class="ie-cf-field">
+      <label for="ie-cf-reason">Reason for Contact</label>
+      <select id="ie-cf-reason">
+        <option value="">Select a reason</option>
+        <option>General Inquiry</option>
+        <option>Partnership</option>
+        <option>Press / Media</option>
+        <option>App Support</option>
+        <option>Other</option>
+      </select>
+    </div>
+    <div class="ie-cf-field">
+      <label for="ie-cf-msg">Message</label>
+      <textarea id="ie-cf-msg" placeholder="Tell us what's on your mind..."></textarea>
+    </div>
+    <a class="ie-cf-submit" id="ie-cf-btn" href="#">Send Message</a>
+  </div>
+</div>
+</div>
+
+<script>
+  // Safety net: force mobile-responsive rendering even if the host page's <head>
+  // is missing (or has the wrong) viewport meta tag. This is the usual cause of a
+  // tiny, zoomed-out phone view where the whole page is visible without scrolling.
+  (function() {
+    var vp = document.querySelector('meta[name="viewport"]');
+    if (!vp) {
+      vp = document.createElement('meta');
+      vp.name = 'viewport';
+      (document.head || document.getElementsByTagName('head')[0]).appendChild(vp);
+    }
+    vp.setAttribute('content', 'width=device-width, initial-scale=1');
+  })();
+
+  var overlay = document.getElementById('ie-modal-overlay');
+  function openModal() { overlay.classList.add('ie-open'); }
+  document.getElementById('ie-open-modal').addEventListener('click', openModal);
+  document.getElementById('ie-close-modal').addEventListener('click', function() {
+    overlay.classList.remove('ie-open');
+  });
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) overlay.classList.remove('ie-open');
+  });
+
+  document.getElementById('ie-cf-btn').addEventListener('click', function(e) {
+    e.preventDefault();
+    var name = document.getElementById('ie-cf-name').value || 'Not provided';
+    var email = document.getElementById('ie-cf-email').value || 'Not provided';
+    var reason = document.getElementById('ie-cf-reason').value || 'Not provided';
+    var msg = document.getElementById('ie-cf-msg').value || 'Not provided';
+    var subject = encodeURIComponent('Contact Form — Insight Esports');
+    var body = encodeURIComponent(
+      'Name: ' + name + '\n' +
+      'Email: ' + email + '\n' +
+      'Reason: ' + reason + '\n\n' +
+      'Message:\n' + msg
+    );
+    window.location.href = 'mailto:support@insightesportsapp.com?subject=' + subject + '&body=' + body;
+  });
+</script>

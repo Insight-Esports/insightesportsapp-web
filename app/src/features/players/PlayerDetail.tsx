@@ -12,13 +12,15 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { useFetch } from "@/lib/use-fetch";
+import { useReveal } from "@/lib/use-reveal";
 import { fmt1, fmt2 } from "@/lib/format";
 import { normalizePlayer, normalizePlayers, normalizeTeam, type Player, type PlayerCareerStats } from "@/lib/types";
-import { InitialAvatar, LoadFailure, Page, SectionHeader, SkeletonBar, SkeletonLedger, SkeletonStatRow, TeamMark } from "@/components/ui";
+import { InitialAvatar, LoadFailure, Page, SectionHeader, TeamMark } from "@/components/ui";
+import { SkeletonPlayerDetail } from "@/components/ui/skeletons";
 import { FollowButton } from "@/features/follow/FollowButton";
 import { UpcomingGamesList } from "@/features/teams/UpcomingGamesList";
 import { StatTable, StripedTable, type StatCell } from "./StatTable";
-import { PlayerRecentGamesList } from "./PlayerRecentGamesList";
+import { PlayerRecentGamesList, usePlayerGames } from "./PlayerRecentGamesList";
 import { PlayerComments } from "./PlayerComments";
 import { normalizePlayerGameRows, normalizePlayerOverview, rowKDA, type AgentStats, type PlayerGameRow } from "./types";
 
@@ -29,18 +31,12 @@ export function PlayerDetail({ id }: { id: string }) {
   );
 
   if (loading && !player) {
+    // The same silhouette PlayerDetailLoaded keeps up until ITS requests
+    // land, so the page reveals once, complete.
     return (
       <Page>
         <TitleBar title="" />
-        <div className="flex flex-col items-center gap-3 px-4 pt-4">
-          <span className="size-20 rounded-full bg-surface" />
-          <SkeletonBar width={140} height={16} />
-          <SkeletonBar width={90} height={10} />
-        </div>
-        <div className="px-4 pt-6 flex flex-col gap-5">
-          <SkeletonStatRow columns={5} />
-          <SkeletonLedger rows={6} avatar={20} />
-        </div>
+        <SkeletonPlayerDetail />
       </Page>
     );
   }
@@ -57,8 +53,8 @@ export function PlayerDetail({ id }: { id: string }) {
 
 function TitleBar({ title, trailing }: { title: string; trailing?: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2.5 px-3 pt-2 pb-2 bg-bg sticky top-0 z-10">
-      <Link href="/players" aria-label="Back to Players" className="grid place-items-center size-8 rounded-lg text-primary hover:bg-card"><ChevronLeft size={18} strokeWidth={2.5} /></Link>
+    <div className="flex items-center gap-2.5 px-3 pt-2 pb-2 bg-bg sticky top-0 max-md:top-[env(safe-area-inset-top,0px)] z-10 max-md:min-h-11 max-md:hairline-b">
+      <Link href="/players" aria-label="Back to Players" className="grid place-items-center size-8 rounded-lg text-violet hover:bg-card"><ChevronLeft size={20} strokeWidth={2.5} /></Link>
       <span className="text-[22px] font-bold tracking-[-0.4px] text-primary truncate flex-1">{title}</span>
       {trailing}
     </div>
@@ -70,8 +66,10 @@ function PlayerDetailLoaded({ player: initial }: { player: Player }) {
   useEffect(() => setPlayer(initial), [initial]);
   const game = player.game;
 
-  // Recent rows (first page) feed Recent Form.
-  const [recentRows, setRecentRows] = useState<PlayerGameRow[] | null>(null);
+  // Recent Games (first page, keyset-paged) — owned here so the whole screen
+  // can wait for it; the rows also feed Recent Form.
+  const pager = usePlayerGames(player.id);
+  const recentRows: PlayerGameRow[] | null = pager.loaded ? pager.rows : null;
   const form = useMemo(() => deriveAverages(recentRows?.slice(0, 10) ?? []), [recentRows]);
 
   // Agents/champions come from the same overview the prediction screens use.
@@ -81,36 +79,47 @@ function PlayerDetailLoaded({ player: initial }: { player: Player }) {
   // the backend's career_stats once backfilled. Also the photo/crest
   // enrichment when the row we arrived with lacked them.
   const [derivedCareer, setDerivedCareer] = useState<PlayerCareerStats | null>(null);
+  const [extrasLoading, setExtrasLoading] = useState(true);
   useEffect(() => {
     let active = true;
     setDerivedCareer(null);
+    setExtrasLoading(true);
+    const tasks: Promise<unknown>[] = [];
     if (!player.careerStats) {
-      api.get(endpoints.playerMatches(player.id, 100)).then((raw) => {
+      tasks.push(api.get(endpoints.playerMatches(player.id, 100)).then((raw) => {
         if (!active) return;
         const rows = normalizePlayerGameRows(raw);
         if (rows.length > 10) setDerivedCareer(aggregateCareer(rows));
-      }).catch(() => { /* real empty state */ });
+      }).catch(() => { /* real empty state */ }));
     }
     if (!player.imageURL || !player.teamLogoURL) {
-      api.get(endpoints.topPlayers(game, null, null, player.name, 5)).then((raw) => {
+      tasks.push(api.get(endpoints.topPlayers(game, null, null, player.name, 5)).then(async (raw) => {
         if (!active) return;
         const hit = normalizePlayers(raw).find((p) => p.id === player.id);
         if (hit && ((!player.imageURL && hit.imageURL) || (!player.teamLogoURL && hit.teamLogoURL))) {
           setPlayer((p) => ({ ...p, imageURL: p.imageURL ?? hit.imageURL, teamLogoURL: p.teamLogoURL ?? hit.teamLogoURL }));
         } else if (!player.teamLogoURL && player.teamId) {
-          api.get(endpoints.teamDetail(player.teamId)).then((t) => {
+          await api.get(endpoints.teamDetail(player.teamId)).then((t) => {
             if (!active) return;
             const team = normalizeTeam(t);
             if (team.logoURL) setPlayer((p) => ({ ...p, teamLogoURL: p.teamLogoURL ?? team.logoURL }));
           }).catch(() => { /* ignore */ });
         }
-      }).catch(() => { /* ignore */ });
+      }).catch(() => { /* ignore */ }));
     }
+    void Promise.allSettled(tasks).then(() => { if (active) setExtrasLoading(false); });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [player.id]);
 
   const career = player.careerStats ?? derivedCareer;
+
+  // PlayerDetailView: every section's `isLoading*` settles, the photo and
+  // crest (and the recent games' opponent logos) warm, THEN the page shows.
+  const revealed = useReveal(
+    !pager.loaded || overview.loading || extrasLoading,
+    () => [player.imageURL, player.teamLogoURL, ...(recentRows ?? []).map((r) => r.opponentLogoURL)],
+  );
   const teamHref = player.teamId ? `/teams/${encodeURIComponent(player.teamId)}` : player.teamName ? `/teams/${encodeURIComponent(player.teamName)}?game=${encodeURIComponent(game)}` : null;
 
   const header = (
@@ -142,7 +151,7 @@ function PlayerDetailLoaded({ player: initial }: { player: Player }) {
     <section className="flex flex-col gap-3">
       <SectionHeader title="Recent Form" />
       <div className="px-4">
-        {recentRows === null ? <SkeletonStatRow columns={5} /> : <StatTable cells={recentFormCells(game, form)} />}
+        <StatTable cells={recentFormCells(game, form)} />
       </div>
     </section>
   );
@@ -160,9 +169,7 @@ function PlayerDetailLoaded({ player: initial }: { player: Player }) {
   const agents = game !== "CS2" ? (
     <section className="flex flex-col gap-3">
       <SectionHeader title={game === "League" ? "Champion Pool" : "Top Agents"} />
-      {overview.loading && !overview.data ? (
-        <div className="mx-4 h-20 rounded-xl bg-card border border-border-subtle" />
-      ) : !overview.data || overview.data.agents.length === 0 ? (
+      {!overview.data || overview.data.agents.length === 0 ? (
         <p className="px-4 t-body-sm text-muted">{game === "League" ? "No champion data available" : "No agent data available"}</p>
       ) : (
         <div className="px-4"><AgentTable agents={overview.data.agents} game={game} /></div>
@@ -171,15 +178,24 @@ function PlayerDetailLoaded({ player: initial }: { player: Player }) {
   ) : null;
 
   const upcoming = player.teamName ? <UpcomingGamesList teamId={player.teamId} teamName={player.teamName} game={game} /> : null;
-  const recent = <PlayerRecentGamesList playerId={player.id} game={game} onRows={setRecentRows} />;
+  const recent = <PlayerRecentGamesList playerId={player.id} game={game} pager={pager} />;
   const comments = <PlayerComments player={player} />;
+
+  if (!revealed) {
+    return (
+      <Page>
+        <TitleBar title={player.name} trailing={<FollowButton targetType="player" targetId={player.id} compact />} />
+        <SkeletonPlayerDetail />
+      </Page>
+    );
+  }
 
   return (
     <Page>
       <TitleBar title={player.name} trailing={<FollowButton targetType="player" targetId={player.id} compact />} />
       {header}
       {/* Phones: the iOS order top to bottom. Desktop: the rail (agents, upcoming) sits beside the main column. Every section renders exactly once. */}
-      <div className={`pt-5 grid gap-5 lg:items-start ${agents || upcoming ? "lg:grid-cols-[minmax(0,1fr)_360px] lg:pr-4" : ""}`}>
+      <div className={`pt-5 grid grid-cols-[minmax(0,1fr)] gap-5 lg:items-start ${agents || upcoming ? "lg:grid-cols-[minmax(0,1fr)_360px] lg:pr-4" : ""}`}>
         <div className="lg:col-start-1">{recentForm}</div>
         {allTime ? <div className="lg:col-start-1">{allTime}</div> : null}
         {agents || upcoming ? <div className="lg:col-start-2 lg:row-start-1 lg:row-span-4 flex flex-col gap-5">{agents}{upcoming}</div> : null}

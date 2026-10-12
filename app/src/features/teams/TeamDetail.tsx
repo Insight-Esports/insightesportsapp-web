@@ -16,13 +16,15 @@ import { useSearchParams } from "next/navigation";
 import { ChevronLeft, Medal, Trophy, UserX } from "lucide-react";
 import { api, ApiError, endpoints } from "@/lib/api";
 import { useFetch } from "@/lib/use-fetch";
+import { useReveal } from "@/lib/use-reveal";
 import { clsx, fmt1, fmt2 } from "@/lib/format";
 import { matchResultTime, normalizePlayers, normalizeTeam, normalizeTeams, teamStub, type Match, type Player, type Team } from "@/lib/types";
-import { EmptyState, GamePill, InitialAvatar, LoadFailure, Page, SectionHeader, SkeletonBar, SkeletonLedger, SkeletonStatRow, StatCard, TeamMark, TierBadge } from "@/components/ui";
+import { EmptyState, GamePill, InitialAvatar, LoadFailure, Page, SectionHeader, StatCard, TeamMark, TierBadge } from "@/components/ui";
+import { SkeletonTeamDetail } from "@/components/ui/skeletons";
 import { FollowButton } from "@/features/follow/FollowButton";
 import { StripedTable } from "@/features/players/StatTable";
-import { TeamMapPool } from "./TeamMapPool";
-import { TeamRecentGamesList } from "./RecentGamesList";
+import { TeamMapPool, useTeamMapPool } from "./TeamMapPool";
+import { TeamRecentGamesList, useTeamRecentGames } from "./RecentGamesList";
 import { UpcomingGamesList } from "./UpcomingGamesList";
 import { normalizeCoachHistory, normalizeTeamSides, normalizeTeamStats, normalizeTeamTitles, type TeamSide, type TeamTitle } from "./types";
 
@@ -83,15 +85,11 @@ export function TeamDetail({ id }: { id: string }) {
   const team = data?.team ?? null;
 
   if (loading && !team) {
+    // The same silhouette TeamDetailLoaded keeps up until ITS requests land.
     return (
       <Page>
         <TitleBar title="" />
-        <div className="flex flex-col items-center gap-3 px-4 pt-4">
-          <span className="size-20 rounded-2xl bg-surface" />
-          <SkeletonBar width={150} height={16} />
-          <SkeletonBar width={100} height={10} />
-        </div>
-        <div className="px-4 pt-6 flex flex-col gap-5"><SkeletonStatRow columns={4} /><SkeletonLedger rows={5} avatar={24} /></div>
+        <SkeletonTeamDetail />
       </Page>
     );
   }
@@ -108,8 +106,8 @@ export function TeamDetail({ id }: { id: string }) {
 
 function TitleBar({ title, trailing }: { title: string; trailing?: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2.5 px-3 pt-2 pb-2 bg-bg sticky top-0 z-10">
-      <Link href="/teams" aria-label="Back to Teams" className="grid place-items-center size-8 rounded-lg text-primary hover:bg-card"><ChevronLeft size={18} strokeWidth={2.5} /></Link>
+    <div className="flex items-center gap-2.5 px-3 pt-2 pb-2 bg-bg sticky top-0 max-md:top-[env(safe-area-inset-top,0px)] z-10 max-md:min-h-11 max-md:hairline-b">
+      <Link href="/teams" aria-label="Back to Teams" className="grid place-items-center size-8 rounded-lg text-violet hover:bg-card"><ChevronLeft size={20} strokeWidth={2.5} /></Link>
       <span className="text-[22px] font-bold tracking-[-0.4px] text-primary truncate flex-1">{title}</span>
       {trailing}
     </div>
@@ -126,9 +124,23 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
   const stats = useFetch(async (signal) => normalizeTeamStats(await api.get(endpoints.teamStats(team.id, game), { signal })), [team.id, game], { enabled: hasRealId && !!game });
   const coachHistory = useFetch(async (signal) => normalizeCoachHistory(await api.get(endpoints.coach(team.coach!.id!), { signal })), [team.coach?.id], { enabled: !!team.coach?.id });
 
-  // Record and streak over exactly the games the Recent Games ledger has loaded.
-  const [recentRows, setRecentRows] = useState<Match[] | null>(null);
+  // Recent Games + Map Pool are owned here so the whole screen can wait for
+  // them. Record and streak derive from exactly the games the ledger lists.
+  const recent = useTeamRecentGames(team.id, game || null);
+  const mapPool = useTeamMapPool(hasRealId ? team.id : "", game);
+  const recentRows: Match[] | null = recent.loaded ? recent.rows : null;
   const derived = useMemo(() => deriveRecord(team, recentRows ?? []), [team, recentRows]);
+
+  // TeamDetailView: roster · stats · sides · titles · recent games · map pool
+  // all settle, the crest and the roster's faces warm, THEN the page shows.
+  const revealed = useReveal(
+    roster.loading || titles.loading || sides.loading || stats.loading || coachHistory.loading || !recent.loaded || mapPool.loading,
+    () => [
+      team.logoURL,
+      ...(roster.data ?? []).slice(0, 8).map((p) => p.imageURL),
+      ...(recentRows ?? []).flatMap((m) => [m.team1LogoURL, m.team2LogoURL]),
+    ],
+  );
 
   // Precedence: DB season aggregates → legacy wins/losses → derived from the listed matches.
   const seasonWins = (team.seasonWins ?? 0) + (team.seasonLosses ?? 0) > 0 ? (team.seasonWins as number) : team.wins + team.losses > 0 ? team.wins : derived.wins;
@@ -189,9 +201,7 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
   const rosterSection = (
     <section className="flex flex-col gap-3">
       <SectionHeader title="Roster" />
-      {roster.loading && hasRealId ? (
-        <SkeletonLedger rows={5} avatar={24} className="mx-4" />
-      ) : players.length === 0 ? (
+      {players.length === 0 ? (
         <EmptyState icon={<UserX />} title="No roster data for this team yet" subtitle="Check back soon" />
       ) : (
         <div className="px-4 flex flex-col gap-2">
@@ -219,8 +229,8 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
   );
 
   const upcoming = <UpcomingGamesList teamId={hasRealId ? team.id : null} teamName={team.name} game={game || null} />;
-  const recent = (
-    <TeamRecentGamesList teamId={team.id} game={game || null} perspective={{ teamId: hasRealId ? team.id : null, teamName: team.name }} onRows={setRecentRows} />
+  const recentSection = (
+    <TeamRecentGamesList teamId={team.id} game={game || null} perspective={{ teamId: hasRealId ? team.id : null, teamName: team.name }} pager={recent} />
   );
 
   // ── Extras the backend serves (unplugged in the app; shown here only when non-empty) ──
@@ -292,14 +302,23 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
     </section>
   ) : null;
 
+  if (!revealed) {
+    return (
+      <Page>
+        <TitleBar title={team.name} trailing={hasRealId ? <FollowButton targetType="team" targetId={team.id} compact /> : null} />
+        <SkeletonTeamDetail />
+      </Page>
+    );
+  }
+
   return (
     <Page>
       <TitleBar title={team.name} trailing={hasRealId ? <FollowButton targetType="team" targetId={team.id} compact /> : null} />
       {header}
       {/* Phones: the iOS order. Desktop: Upcoming + the extra sections form a rail beside Season / Map Pool / Roster / Recent Games. */}
-      <div className="pt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:pr-4">
+      <div className="pt-5 grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:pr-4">
         {season}
-        <TeamMapPool teamId={hasRealId ? team.id : ""} game={game} teamName={team.name} />
+        <TeamMapPool teamId={hasRealId ? team.id : ""} game={game} teamName={team.name} entries={mapPool.data} />
         {rosterSection}
         <div className="flex flex-col gap-5 lg:col-start-2 lg:row-start-1 lg:row-span-4">
           {upcoming}
@@ -308,7 +327,7 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
           {sidesSection}
           {coachSection}
         </div>
-        {recent}
+        {recentSection}
       </div>
     </Page>
   );

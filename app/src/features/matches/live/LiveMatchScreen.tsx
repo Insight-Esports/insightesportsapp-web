@@ -8,40 +8,64 @@ import { useEffect, useRef, useState } from "react";
 import { Flag } from "lucide-react";
 import { AssetIcon, LiveBadge, Page, SplitLayout } from "@/components/ui";
 import { team1Color, team2Color, type Match } from "@/lib/types";
+import { useReveal } from "@/lib/use-reveal";
 import { useAppState } from "@/store/app-state";
+import { NavBar } from "@/components/shell/NavBar";
+import { ProfileToolbarButton } from "@/components/shell/AppShell";
+import { useHideTabBar } from "@/components/shell/tab-bar";
 import { featureState } from "./feature-status";
 import { FollowTeamsRow } from "./FollowTeams";
 import { GoldChart } from "./GoldChart";
 import { LiveChatSection } from "./LiveChat";
 import { MatchCommentsSection } from "./MatchComments";
+import { MatchMainSkeleton, MatchRailSkeleton } from "./MatchSkeleton";
 import { CollapsedScoreBar, FanPollSection, LeagueObjectives, PredictionTeaserSection, RoundTracker, ScoreHUD, StatsTableSection, WinProbabilityBar } from "./sections";
 import { isRoundBasedGame } from "./types";
 import { useLiveMatch } from "./use-live-match";
 
 /** Title strip above the HUD: Live/Final + tournament (the iOS principal toolbar). */
 export function MatchTitleStrip({ match, isComplete, children }: { match: Match; isComplete: boolean; children?: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-1.5 px-4 pt-3 pb-2 min-w-0">
+  const principal = (
+    <span className="flex items-center gap-1.5 min-w-0">
       {isComplete ? (
         <span className="text-[10px] font-bold text-muted px-1.5 py-0.5 rounded-full bg-surface">FINAL</span>
       ) : (
         <LiveBadge />
       )}
       <span className="t-label-md text-secondary truncate">{match.tournamentName ?? "Unknown Tournament"}</span>
-      <span className="flex-1" />
-      {children}
-    </div>
+    </span>
+  );
+  return (
+    <>
+      {/* Phones: LiveMatchView's navigation bar — chevron · [Live · tournament] · avatar */}
+      <NavBar principal={principal} trailing={isComplete ? undefined : <ProfileToolbarButton />} phoneOnly />
+      <div className="hidden md:flex items-center gap-1.5 px-4 pt-3 pb-2 min-w-0">
+        {principal}
+        <span className="flex-1" />
+        {children}
+      </div>
+    </>
   );
 }
 
 export function LiveMatchScreen({ match }: { match: Match }) {
   const { isPremium, status } = useAppState();
+  // LiveMatchView hides the tab bar so the chat composer is reachable.
+  useHideTabBar();
   const vm = useLiveMatch(match);
   const isRoundBased = isRoundBasedGame(match.game);
   const c1 = team1Color(match);
   const c2 = team2Color(match);
   const polls = featureState(status, "polls");
   const chat = featureState(status, "live_chat");
+
+  // LiveMatchView warms every scoreboard face before the table's first
+  // render; here the whole body waits for the first-screen requests AND
+  // those faces, then appears complete. Later polls publish immediately.
+  const revealed = useReveal(!vm.initialLoaded, () => [
+    match.team1LogoURL, match.team2LogoURL,
+    ...vm.team1Stats.map((s) => s.imageURL), ...vm.team2Stats.map((s) => s.imageURL),
+  ]);
 
   // The HUD collapses to a compact sticky bar once it scrolls away.
   const hudRef = useRef<HTMLDivElement>(null);
@@ -52,7 +76,7 @@ export function LiveMatchScreen({ match }: { match: Match }) {
     const io = new IntersectionObserver(([e]) => setCollapsed(!e.isIntersecting), { threshold: 0, rootMargin: "-8px 0px 0px 0px" });
     io.observe(el);
     return () => io.disconnect();
-  }, []);
+  }, [revealed]);
 
   const [voting, setVoting] = useState(false);
   const onVote = async (optionId: string) => {
@@ -161,14 +185,14 @@ export function LiveMatchScreen({ match }: { match: Match }) {
   );
 
   return (
-    <Page wide>
+    <Page wide className="max-md:pb-6">
       <MatchTitleStrip match={match} isComplete={vm.isMatchComplete}>
         {!vm.socketConnected && !vm.isMatchComplete ? <span className="t-label-sm text-muted" title="Live socket not connected — updating every few seconds">polling</span> : null}
       </MatchTitleStrip>
-      <div className={`sticky top-0 z-20 px-4 pb-2 bg-bg transition-opacity ${collapsed ? "opacity-100" : "opacity-0 pointer-events-none h-0 pb-0 overflow-hidden"}`} aria-hidden={!collapsed}>
+      <div className={`sticky top-0 z-20 px-4 pb-2 bg-bg transition-opacity ${collapsed && revealed ? "opacity-100" : "opacity-0 pointer-events-none h-0 pb-0 overflow-hidden"}`} aria-hidden={!collapsed}>
         <CollapsedScoreBar match={match} team1Score={vm.team1Rounds} team2Score={vm.team2Rounds} isComplete={vm.isMatchComplete} />
       </div>
-      <SplitLayout main={main} rail={rail} />
+      {revealed ? <SplitLayout main={main} rail={rail} /> : <SplitLayout main={<MatchMainSkeleton variant="live" />} rail={<MatchRailSkeleton variant="live" />} />}
     </Page>
   );
 }

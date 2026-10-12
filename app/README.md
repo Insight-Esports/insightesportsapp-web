@@ -2,11 +2,14 @@
 
 The web version of the Insight Esports iOS app: the same screens, copy and
 design system (dark, ledger tables, violet underline tabs), adapted for the
-browser (sidebar on desktop, iOS-style bottom tab bar on phones, shareable
-URLs, back/forward). It talks to the same backend the app uses.
+browser. On phones (Android) it replicates the app's layout; iPhone visitors
+are sent to the App Store. It talks to the same backend the app uses.
 
-**Access is limited to `@insightesportsapp.com` accounts for now.** The gate is
-enforced server-side (see "How the gate works"), not in the browser.
+It is served at **insightesportsapp.com/app**; the marketing site stays at
+the root of the same host (`public/site`, synced from the repo root).
+
+**Access is limited to the Insight team for now**, in two steps: a Google
+sign-in on the team domain, then the app account (see "How sign-in works").
 
 ## Stack
 
@@ -20,7 +23,7 @@ enforced server-side (see "How the gate works"), not in the browser.
 cd app
 npm install
 cp .env.example .env.local   # then fill in APP_API_KEY (same key as backend/.env)
-npm run dev                  # http://localhost:3000, against the Railway backend
+npm run dev                  # http://localhost:3000/app, against the Railway backend
 ```
 
 Without backend access, run everything against the mock backend (seeded,
@@ -28,7 +31,7 @@ stable data; any `@insightesportsapp.com` email + password `insight` logs in):
 
 ```bash
 npm run mock       # terminal 1 → http://localhost:4000
-npm run dev:mock   # terminal 2 → http://localhost:3000
+npm run dev:mock   # terminal 2 → http://localhost:3000/app
 ```
 
 ## Environment variables
@@ -37,52 +40,72 @@ npm run dev:mock   # terminal 2 → http://localhost:3000
 |---|---|---|
 | `API_BASE_URL` | server only | Backend REST base, e.g. `https://esports-app-production.up.railway.app/api` |
 | `APP_API_KEY` | server only | The backend's `x-api-key`. **Never reaches the browser.** |
-| `ALLOWED_EMAIL_DOMAIN` | server only | `insightesportsapp.com` — only these accounts can sign in |
-| `NEXT_PUBLIC_SOCKET_URL` | public | Backend host (no `/api`) for Socket.IO, e.g. `https://esports-app-production.up.railway.app` |
+| `NEXT_PUBLIC_SOCKET_URL` | public | Backend host (no `/api`) for Socket.IO and the image mirror |
+| `PUBLIC_ORIGIN` | server only | `https://insightesportsapp.com` — for Google's redirect URI |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | server only | The team-gate OAuth client (empty = gate off) |
+| `GOOGLE_ALLOWED_DOMAIN` | server only | `insightesportsapp.com` |
+| `GATE_SECRET` | server only | Signs the gate cookie (falls back to `APP_API_KEY`) |
+| `ALLOWED_EMAIL_DOMAIN` | server only, optional | Restrict the Insight account too; unset = any app account once the gate is on |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | server only, optional | Only needed for avatar upload (Edit Profile) |
 
-## Deploy
+## Deploy (Railway)
 
-Either host works; the app is a standard Next.js build (`npm run build` → `npm start`).
+One service from this repo with *Root Directory* `app` (the `railway.toml`
+here sets the build/start commands). Set the env vars above in the service's
+Variables. `npm start` runs `server.mjs`: the marketing site at `/`, the app
+under `/app`.
 
-**Vercel (simplest):** import the repo, set *Root Directory* to `app`, add the
-env vars above, deploy. Point `app.insightesportsapp.com` (or whichever
-subdomain) at it in Squarespace DNS.
+**Domain.** The service must answer for the root domain `insightesportsapp.com`
+(not a subdomain), which Railway can only do with CNAME flattening / ALIAS at
+the apex — Squarespace DNS does not offer that. Two options:
+1. Move the domain's nameservers to Cloudflare (free): add the site in
+   Cloudflare, copy the records Squarespace has, switch nameservers at the
+   registrar, then add a CNAME `@` → the Railway target (proxied, SSL "Full").
+2. Or host the web on Vercel instead (root dir `app`, same env vars), which
+   supports apex domains with a plain A record in Squarespace.
+Until the apex points at the web server, the app is reachable only on the
+Railway-generated domain / `app.` subdomain; `/app` on the apex is still the
+GitHub Pages site.
 
-**Railway (same place as the backend):** new service from the repo, root
-directory `app`, build `npm run build`, start `npm start`, same env vars.
+No backend change is required for REST (the server adds the api key; CORS
+never applies). Two backend notes for Andrew:
+- Images: the backend's `helmet()` sends `Cross-Origin-Resource-Policy:
+  same-origin` on `/img`, so browsers refuse to render thumbnails on another
+  origin. The web mirrors them through `/app/api/img/*` meanwhile; adding
+  `res.set("Cross-Origin-Resource-Policy", "cross-origin")` in
+  `routes/images.js` (or `helmet({ crossOriginResourcePolicy: { policy:
+  "cross-origin" } })`) lets the browser load them straight from Railway.
+- Socket.IO already allows any origin and authenticates with the JWT.
 
-No backend change is required: all REST calls go browser → this server →
-backend, so the backend sees no browser `Origin` and CORS never applies. The
-only direct browser → backend connection is Socket.IO, which already allows
-any origin and authenticates with the user's JWT.
+## How sign-in works
 
-## How the gate works
+1. **Team gate (Google).** `/app/gate` → `GET /api/auth/google` sends the
+   browser to Google with `hd=insightesportsapp.com`; the callback exchanges
+   the code server-side, checks the ID token (audience, verified email,
+   team domain) and sets a signed httpOnly `insight_gate` cookie (30 days).
+   Needs a Google OAuth client (see `.env.example`); without
+   `GOOGLE_CLIENT_ID` the gate is off (local dev).
+2. **Insight account.** `/app/login` → `POST /api/auth/login` forwards to the
+   backend's `/auth/login` with the secret `x-api-key` and stores the Supabase
+   tokens in httpOnly cookies (`insight_at`, `insight_rt`). The login APIs
+   refuse requests without the gate cookie.
+3. `src/proxy.ts` (middleware): iPhone → App Store (`?web=1` opts out), no
+   gate → `/gate`, no session → `/login`. `/api/backend/[...path]` is the
+   only way the browser reaches the API: it attaches the api key + JWT and
+   refreshes an expired access token once.
 
-1. `POST /api/auth/login` forwards to the backend `/auth/login` with the secret
-   `x-api-key`, then checks the **email claim inside the JWT the backend
-   issued** against `ALLOWED_EMAIL_DOMAIN`. Anything else gets a 403 and no
-   cookie. (`/api/auth/verify-otp` does the same for freshly verified accounts.)
-2. Tokens are stored in `httpOnly` cookies (`insight_at`, `insight_rt`), never
-   in JavaScript-readable storage.
-3. `src/proxy.ts` (Next's middleware) redirects any page request without a
-   gated session to `/login`.
-4. `/api/backend/[...path]` is the only way the browser reaches the API. It
-   re-checks the domain on **every** call, attaches the api key + JWT, and
-   silently refreshes an expired access token once (single-flight, like
-   `APIClient.swift`).
-
-To open the web app to everyone later, change `ALLOWED_EMAIL_DOMAIN` handling
-in `src/lib/server/session.ts` (`isAllowedEmail`) and add the sign-up tab back
-to `/login` (the iOS `LoginView` register flow + `/verify-email` page are
-already ported server-side).
+To open the web to everyone later: remove `GOOGLE_CLIENT_ID`, set
+`ALLOWED_EMAIL_DOMAIN=` (empty) and add the sign-up tab back to `/login`.
 
 ## What's where
 
 ```
 src/app/(auth)/        login, forgot-password, verify-email (no shell)
 src/app/(app)/         every signed-in screen, inside the shell
-src/app/api/           auth routes, the backend proxy, /api/status, avatar upload
+src/app/api/           auth routes (login, Google gate), the backend proxy,
+                       /api/img (thumbnail mirror), /api/status, avatar upload
+server.mjs             production server: marketing site at /, Next app at /app
+public/site/           the marketing site (synced from the repo root at build)
 src/components/ui/     the design system — port of Components.swift
 src/components/shell/  sidebar / bottom tab bar / profile side panel
 src/features/<area>/   screen code (matches, players, teams, news, search,

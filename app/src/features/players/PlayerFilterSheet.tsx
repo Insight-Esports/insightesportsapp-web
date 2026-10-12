@@ -25,11 +25,9 @@ export function PlayerFilterSheet({ open, onClose, roles, regions, role, region,
       open={open}
       onClose={onClose}
       title="Filter Players"
+      leading={<button type="button" onClick={() => { setTempRole(null); setTempRegion(null); }} className="t-label-lg text-violet">Reset</button>}
       trailing={<button type="button" onClick={apply} className="t-label-lg text-violet">Done</button>}
     >
-      <div className="flex justify-start -mt-1 mb-1">
-        <button type="button" onClick={() => { setTempRole(null); setTempRegion(null); }} className="t-label-lg text-violet">Reset</button>
-      </div>
       <FilterRow title="Role">
         <div className="flex items-end gap-[22px] overflow-x-auto no-scrollbar">
           {["All", ...roles].map((r) => (
@@ -44,7 +42,7 @@ export function PlayerFilterSheet({ open, onClose, roles, regions, role, region,
           ))}
         </div>
       </FilterRow>
-      <PrimaryButton onClick={apply} className="w-full mt-5 !rounded-xl !py-3.5 bg-violet-gradient">Apply Filters</PrimaryButton>
+      <PrimaryButton onClick={apply} className="w-full mt-5 !rounded-xl !py-4 bg-violet-gradient max-md:mb-3">Apply Filters</PrimaryButton>
     </Sheet>
   );
 }

@@ -9,7 +9,8 @@ import { ChevronRight } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import type { Json } from "@/lib/types";
 import { useAppState } from "@/store/app-state";
-import { AssetIcon, InitialAvatar, Ledger, LedgerRow, Page, SearchField, Spinner } from "@/components/ui";
+import { AssetIcon, InitialAvatar, Ledger, LedgerRow, Page, SearchField, SkeletonLedger, Spinner } from "@/components/ui";
+import { useReveal } from "@/lib/use-reveal";
 import { startConversation, startConversationMessage } from "./start-conversation";
 import { normalizeSearchUser, type SearchUser } from "./types";
 
@@ -24,6 +25,7 @@ export function NewMessage() {
   const [results, setResults] = useState<SearchUser[]>([]);
   const [isSearching, setSearching] = useState(false);
   const [suggested, setSuggested] = useState<SuggestedUser[]>([]);
+  const [suggestedLoading, setSuggestedLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   const searchSeq = useRef(0);
@@ -32,6 +34,7 @@ export function NewMessage() {
   useEffect(() => {
     if (!me) return;
     let active = true;
+    setSuggestedLoading(true);
     const quiet = async (path: string): Promise<FollowRowLite[]> => {
       try { const raw = await api.get<Json>(path); return Array.isArray(raw) ? (raw as FollowRowLite[]) : []; } catch { return []; }
     };
@@ -53,6 +56,7 @@ export function NewMessage() {
         out.push({ id, username: r.username, avatarURL: r.avatar_url ?? null, reason: "Follows you" });
       }
       setSuggested(out);
+      setSuggestedLoading(false);
     })();
     return () => { active = false; };
   }, [me]);
@@ -91,9 +95,12 @@ export function NewMessage() {
   };
 
   const term = query.trim();
-  const showSuggested = term === "" && suggested.length > 0;
-  const shownResults = term ? results : [];
   const searching = isSearching && term !== "";
+  // Suggested people and search hits publish with their avatars in place.
+  const suggestedRevealed = useReveal(!!me && suggestedLoading, () => suggested.map((u) => u.avatarURL));
+  const resultsRevealed = useReveal(searching, () => results.map((u) => u.avatarURL));
+  const showSuggested = term === "" && suggested.length > 0;
+  const shownResults = term && resultsRevealed ? results : [];
 
   return (
     <Page>
@@ -105,7 +112,12 @@ export function NewMessage() {
         <SearchField value={query} onChange={setQuery} placeholder="Search people" autoFocus />
         {error ? <span className="t-label-sm text-muted">{error}</span> : null}
 
-        {showSuggested ? (
+        {term === "" && !suggestedRevealed ? (
+          <div className="flex flex-col gap-2 pb-2">
+            <span className="t-kicker">Suggested</span>
+            <SkeletonLedger rows={5} avatar={36} />
+          </div>
+        ) : showSuggested ? (
           <div className="flex flex-col gap-2 pb-2">
             <span className="t-kicker">Suggested</span>
             <Ledger>
@@ -133,8 +145,8 @@ export function NewMessage() {
               </LedgerRow>
             ))}
           </Ledger>
-        ) : searching ? (
-          <div className="flex justify-center py-6"><Spinner /></div>
+        ) : term && !resultsRevealed ? (
+          <SkeletonLedger rows={4} avatar={36} />
         ) : null}
       </div>
     </Page>

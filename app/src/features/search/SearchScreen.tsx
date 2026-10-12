@@ -13,7 +13,10 @@ import { ChevronRight, CircleHelp, Clock, Search, X } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { GAMES, gameLabel, normalizePlayers, normalizeTeams, type GameId, type Player, type Team } from "@/lib/types";
 import { clsx } from "@/lib/format";
-import { AssetIcon, GamePill, GameTabBar, InitialAvatar, Page, SearchField, SkeletonBar, TabHeaderTitle, TeamMark } from "@/components/ui";
+import { useReveal } from "@/lib/use-reveal";
+import { AssetIcon, GamePill, GameTabBar, InitialAvatar, Page, SearchField, Spinner, TabHeaderTitle, TeamMark } from "@/components/ui";
+import { SkeletonPeopleRows } from "@/components/ui/skeletons";
+import { NavBar } from "@/components/shell/NavBar";
 import { FollowButton } from "@/features/follow/FollowButton";
 import { useDebounced } from "@/features/players/useLoadMore";
 import { useQueryParams } from "@/features/players/useQueryParams";
@@ -100,11 +103,21 @@ export function SearchScreen() {
   const removeRecent = (term: string) => setRecents((prev) => { const next = prev.filter((t) => t !== term); writeRecents(next); return next; });
   const clearRecents = () => { setRecents([]); writeRecents([]); };
 
-  const filtered: SearchResults = game === "all" ? results : {
-    players: results.players.filter((p) => p.game === game),
-    teams: results.teams.filter((t) => t.game === game),
-    tournaments: results.tournaments.filter((t) => tournamentGame(t) === game),
-    users: results.users,   // users have no game — they pass through every filter
+  // SearchViewModel.loadBrowse: the six browse fetches land, page-one photos
+  // and crests warm, then the browse surface appears in one go.
+  const browseRevealed = useReveal(browse === null, () => [...(browse?.players ?? []).map((p) => p.imageURL), ...(browse?.teams ?? []).map((t) => t.logoURL)]);
+  // Results: the rows on screen only change once the new page's pictures are
+  // warm; until then the previous rows stay (with the app's small spinner)
+  // or, with nothing to keep, the row silhouettes.
+  const resultsRevealed = useReveal(searching, () => [...results.players.map((p) => p.imageURL), ...results.teams.map((t) => t.logoURL), ...results.users.map((u) => u.avatarURL)]);
+  const [displayed, setDisplayed] = useState<SearchResults>(EMPTY_RESULTS);
+  useEffect(() => { if (resultsRevealed) setDisplayed(results); }, [resultsRevealed, results]);
+
+  const filtered: SearchResults = game === "all" ? displayed : {
+    players: displayed.players.filter((p) => p.game === game),
+    teams: displayed.teams.filter((t) => t.game === game),
+    tournaments: displayed.tournaments.filter((t) => tournamentGame(t) === game),
+    users: displayed.users,   // users have no game — they pass through every filter
   };
   const browsePlayers = (game === "all" ? browse?.players ?? [] : (browse?.players ?? []).filter((p) => p.game === game)).slice(0, 8);
   const browseTeams = (game === "all" ? browse?.teams ?? [] : (browse?.teams ?? []).filter((t) => t.game === game)).slice(0, 6);
@@ -131,8 +144,8 @@ export function SearchScreen() {
             ))}
           </div>
         ) : null}
-        {browse === null ? (
-          <div className="md:col-span-2"><LoadingRows /></div>
+        {!browseRevealed ? (
+          <div className="md:col-span-2"><SkeletonPeopleRows rows={8} avatar={40} /></div>
         ) : (
           <>
             {browsePlayers.length > 0 ? (
@@ -158,8 +171,8 @@ export function SearchScreen() {
         )}
       </div>
     );
-  } else if (searching && resultsEmpty(filtered)) {
-    body = <LoadingRows />;
+  } else if (!resultsRevealed && resultsEmpty(filtered)) {
+    body = <SkeletonPeopleRows rows={6} avatar={40} />;
   } else if (resultsEmpty(filtered)) {
     body = (
       <div className="flex flex-col items-center gap-3 pt-20 px-10 text-center">
@@ -201,23 +214,16 @@ export function SearchScreen() {
 
   return (
     <Page>
-      <div className="flex items-center px-4 pt-1.5 pb-2"><TabHeaderTitle text="Search" /></div>
-      <div className="px-4 pb-2">
-        <SearchField value={query} onChange={setQuery} placeholder="Search players and teams" autoFocus />
+      <NavBar title="Search" phoneOnly />
+      <div className="hidden md:flex items-center px-4 pt-1.5 pb-2"><TabHeaderTitle text="Search" /></div>
+      <div className="px-4 pb-2 flex items-center gap-3">
+        <div className="flex-1"><SearchField value={query} onChange={setQuery} placeholder="Search players and teams" autoFocus /></div>
+        {/* The app's small spinner beside the field while a search refines rows already on screen. */}
+        {!resultsRevealed && urlQuery.trim() && !resultsEmpty(filtered) ? <Spinner size={16} /> : null}
       </div>
       <GameTabBar selected={game} onChange={(g) => set({ game: g === "all" ? null : g })} games={GAMES} className="pb-2" />
       <div className="pt-1">{body}</div>
     </Page>
-  );
-}
-
-function LoadingRows() {
-  return (
-    <div className="flex flex-col pt-2">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 px-4 py-2.5"><span className="size-10 rounded-full bg-surface" /><SkeletonBar width={140} height={12} /></div>
-      ))}
-    </div>
   );
 }
 

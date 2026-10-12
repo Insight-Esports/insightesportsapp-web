@@ -52,7 +52,7 @@ export function MessagesShell({ children }: { children: ReactNode }) {
     return (
       <div className="flex flex-col pb-[calc(var(--tabbar-h)+24px)] md:pb-10">
         <div className="flex items-center gap-2.5 px-3 pt-1.5 pb-2">
-          <button type="button" onClick={() => router.back()} aria-label="Back" className="grid place-items-center size-8 text-primary hover:text-violet md:hidden"><ChevronLeft size={20} /></button>
+          <button type="button" onClick={() => router.back()} aria-label="Back" className="grid place-items-center size-8 text-primary hover:text-violet md:hidden"><ChevronLeft size={20} strokeWidth={2.5} /></button>
           <TabHeaderTitle text="Messages" />
         </div>
         <div className="pt-10 max-w-2xl">

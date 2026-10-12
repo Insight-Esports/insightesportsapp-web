@@ -12,8 +12,11 @@ import { EmptyState, GameTabBar, LoadFailure, Page, SkeletonMatchCard, Spinner, 
 import { HeaderTools } from "@/components/shell/AppShell";
 import { ApiError, api, endpoints, errorMessage } from "@/lib/api";
 import { matchResultTime, normalizeMatches, type Match } from "@/lib/types";
+import { useReveal } from "@/lib/use-reveal";
 import { CompletedMatchRow } from "./cards";
 import { CardGrid, DateSectionHeader, ScheduleTabs, gameQuery, groupByDay, parseDayKey, resultsDayLabel, sortResultsDesc, useGameParam } from "./shared";
+import { useIsPhone } from "@/components/shell/use-phone";
+import { CalendarTool, ScheduleSegmentPicker } from "./schedule-phone";
 
 const PAGE_SIZE = 20;
 const STALE_MS = 30_000;
@@ -21,6 +24,7 @@ const STALE_MS = 30_000;
 export function ResultsScreen() {
   const params = useSearchParams();
   const [game, setGame] = useGameParam();
+  const phone = useIsPhone();
   const team = params.get("team");
   const gameArg = game === "all" ? null : game;
 
@@ -108,15 +112,18 @@ export function ResultsScreen() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [gameArg, team]);
 
+  // ResultsView: skeleton cards until the first page AND its crests are in.
+  const revealed = useReveal(loading, () => results.flatMap((m) => [m.team1LogoURL, m.team2LogoURL]));
+
   // Auto-load when the sentinel scrolls into view (the app's bottom-row onAppear).
   const sentinel = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = sentinel.current;
-    if (!el || reachedEnd || loading) return;
+    if (!el || reachedEnd || !revealed) return;
     const io = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) void loadMore(); }, { rootMargin: "200px" });
     io.observe(el);
     return () => io.disconnect();
-  }, [reachedEnd, loading, loadMore, results.length]);
+  }, [reachedEnd, revealed, loadMore, results.length]);
 
   const days = useMemo(() => {
     const grouped = groupByDay(results, matchResultTime);
@@ -127,8 +134,8 @@ export function ResultsScreen() {
 
   return (
     <Page>
-      <TabHeader title="Schedule" tools={<HeaderTools />} />
-      <ScheduleTabs value="results" game={game} />
+      <TabHeader title="Schedule" tools={<HeaderTools extra={phone ? <CalendarTool game={game} /> : undefined} />} />
+      {phone ? <ScheduleSegmentPicker value="results" game={game} /> : <ScheduleTabs value="results" game={game} />}
       <GameTabBar selected={game} onChange={setGame} className="pt-2 pb-1" />
 
       {team ? (
@@ -140,17 +147,25 @@ export function ResultsScreen() {
       ) : null}
 
       <div className="pt-3">
-        {loading ? (
-          <div className="px-4"><CardGrid columns={3}>{[0, 1, 2, 3, 4].map((i) => <SkeletonMatchCard key={i} />)}</CardGrid></div>
+        {!revealed ? (
+          <div className="px-4 max-md:pt-2"><CardGrid columns={3}>{[0, 1, 2, 3, 4].map((i) => <SkeletonMatchCard key={i} />)}</CardGrid></div>
         ) : error ? (
           <LoadFailure error={error} connectionProblem={connectionProblem} onRetry={reload} />
         ) : days.length === 0 ? (
-          <EmptyState
-            icon={<History />}
-            title="No results yet"
-            subtitle="Completed matches will show up here once games have been played."
-            className="mt-6"
-          />
+          phone ? (
+            <div className="flex flex-col items-center gap-3 text-center pt-20 px-10">
+              <History size={40} className="text-muted" />
+              <span className="t-headline-sm text-primary">No results yet</span>
+              <span className="t-body-sm text-muted">Completed matches will show up here once games have been played.</span>
+            </div>
+          ) : (
+            <EmptyState
+              icon={<History />}
+              title="No results yet"
+              subtitle="Completed matches will show up here once games have been played."
+              className="mt-6"
+            />
+          )
         ) : (
           <div className="flex flex-col">
             {days.map(({ key, day, matches }) => (
@@ -166,7 +181,7 @@ export function ResultsScreen() {
 
             {!reachedEnd ? (
               <div ref={sentinel} className="flex flex-col items-center gap-2 py-4">
-                {loadingMore ? (
+                {loadingMore || (phone && !moreError) ? (
                   <Spinner />
                 ) : moreError ? (
                   <>

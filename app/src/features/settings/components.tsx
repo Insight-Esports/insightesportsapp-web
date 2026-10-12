@@ -5,11 +5,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, ArrowUpRight, Settings as SettingsIcon, Bell, Gamepad2, Hand, LayoutGrid } from "lucide-react";
+import { ChevronRight, ArrowUpRight, Settings as SettingsIcon, Bell, Gamepad2, Hand, LayoutGrid } from "lucide-react";
 import { clsx } from "@/lib/format";
 import { Page } from "@/components/ui";
+import { NavBar } from "@/components/shell/NavBar";
 
 const NAV: { href: string; label: string; icon: ReactNode }[] = [
   { href: "/settings", label: "Settings", icon: <SettingsIcon size={16} /> },
@@ -21,7 +22,6 @@ const NAV: { href: string; label: string; icon: ReactNode }[] = [
 
 export function SettingsFrame({ title, trailing, children, backHref }: { title: string; trailing?: ReactNode; children: ReactNode; backHref?: string }) {
   const pathname = usePathname();
-  const router = useRouter();
   const isRoot = pathname === "/settings";
   return (
     <Page>
@@ -37,13 +37,8 @@ export function SettingsFrame({ title, trailing, children, backHref }: { title: 
           })}
         </nav>
         <div className="min-w-0">
-          <div className="flex items-center gap-2 px-4 lg:px-0 pt-3 pb-2 hairline-b">
-            {!isRoot ? (
-              <button type="button" onClick={() => (backHref ? router.push(backHref) : router.back())} aria-label="Back" className="lg:hidden grid place-items-center size-8 -ml-2 text-secondary hover:text-primary"><ChevronLeft size={20} /></button>
-            ) : null}
-            <span className="t-headline-sm text-primary flex-1">{title}</span>
-            {trailing}
-          </div>
+          {/* Phones: the system bar (chevron · title · trailing); desktop: the headline row. */}
+          <NavBar title={title} trailing={trailing} back={backHref} hideBackOnDesktop={isRoot} />
           <div className="px-4 lg:px-0 pt-4 max-w-2xl">{children}</div>
         </div>
       </div>

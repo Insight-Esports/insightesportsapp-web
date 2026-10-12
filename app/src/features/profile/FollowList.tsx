@@ -5,13 +5,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Ellipsis, Hand, ShieldAlert, UserX, Users, UserPlus, ChevronLeft } from "lucide-react";
+import { Ellipsis, Hand, ShieldAlert, UserX, Users, UserPlus } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { gameLabel, type Json } from "@/lib/types";
 import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
+import { useReveal } from "@/lib/use-reveal";
 import { ConfirmDialog, EmptyState, InitialAvatar, Page, SkeletonLedger, Spinner } from "@/components/ui";
+import { NavBar } from "@/components/shell/NavBar";
 import { normalizeFollowRows, type FollowUser } from "./types";
 import { seedFollow, useFollowState } from "./follow-store";
 
@@ -19,7 +20,6 @@ export type FollowListMode = "followers" | "following";
 const PAGE = 20;
 
 export function FollowList({ mode, userId }: { mode: FollowListMode; userId: string }) {
-  const router = useRouter();
   const { user } = useAppState();
   const isOwnList = userId === "me" || (!!user && user.id === userId);
   const targetId = isOwnList ? "me" : userId;
@@ -55,6 +55,9 @@ export function FollowList({ mode, userId }: { mode: FollowListMode; userId: str
     void fetchPage(true);
   }, [fetchPage]);
 
+  // FollowListViewModel: "First page reveals complete: avatars warmed before publish."
+  const revealed = useReveal(!hasLoaded, () => users.map((u) => u.avatarURL));
+
   async function loadMore() {
     if (loadingMore || reachedEnd || users.length === 0) return;
     setLoadingMore(true);
@@ -71,7 +74,7 @@ export function FollowList({ mode, userId }: { mode: FollowListMode; userId: str
     io.observe(el);
     return () => io.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [users.length, reachedEnd, loadingMore]);
+  }, [users.length, reachedEnd, loadingMore, revealed]);
 
   async function block(u: FollowUser) {
     const previous = users;
@@ -91,13 +94,10 @@ export function FollowList({ mode, userId }: { mode: FollowListMode; userId: str
 
   return (
     <Page>
-      <div className="flex items-center gap-2 px-4 pt-3 pb-2 hairline-b">
-        <button type="button" onClick={() => router.back()} aria-label="Back" className="grid place-items-center size-8 -ml-2 text-secondary hover:text-primary"><ChevronLeft size={20} /></button>
-        <span className="t-headline-sm text-primary flex-1">{title}</span>
-      </div>
+      <NavBar title={title} />
 
       <div className="px-4 pt-4 max-w-2xl">
-        {!hasLoaded ? (
+        {!revealed ? (
           <SkeletonLedger rows={8} avatar={44} />
         ) : users.length === 0 ? (
           <EmptyState

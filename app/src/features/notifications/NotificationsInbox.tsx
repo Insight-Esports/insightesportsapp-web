@@ -13,7 +13,10 @@ import { api, endpoints } from "@/lib/api";
 import { type Json } from "@/lib/types";
 import { clsx, timeAgo } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
-import { AssetIcon, EmptyState, LoadFailure, Page, SkeletonBar } from "@/components/ui";
+import { AssetIcon, EmptyState, LoadFailure, Page } from "@/components/ui";
+import { SkeletonNotificationRows } from "@/components/ui/skeletons";
+import { NavBar } from "@/components/shell/NavBar";
+import { useReveal } from "@/lib/use-reveal";
 import { normalizeNotifications, type NotificationItem, type NotificationTint } from "./types";
 
 const PAGE_SIZE = 40;
@@ -107,23 +110,15 @@ export function NotificationsInbox() {
 
   const hasUnread = items.some((i) => !i.isRead);
   const groups = useMemo(() => groupByDay(items), [items]);
+  // NotificationsView: the row silhouettes until the first page is in (icons are local assets, nothing to warm).
+  const revealed = useReveal(loading, () => []);
 
   return (
     <Page>
-      <div className="flex items-center gap-3 px-4 pt-3 pb-2 hairline-b">
-        <span className="t-headline-sm text-primary flex-1">Notifications</span>
-        {hasUnread ? <button type="button" onClick={markAllRead} className="t-label-md text-violet hover:underline">Mark all read</button> : null}
-      </div>
+      <NavBar title="Notifications" hideBackOnDesktop trailing={hasUnread ? <button type="button" onClick={markAllRead} className="t-label-md text-violet hover:underline whitespace-nowrap">Mark all read</button> : null} />
 
-      {loading && items.length === 0 ? (
-        <div className="px-4 pt-3 max-w-2xl">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-3 py-3">
-              <span className="size-10 rounded-full bg-surface shrink-0" />
-              <span className="flex flex-col gap-1.5 flex-1"><SkeletonBar width={180} height={12} /><SkeletonBar width={120} height={10} /></span>
-            </div>
-          ))}
-        </div>
+      {!revealed && items.length === 0 ? (
+        <div className="px-4 pt-1 max-w-2xl"><SkeletonNotificationRows rows={6} /></div>
       ) : error && items.length === 0 ? (
         <div className="pt-6"><LoadFailure error={error} connectionProblem={connectionProblem} onRetry={() => void load()} /></div>
       ) : items.length === 0 ? (

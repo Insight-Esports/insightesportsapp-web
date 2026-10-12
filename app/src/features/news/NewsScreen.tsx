@@ -9,9 +9,11 @@
 import { Newspaper } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { useFetch } from "@/lib/use-fetch";
+import { useReveal } from "@/lib/use-reveal";
 import { clsx, timeAgo } from "@/lib/format";
 import { GAMES, normalizeArticle, type GameId, type Json, type NewsArticle } from "@/lib/types";
-import { EmptyState, GamePill, GameTabBar, Img, LoadFailure, Page, SkeletonBar, TabHeader } from "@/components/ui";
+import { EmptyState, GamePill, GameTabBar, Img, LoadFailure, Page, TabHeader } from "@/components/ui";
+import { SkeletonFeaturedNewsCard, SkeletonNewsCard } from "@/components/ui/skeletons";
 import { HeaderTools } from "@/components/shell/AppShell";
 import { useQueryParams } from "@/features/players/useQueryParams";
 
@@ -37,11 +39,18 @@ export function NewsScreen() {
     [game],
   );
 
+  // NewsView: six card silhouettes until `hasLoaded` — and, here, until the
+  // first page's pictures are warm so the cards appear with their images.
+  const revealed = useReveal(loading, () => (data ?? []).map((a) => a.imageURL));
+
   let content;
-  if (loading && !data) {
+  if (!revealed) {
     content = (
-      <div className="px-4 pt-3 flex flex-col gap-3">
-        {Array.from({ length: 6 }).map((_, i) => <NewsCardSkeleton key={i} />)}
+      <div className="px-4 pt-3 grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start">
+        <SkeletonFeaturedNewsCard />
+        <div className="flex flex-col gap-3">
+          {Array.from({ length: 5 }).map((_, i) => <SkeletonNewsCard key={i} />)}
+        </div>
       </div>
     );
   } else if (error && !data) {
@@ -51,7 +60,7 @@ export function NewsScreen() {
   } else {
     const [featured, ...rest] = data;
     content = (
-      <div className="px-4 pt-3 grid gap-3 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start">
+      <div className="px-4 pt-3 grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start">
         <FeaturedNewsCard article={featured} />
         <div className="flex flex-col gap-3">
           {rest.map((a) => <NewsCard key={a.id} article={a} />)}
@@ -114,14 +123,5 @@ function NewsCard({ article }: { article: NewsArticle }) {
         <span className="t-headline-sm text-primary line-clamp-3">{article.title}</span>
       </div>
     </Tag>
-  );
-}
-
-function NewsCardSkeleton() {
-  return (
-    <div className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border-subtle">
-      <span className="size-20 shrink-0 rounded-lg bg-surface" />
-      <div className="flex flex-col gap-2 flex-1"><SkeletonBar height={12} /><SkeletonBar height={12} width="85%" /><SkeletonBar width={80} height={10} /></div>
-    </div>
   );
 }

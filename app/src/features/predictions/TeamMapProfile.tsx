@@ -7,10 +7,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { api, endpoints } from "@/lib/api";
 import { gameLabel } from "@/lib/types";
 import { useFetch } from "@/lib/use-fetch";
-import { FilterChip, LoadFailure } from "@/components/ui";
+import { FilterChip, LoadFailure, SkeletonBar, SkeletonStatRow } from "@/components/ui";
+import { SkeletonStripedTable } from "@/components/ui/skeletons";
 import { PredictScreen } from "./PredictScreen";
 import { flowHref, readTarget } from "./flow";
-import { AccentRead, Disclaimer, FlowError, LoadingLine, Section, StatRow, StepHeader, StripedTable } from "./shared";
+import { AccentRead, Disclaimer, FlowError, Section, StatRow, StepHeader, StripedTable } from "./shared";
 import { gameMaps, normalizeTeamMapProfile, PredictionFormat, type TeamMapProfile } from "./types";
 
 // Fixed display order for the avgStats dictionary.
@@ -44,7 +45,11 @@ export function TeamMapProfileScreen() {
           {!map ? (
             <p className="py-8 px-6 text-center t-body-md text-muted">Pick a map to see how {t.targetName} performs on it.</p>
           ) : loading ? (
-            <LoadingLine text="Loading…" className="py-8" />
+            // The profile's silhouette: record strip + averages table.
+            <div className="flex flex-col gap-5">
+              <SkeletonStatRow columns={3} />
+              <div className="flex flex-col gap-2.5"><SkeletonBar width={130} height={8} /><SkeletonStripedTable rows={6} columns={2} /></div>
+            </div>
           ) : error || !r ? (
             connectionProblem ? <LoadFailure error={error ?? ""} connectionProblem onRetry={reload} /> : <FlowError title={error ?? "Something went wrong."} />
           ) : (

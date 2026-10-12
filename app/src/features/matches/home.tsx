@@ -12,6 +12,7 @@ import { ConnectionErrorView, EmptyState, GameTabBar, LoadFailure, Page, Section
 import { HeaderTools } from "@/components/shell/AppShell";
 import { api, endpoints } from "@/lib/api";
 import { useFetch, useInterval } from "@/lib/use-fetch";
+import { useReveal } from "@/lib/use-reveal";
 import { normalizeMatches, type Match } from "@/lib/types";
 import { useAppState } from "@/store/app-state";
 import { LiveMatchCard, UpcomingMatchCard } from "./cards";
@@ -60,6 +61,12 @@ export function HomeScreen() {
   const liveMatches = filterByGame(liveAll, game);
   const upcomingMatches = filterByGame(upcoming.data ?? [], game).slice().sort(sortUpcomingAsc);
 
+  // HomeView keeps both sections on skeletons until `hasLoaded` — the whole
+  // first screen appears at once, after the first page of crests is warm.
+  const revealed = useReveal(live.loading || upcoming.loading, () =>
+    [...liveAll, ...(upcoming.data ?? [])].flatMap((m) => [m.team1LogoURL, m.team2LogoURL]));
+  const showSkeleton = !revealed;
+
   const reload = () => { live.reload(); upcoming.reload(); };
   const viewSchedule = () => {
     // Carry the game filter across: "no live CS2" → Schedule opens already on CS2.
@@ -71,18 +78,18 @@ export function HomeScreen() {
 
   return (
     <Page>
-      <TabHeader title="Live" tools={<HeaderTools />} />
+      <TabHeader title="Live" tools={<HeaderTools home />} />
       <div className="flex flex-col gap-5 pt-2">
         <GameTabBar selected={game} onChange={setGame} liveGames={liveGames} />
 
         {connectionFailed ? (
           <ConnectionErrorView onRetry={reload} className="min-h-[420px]" />
         ) : (
-          <div className="grid gap-6 px-4 lg:grid-cols-2 lg:gap-6 items-start">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-6 px-4 lg:grid-cols-2 lg:gap-6 items-start">
             {/* ── Live Now ── */}
             <section className="flex flex-col gap-3 min-w-0">
               <SectionHeader title="Live Now" className="!px-0" />
-              {live.loading ? (
+              {showSkeleton ? (
                 <CardGrid>{[0, 1].map((i) => <SkeletonMatchCard key={i} />)}</CardGrid>
               ) : live.error ? (
                 <LoadFailure error={live.error} connectionProblem={live.connectionProblem} onRetry={live.reload} />
@@ -105,7 +112,7 @@ export function HomeScreen() {
             {/* ── Upcoming ── */}
             <section className="flex flex-col gap-3 min-w-0">
               <SectionHeader title="Upcoming" className="!px-0" />
-              {upcoming.loading ? (
+              {showSkeleton ? (
                 <CardGrid>{[0, 1, 2].map((i) => <SkeletonMatchCard key={i} />)}</CardGrid>
               ) : upcoming.error ? (
                 <LoadFailure error={upcoming.error} connectionProblem={upcoming.connectionProblem} onRetry={upcoming.reload} />

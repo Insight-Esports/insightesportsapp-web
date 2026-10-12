@@ -1,5 +1,5 @@
 import { chromium } from "playwright";
-const base = "http://localhost:3100";
+const base = "http://localhost:3100/app";
 const routes = ["/", "/schedule", "/results", "/match/m-live-2", "/match/m-up-1", "/match/m-done-1",
  "/players", "/players/df5840c9-d473-4921-a7b9-481b2989d000", "/teams", "/teams/team-sentinels", "/news", "/search?q=sen",
  "/premium", "/premium/predict", "/premium/predict/target", "/premium/predict/h2h", "/premium/upgrade", "/weekly-report",

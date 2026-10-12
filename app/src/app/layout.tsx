@@ -1,10 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { withBase } from "@/lib/base-path";
 
 export const metadata: Metadata = {
   title: { default: "Insight", template: "%s · Insight" },
   description: "Live esports stats, predictions and fan engagement for VALORANT, CS2 and League of Legends.",
-  icons: { icon: "/favicon-64.png", apple: "/apple-touch-icon.png" },
+  icons: { icon: `${process.env.NEXT_PUBLIC_BASE_PATH ?? "/app"}/favicon-64.png`, apple: `${process.env.NEXT_PUBLIC_BASE_PATH ?? "/app"}/apple-touch-icon.png` },
 };
 
 export const viewport: Viewport = {
@@ -26,6 +27,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="h-full antialiased">
       <head>
+        {/* Android "Add to Home screen": standalone, app-colored, scoped to /app. */}
+        <link rel="manifest" href={withBase("/manifest.webmanifest")} />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Insight" />
         {imageOrigin ? <link rel="preconnect" href={imageOrigin} crossOrigin="" /> : null}
         {imageOrigin ? <link rel="dns-prefetch" href={imageOrigin} /> : null}
       </head>

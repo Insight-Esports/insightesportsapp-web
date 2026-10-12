@@ -10,6 +10,7 @@ import { Hash, MailCheck } from "lucide-react";
 import { api, endpoints, ApiError } from "@/lib/api";
 import { Field } from "@/components/ui";
 import { AuthBackLink, AuthButton, AuthError, AuthHero, AuthInfo, useCooldown } from "./AuthHero";
+import { withBase } from "@/lib/base-path";
 
 export function VerifyEmail({ email }: { email: string }) {
   const router = useRouter();
@@ -28,7 +29,7 @@ export function VerifyEmail({ email }: { email: string }) {
     if (loading) return;
     setLoading(true); setError(null); setInfo(null);
     try {
-      const r = await fetch("/api/auth/verify-otp", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, token: trimmed }) });
+      const r = await fetch(withBase("/api/auth/verify-otp"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, token: trimmed }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
         setError(r.status === 429 ? "Too many attempts. Please wait a moment." : j?.code === "DOMAIN_NOT_ALLOWED" ? j.error : "That code is incorrect or expired. Double-check it or request a new one.");

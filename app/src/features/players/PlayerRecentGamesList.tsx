@@ -31,6 +31,7 @@ export function usePlayerGames(playerId: string) {
     setLoaded(false);
     setRows([]);
     setReachedEnd(false);
+    if (!playerId) { setLoaded(true); setReachedEnd(true); return; }   // idle (the page owns the real pager)
     inFlight.current = true;
     api.get(endpoints.playerMatches(playerId, PAGE_SIZE))
       .then((raw) => {
@@ -66,8 +67,11 @@ export function usePlayerGames(playerId: string) {
   return { rows, loaded, loadingMore, reachedEnd, loadMore };
 }
 
-export function PlayerRecentGamesList({ playerId, game, onRows }: { playerId: string; game: string; onRows?: (rows: PlayerGameRow[]) => void }) {
-  const pager = usePlayerGames(playerId);
+/** The list owns its pager unless the page passes one in (PlayerDetail does,
+ *  so it can hold the whole screen until the first page is in). */
+export function PlayerRecentGamesList({ playerId, game, onRows, pager: external }: { playerId: string; game: string; onRows?: (rows: PlayerGameRow[]) => void; pager?: ReturnType<typeof usePlayerGames> }) {
+  const own = usePlayerGames(external ? "" : playerId);
+  const pager = external ?? own;
   const sentinel = useLoadMore(pager.loadMore, pager.loaded && !pager.reachedEnd && !pager.loadingMore);
   const onRowsRef = useRef(onRows);
   onRowsRef.current = onRows;

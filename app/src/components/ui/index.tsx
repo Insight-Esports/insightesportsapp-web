@@ -10,6 +10,8 @@ import { useEffect, useState, type ReactNode, type CSSProperties, type InputHTML
 import { AlertTriangle, Crown, WifiOff, X, Check, Search } from "lucide-react";
 import { clsx, initials as toInitials } from "@/lib/format";
 import { gamePillLabel, gameTint, GAMES, type GameId } from "@/lib/types";
+import { withBase } from "@/lib/base-path";
+import { socketHost } from "@/lib/socket";
 
 // ── Tab header ────────────────────────────────────────────────────────────
 /** Title + violet rule under the word (TabHeaderTitle). */
@@ -26,11 +28,11 @@ export function TabHeaderTitle({ text, className }: { text: string; className?: 
  *  boxes inside one hairline outline) on the right. */
 export function TabHeader({ title, tools, className }: { title: string; tools?: ReactNode; className?: string }) {
   return (
-    <div className={clsx("flex items-center gap-3.5 px-4 pt-1.5 pb-2 bg-bg", className)}>
+    <div className={clsx("flex items-center gap-3.5 px-4 pt-1.5 pb-2 bg-bg min-w-0", className)}>
       <TabHeaderTitle text={title} />
       <div className="flex-1 min-w-2" />
       {tools ? (
-        <div className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-xl border border-hairline">{tools}</div>
+        <div className="flex items-center gap-2.5 px-2.5 py-[5px] rounded-xl border border-hairline shrink-0">{tools}</div>
       ) : null}
     </div>
   );
@@ -42,7 +44,7 @@ export function ToolButton({ label, badge, className, children, ...rest }: Butto
     <button type="button" aria-label={label} title={label} className={clsx("relative grid place-items-center size-8 rounded-lg text-secondary hover:text-primary hover:bg-card transition-colors", className)} {...rest}>
       {children}
       {badge ? (
-        <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-live text-white text-[10px] font-semibold grid place-items-center leading-none">{badge > 99 ? "99+" : badge}</span>
+        <span className="absolute -top-[3px] -right-[5px] min-w-[13px] h-[13px] px-[3px] rounded-full bg-error text-white text-[8px] font-bold grid place-items-center leading-none">{badge > 99 ? "99+" : badge}</span>
       ) : null}
     </button>
   );
@@ -155,7 +157,19 @@ export function TeamBadge({ abbreviation, color = "var(--violet)", size = 36, cl
 }
 
 /** Image with a graceful fallback (CachedAsyncImage + placeholder). */
-export function Img({ src, alt, fallback, className, style, fit = "contain", lazy = false }: { src: string | null | undefined; alt: string; fallback: ReactNode; className?: string; style?: CSSProperties; fit?: "contain" | "cover"; lazy?: boolean }) {
+/** Backend thumbnails (`<host>/img/...`) are fetched through the same-origin
+ *  /api/img mirror: the backend's helmet() CORP header blocks them cross-origin
+ *  in browsers. Any other URL is returned untouched. */
+export function imageSrc(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const host = socketHost();
+  if (url.startsWith(host + "/img/")) return withBase("/api/img/" + url.slice(host.length + "/img/".length));
+  if (url.startsWith("/img/")) return withBase("/api" + url);
+  return url;
+}
+
+export function Img({ src: rawSrc, alt, fallback, className, style, fit = "contain", lazy = false }: { src: string | null | undefined; alt: string; fallback: ReactNode; className?: string; style?: CSSProperties; fit?: "contain" | "cover"; lazy?: boolean }) {
+  const src = imageSrc(rawSrc);
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
   if (!src || failed) return <>{fallback}</>;
@@ -228,13 +242,13 @@ export function GradientAvatar({ name, size = 40 }: { name: string; size?: numbe
 /** Custom-asset icons (Karlo's marks) with baked-in colors. */
 export function AssetIcon({ name, height = 16, className }: { name: "baren" | "correct" | "dragon" | "inhibitor" | "messages" | "premium" | "premiumlocked" | "streakmilestone" | "tower2" | "weeklyreport" | "wrong" | "tournament"; height?: number; className?: string }) {
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={`/icons/${name}.png`} alt="" aria-hidden className={clsx("inline-block object-contain", className)} style={{ height, width: "auto" }} />;
+  return <img src={withBase(`/icons/${name}.png`)} alt="" aria-hidden className={clsx("inline-block object-contain", className)} style={{ height, width: "auto" }} />;
 }
 
 /** The app's logo mark (BrandMark). */
 export function BrandMark({ size = 80, className }: { size?: number; className?: string }) {
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src="/brand/logo-insight.png" alt="Insight" width={size} height={size} className={clsx("shrink-0", className)} style={{ width: size, height: size, borderRadius: size * 0.22 }} />;
+  return <img src={withBase("/brand/logo-insight.png")} alt="Insight" width={size} height={size} className={clsx("shrink-0", className)} style={{ width: size, height: size, borderRadius: size * 0.22 }} />;
 }
 
 // ── Stats & sections ──────────────────────────────────────────────────────
@@ -271,7 +285,7 @@ export function EmptyState({ icon, title, subtitle, actionTitle, onAction, class
       <span className="t-headline-sm text-primary">{title}</span>
       {subtitle ? <span className="t-body-sm text-muted max-w-sm">{subtitle}</span> : null}
       {actionTitle && onAction ? (
-        <button type="button" onClick={onAction} className="btn-pill mt-1">{actionTitle}</button>
+        <button type="button" onClick={onAction} className="btn-pill mt-1 max-md:rounded-lg max-md:px-5">{actionTitle}</button>
       ) : null}
     </div>
   );
@@ -418,8 +432,8 @@ export function SidePanel({ open, onClose, children, side = "right", width = 320
   }, [open, onClose]);
   return (
     <div className={clsx("fixed inset-0 z-50", !open && "pointer-events-none")} aria-hidden={!open}>
-      <div className={clsx("absolute inset-0 bg-black/60 transition-opacity duration-200", open ? "opacity-100" : "opacity-0")} onClick={onClose} />
-      <div className={clsx("absolute top-0 bottom-0 bg-card border-hairline transition-transform duration-200 ease-out overflow-y-auto", side === "right" ? "right-0 border-l" : "left-0 border-r", open ? "translate-x-0" : side === "right" ? "translate-x-full" : "-translate-x-full")} style={{ width: `min(${width}px, 88vw)` }} role="dialog">
+      <div className={clsx("absolute inset-0 bg-black/60 max-md:bg-black/40 transition-opacity duration-200", open ? "opacity-100" : "opacity-0")} onClick={onClose} />
+      <div className={clsx("absolute top-0 bottom-0 bg-card border-hairline max-md:bg-bg max-md:border-border-subtle max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)] transition-transform duration-200 ease-out overflow-y-auto", side === "right" ? "right-0 border-l" : "left-0 border-r", open ? "translate-x-0" : side === "right" ? "translate-x-full" : "-translate-x-full")} style={{ width: `min(${width}px, var(--side-panel-max, 88vw))` }} role="dialog">
         {children}
       </div>
     </div>
@@ -427,7 +441,7 @@ export function SidePanel({ open, onClose, children, side = "right", width = 320
 }
 
 /** Sheet: bottom sheet on phones, centered modal on wider screens. */
-export function Sheet({ open, onClose, title, children, trailing, size = "md" }: { open: boolean; onClose: () => void; title?: string; children: ReactNode; trailing?: ReactNode; size?: "md" | "lg" | "full" }) {
+export function Sheet({ open, onClose, title, children, trailing, leading, size = "md" }: { open: boolean; onClose: () => void; title?: string; children: ReactNode; trailing?: ReactNode; leading?: ReactNode; size?: "md" | "lg" | "full" }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -440,9 +454,10 @@ export function Sheet({ open, onClose, title, children, trailing, size = "md" }:
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center" role="dialog" aria-modal>
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className={clsx("relative w-full bg-bg border-hairline sm:border rounded-t-2xl sm:rounded-2xl max-h-[92vh] sm:max-h-[85vh] flex flex-col shadow-2xl", maxW)}>
+      <div className={clsx("relative w-full bg-bg border-hairline sm:border rounded-t-[10px] sm:rounded-2xl max-h-[92dvh] sm:max-h-[85vh] flex flex-col shadow-2xl pb-[env(safe-area-inset-bottom)] sm:pb-0", maxW)}>
+        <span aria-hidden className="sm:hidden mx-auto mt-1.5 -mb-1 h-[5px] w-9 rounded-full bg-muted/50" />
         <div className="flex items-center gap-3 px-4 py-3 hairline-b">
-          <button type="button" onClick={onClose} aria-label="Close" className="text-secondary hover:text-primary"><X size={20} /></button>
+          <span className="min-w-5 flex justify-start">{leading ?? <button type="button" onClick={onClose} aria-label="Close" className="text-secondary hover:text-primary"><X size={20} /></button>}</span>
           <span className="t-headline-sm text-primary flex-1 text-center truncate">{title}</span>
           <span className="min-w-5 flex justify-end">{trailing}</span>
         </div>
@@ -493,7 +508,7 @@ export function Toast({ message, kind = "info" }: { message: string | null; kind
   if (!message) return null;
   const color = kind === "error" ? "border-error/50" : kind === "success" ? "border-success/50" : "border-hairline";
   return (
-    <div className="fixed bottom-[calc(var(--tabbar-h)+16px)] md:bottom-6 left-1/2 -translate-x-1/2 z-[70] pointer-events-none">
+    <div className="fixed bottom-[calc(var(--tabbar-h)+16px)] md:bottom-6 left-1/2 -translate-x-1/2 z-[70] pointer-events-none max-w-[calc(100vw-32px)]">
       <div className={clsx("px-4 py-2.5 rounded-full bg-card border t-label-md text-primary shadow-xl", color)}>{message}</div>
     </div>
   );
@@ -508,13 +523,13 @@ export function HScroll({ children, className }: { children: ReactNode; classNam
 export function Page({ children, className, wide }: { children: ReactNode; className?: string; wide?: boolean }) {
   // Left-aligned against the sidebar (not centered): on wide monitors the
   // content stays next to the menu instead of floating in the middle.
-  return <div className={clsx("w-full pb-[calc(var(--tabbar-h)+24px)] md:pb-10", wide ? "max-w-[1400px]" : "max-w-[1200px]", className)}>{children}</div>;
+  return <div className={clsx("w-full min-w-0 pb-[calc(var(--tabbar-h)+24px)] md:pb-10", wide ? "max-w-[1400px]" : "max-w-[1200px]", className)}>{children}</div>;
 }
 
 /** Two-column layout on desktop (main + rail), single column on phones. */
 export function SplitLayout({ main, rail, className }: { main: ReactNode; rail?: ReactNode; className?: string }) {
   return (
-    <div className={clsx("grid gap-4 px-4", rail ? "lg:grid-cols-[minmax(0,1fr)_340px]" : "", className)}>
+    <div className={clsx("grid grid-cols-[minmax(0,1fr)] gap-4 px-4", rail ? "lg:grid-cols-[minmax(0,1fr)_340px]" : "", className)}>
       <div className="min-w-0">{main}</div>
       {rail ? <div className="min-w-0">{rail}</div> : null}
     </div>

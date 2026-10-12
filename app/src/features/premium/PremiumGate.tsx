@@ -14,6 +14,7 @@ import { useAppState } from "@/store/app-state";
 import { AssetIcon, PickDot } from "@/components/ui";
 import { monthlySavingsPercent, PREMIUM_BENEFITS, priceLabel, PRIVACY_URL, TERMS_URL, weeklyPerMonth, type Plan } from "./plans";
 import { useCheckout } from "./usePayments";
+import { withBase } from "@/lib/base-path";
 
 export interface GateCopy { featureTitle: string; featureBlurb: string; bullets: string[]; lockNote?: string | null }
 
@@ -63,7 +64,7 @@ export function PremiumMark({ height = 52, className }: { height?: number; class
     <span
       aria-hidden
       className={clsx("inline-block bg-violet", className)}
-      style={{ height, width: height, WebkitMaskImage: "url(/icons/premium.png)", maskImage: "url(/icons/premium.png)", WebkitMaskSize: "contain", maskSize: "contain", WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat", WebkitMaskPosition: "center", maskPosition: "center" }}
+      style={{ height, width: height, WebkitMaskImage: `url(${withBase("/icons/premium.png")})`, maskImage: `url(${withBase("/icons/premium.png")})`, WebkitMaskSize: "contain", maskSize: "contain", WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat", WebkitMaskPosition: "center", maskPosition: "center" }}
     />
   );
 }

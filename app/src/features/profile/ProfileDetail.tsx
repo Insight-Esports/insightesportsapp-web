@@ -11,10 +11,13 @@ import { useRouter } from "next/navigation";
 import { SquarePen, Ellipsis, Check, X, BarChart3, Flame, ArrowUpRight, UserPlus, Flag, Hand, ShieldAlert } from "lucide-react";
 import { api, endpoints, errorMessage } from "@/lib/api";
 import { useFetch } from "@/lib/use-fetch";
+import { useReveal } from "@/lib/use-reveal";
 import { normalizeUser, gameLabel, type Json } from "@/lib/types";
 import { clsx, formatDate } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
-import { AssetIcon, ConfirmDialog, EmptyState, GamePill, InitialAvatar, Ledger, LedgerRow, LoadFailure, Page, SkeletonBar, Spinner, Toast, ToolButton } from "@/components/ui";
+import { AssetIcon, ConfirmDialog, EmptyState, GamePill, InitialAvatar, Ledger, LedgerRow, LoadFailure, Page, Spinner, Toast, ToolButton } from "@/components/ui";
+import { SkeletonProfile } from "@/components/ui/skeletons";
+import { NavBar } from "@/components/shell/NavBar";
 import { startConversation, startConversationMessage } from "@/features/messages/start-conversation";
 import { FollowButton } from "./FollowButton";
 import {
@@ -73,23 +76,28 @@ export function ProfileDetail({ userId = null }: { userId?: string | null }) {
   const isOwn = data?.profile.isCurrentUser ?? ownId === null;
   const title = isOwn ? "Profile" : "Player";
 
+  // ProfileLoadingState stays up until every profile request has answered
+  // and the avatar + followed crests are warm; then the page appears whole.
+  const revealed = useReveal(loading, () => [data?.profile.avatarURL, ...(data?.followedTeams ?? []).map((t) => t.imageURL), ...(data?.followedPlayers ?? []).map((p) => p.imageURL)]);
+
   return (
     <Page>
-      <div className="flex items-center gap-3 px-4 pt-3 pb-2 hairline-b">
-        <span className="t-headline-sm text-primary flex-1">{title}</span>
-        {isOwn ? (
+      <NavBar
+        title={title}
+        hideBackOnDesktop
+        trailing={isOwn ? (
           <ToolButton label="Edit Profile" onClick={() => router.push("/profile/edit")}><SquarePen size={18} /></ToolButton>
-        ) : data ? (
+        ) : data && revealed ? (
           <ProfileMenu profile={data.profile} onDone={say} />
         ) : null}
-      </div>
+      />
 
-      {loading ? (
-        <ProfileSkeleton />
+      {!revealed && !error ? (
+        <SkeletonProfile />
       ) : error || !data ? (
         <div className="pt-6"><LoadFailure error={error ?? "This profile can't be shown right now."} connectionProblem={connectionProblem} onRetry={reload} /></div>
       ) : (
-        <div className={clsx("grid gap-6 px-4 pt-4", isOwn && "lg:grid-cols-[minmax(0,1fr)_360px]")}>
+        <div className={clsx("grid grid-cols-[minmax(0,1fr)] gap-6 px-4 pt-4", isOwn && "lg:grid-cols-[minmax(0,1fr)_360px]")}>
           <div className="min-w-0 flex flex-col gap-5">
             <ProfileHeader profile={data.profile} isOwnProfile={isOwn} />
 
@@ -387,18 +395,6 @@ function ProfileMenu({ profile, onDone }: { profile: UserProfile; onDone: (m: st
         confirmTitle="Report" destructive onConfirm={run} onCancel={() => setConfirm(null)}
       />
     </span>
-  );
-}
-
-// ── Skeleton (ProfileLoadingState) ────────────────────────────────────────
-function ProfileSkeleton() {
-  return (
-    <div className="flex flex-col items-center gap-4 px-4 pt-14">
-      <span className="size-[92px] rounded-full bg-surface" />
-      <SkeletonBar width={140} height={20} />
-      <span className="w-full h-[70px] rounded-xl bg-surface/70" />
-      <span className="w-full h-[120px] rounded-xl bg-surface/70" />
-    </div>
   );
 }
 

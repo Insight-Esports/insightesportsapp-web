@@ -14,6 +14,7 @@ import { ChevronRight, PlayCircle, Search } from "lucide-react";
 import { api, endpoints, errorMessage } from "@/lib/api";
 import { clsx } from "@/lib/format";
 import { gameLabel, normalizeMatches, normalizePlayers, normalizeTeams } from "@/lib/types";
+import { useReveal } from "@/lib/use-reveal";
 import { EmptyState, FilterChip, InitialAvatar, Ledger, LedgerRow, LiveBadge, SearchField, SkeletonLedger, Spinner, TeamMark } from "@/components/ui";
 import { PredictScreen } from "./PredictScreen";
 import { flowHref, qs, readGame, readTargetType, PREDICT_BASE, type FlowTarget } from "./flow";
@@ -145,6 +146,14 @@ export function TargetSelectScreen() {
   const isTruncated = targetType === "team" ? !!teamResults?.truncated : truncated;
   const reload = () => setTick((t) => t + 1);
 
+  // PredictionTargetSelectViewModel: page-one photos / crests (first 30) warm
+  // before the list publishes. A refining search keeps the rows on screen
+  // with the small spinner, exactly as the app does.
+  const revealed = useReveal(loading, () => items.slice(0, 30).map((i) => i.imageURL));
+  const [displayed, setDisplayed] = useState<PredictionTargetItem[]>([]);
+  useEffect(() => { if (revealed) setDisplayed(items); }, [revealed, items]);
+  const rows = revealed ? items : displayed;
+
   const hrefFor = (item: PredictionTargetItem) => {
     const t: FlowTarget = { game, targetType, targetId: item.id, targetName: item.name, isLive: !!item.isLive, matchId: item.matchId ?? null };
     if (directBreakdown) return item.isLive && targetType === "player" ? flowHref.live(t) : flowHref.breakdown(t);
@@ -169,19 +178,19 @@ export function TargetSelectScreen() {
         {!isLiveMode ? (
           <div className="px-4 flex items-center gap-3">
             <div className="flex-1"><SearchField value={query} onChange={setQuery} placeholder={targetType === "player" ? "Search players" : "Search teams"} /></div>
-            {loading && items.length > 0 ? <Spinner size={16} /> : null}
+            {!revealed && rows.length > 0 ? <Spinner size={16} /> : null}
           </div>
         ) : null}
 
         <div className="px-4 flex flex-col gap-2.5">
-          {loading && items.length === 0 ? (
+          {!revealed && rows.length === 0 ? (
             <SkeletonLedger rows={8} avatar={34} />
           ) : error ? (
             <div className="flex flex-col items-center gap-2 py-8 px-6 text-center">
               <span className="t-body-md text-secondary">{error}</span>
               <button type="button" onClick={reload} className="t-label-md text-violet hover:underline">Retry</button>
             </div>
-          ) : items.length === 0 ? (
+          ) : rows.length === 0 ? (
             <EmptyState
               icon={isLiveMode ? <PlayCircle /> : <Search />}
               title={isLiveMode ? `No live ${gameLabel(game)} matches right now` : `No ${targetType === "player" ? "players" : "teams"} found`}
@@ -196,13 +205,13 @@ export function TargetSelectScreen() {
                 <span className="t-label-sm text-muted px-1">POPULAR PLAYERS</span>
               ) : null}
               <Ledger>
-                {items.map((item) => (
+                {rows.map((item) => (
                   <LedgerRow key={item.id + (item.matchId ?? "")} href={hrefFor(item)}>
                     <TargetRow item={item} targetType={targetType} />
                   </LedgerRow>
                 ))}
               </Ledger>
-              {isTruncated ? <span className="t-label-sm text-muted text-center">Showing the first {items.length} — keep typing to narrow down.</span> : null}
+              {isTruncated ? <span className="t-label-sm text-muted text-center">Showing the first {rows.length} — keep typing to narrow down.</span> : null}
             </>
           )}
         </div>

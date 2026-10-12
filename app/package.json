@@ -5,11 +5,12 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "NODE_ENV=production node server.mjs",
     "lint": "eslint",
     "mock": "node mock/server.mjs",
     "dev:mock": "API_BASE_URL=http://localhost:4000/api NEXT_PUBLIC_SOCKET_URL=http://localhost:4000 next dev",
-    "start:mock": "API_BASE_URL=http://localhost:4000/api NEXT_PUBLIC_SOCKET_URL=http://localhost:4000 next start"
+    "start:mock": "API_BASE_URL=http://localhost:4000/api NEXT_PUBLIC_SOCKET_URL=http://localhost:4000 NODE_ENV=production node server.mjs",
+    "prebuild": "node scripts/sync-site.mjs"
   },
   "dependencies": {
     "@noble/curves": "^2.4.0",

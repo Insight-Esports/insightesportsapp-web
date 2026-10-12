@@ -8,11 +8,15 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Radio, CalendarDays, User, Users, Newspaper, Search, Bell, WifiOff, Wrench, RadioTower, ChevronRight, UserCircle, Trophy, Settings as SettingsIcon, X, Star } from "lucide-react";
+import { api, endpoints } from "@/lib/api";
+import { rankPercentileText } from "@/features/profile/types";
+import { useTabBarHidden } from "./tab-bar";
 import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
 import { AssetIcon, BrandMark, InitialAvatar, SidePanel, Spinner, ToolButton } from "@/components/ui";
+import { withBase } from "@/lib/base-path";
 
 const TABS: { href: string; label: string; icon: ReactNode; match: (p: string) => boolean }[] = [
   { href: "/", label: "Live", icon: <Radio size={18} />, match: (p) => p === "/" || p.startsWith("/match") },
@@ -28,8 +32,8 @@ function PremiumGlyph() {
   return (
     <span
       aria-hidden
-      className="inline-block size-5 bg-current"
-      style={{ WebkitMaskImage: "url(/icons/premium.png)", maskImage: "url(/icons/premium.png)", WebkitMaskSize: "contain", maskSize: "contain", WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat", WebkitMaskPosition: "center", maskPosition: "center" }}
+      className="inline-block h-5 w-5 bg-current"
+      style={{ WebkitMaskImage: `url(${withBase("/icons/premium.png")})`, maskImage: `url(${withBase("/icons/premium.png")})`, WebkitMaskSize: "contain", maskSize: "contain", WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat", WebkitMaskPosition: "center", maskPosition: "center" }}
     />
   );
 }
@@ -37,6 +41,8 @@ function PremiumGlyph() {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { user, isCheckingAuth, gate, connectionTrouble, status, profilePanelOpen, setProfilePanelOpen, unreadNotifications, unreadDMs, checkStatus } = useAppState();
+  // AppState.hidesTabBar — a DM thread takes the whole phone screen.
+  const tabBarHidden = useTabBarHidden();
 
   if (gate.kind === "maintenance") return <MaintenanceView message={gate.message} onRetry={checkStatus} />;
   if (gate.kind === "unreachable") return <MaintenanceView unreachable onRetry={checkStatus} />;
@@ -85,7 +91,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       {/* ── Content ── */}
-      <div className="flex-1 min-w-0 md:pl-[var(--sidebar-w)] flex flex-col">
+      <div className="flex-1 min-w-0 md:pl-[var(--sidebar-w)] flex flex-col max-md:pt-[env(safe-area-inset-top,0px)]">
         {connectionTrouble ? (
           <div className="flex items-center gap-2.5 px-3.5 py-2 bg-card hairline-b">
             <WifiOff size={16} className="text-muted" />
@@ -103,20 +109,25 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main className="flex-1 min-w-0">{children}</main>
       </div>
 
-      {/* ── Bottom tab bar (phones) ── */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-card border-t border-hairline pt-2 pb-[max(2px,env(safe-area-inset-bottom))]" style={{ minHeight: "var(--tabbar-h)" }}>
-        <div className="flex items-start">
-          {TABS.map((t) => {
-            const active = t.match(pathname);
-            return (
-              <Link key={t.href} href={t.href} className={clsx("flex-1 flex flex-col items-center gap-1 pb-1", active ? "text-violet" : "text-muted")}>
-                <span className="h-6 grid place-items-center">{t.icon}</span>
-                <span className="text-[10px] font-medium leading-none">{t.label}</span>
-              </Link>
-            );
-          })}
-        </div>
-      </nav>
+      {/* ── Bottom tab bar (phones) — MainTabView.customTabBar: icon (24pt
+          slot, 18pt glyph) over a 10pt medium label, 8pt above, 2pt below
+          plus the home-indicator inset, card background, a borderSubtle
+          hairline on top. Hidden while a conversation is open. ── */}
+      {!tabBarHidden ? (
+        <nav className="md:hidden fixed bottom-0 inset-x-0 z-30 bg-card border-t border-border-subtle pt-2 pb-[max(2px,env(safe-area-inset-bottom))]" aria-label="Tabs">
+          <div className="flex items-start">
+            {TABS.map((t) => {
+              const active = t.match(pathname);
+              return (
+                <Link key={t.href} href={t.href} aria-current={active ? "page" : undefined} className={clsx("flex-1 min-w-0 flex flex-col items-center gap-1", active ? "text-violet" : "text-muted")}>
+                  <span className="h-6 grid place-items-center">{t.icon}</span>
+                  <span className="text-[10px] font-medium leading-[12px] whitespace-nowrap">{t.label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        </nav>
+      ) : null}
 
       <ProfilePanel open={profilePanelOpen} onClose={() => setProfilePanelOpen(false)} />
     </div>
@@ -128,20 +139,27 @@ export function ProfileToolbarButton() {
   const { user, setProfilePanelOpen, unreadDMs } = useAppState();
   return (
     <ToolButton label="Profile" onClick={() => setProfilePanelOpen(true)} badge={unreadDMs || undefined}>
-      {user ? <InitialAvatar name={user.username} imageURL={user.avatarURL} size={26} /> : <UserCircle size={22} className="text-secondary" />}
+      {user ? <InitialAvatar name={user.username} imageURL={user.avatarURL} size={28} /> : <UserCircle size={22} className="text-secondary" />}
     </ToolButton>
   );
 }
 
-/** Tools every tab header carries on phones: search · notifications · profile. */
-export function HeaderTools({ extra }: { extra?: ReactNode }) {
+/** The tab headers' tools cluster. On phones only the Live tab carries the
+ *  bell and the search (HomeView's cluster: bell · search · avatar); every
+ *  other tab shows its own extra tool and the profile door, as the app does.
+ *  On desktop the sidebar already has Search and Notifications. */
+export function HeaderTools({ extra, home }: { extra?: ReactNode; home?: boolean }) {
   const router = useRouter();
   const { unreadNotifications } = useAppState();
   return (
     <>
       {extra}
-      <ToolButton label="Search" onClick={() => router.push("/search")} className="md:hidden"><Search size={18} /></ToolButton>
-      <ToolButton label="Notifications" onClick={() => router.push("/notifications")} badge={unreadNotifications || undefined} className="md:hidden"><Bell size={18} /></ToolButton>
+      {home ? (
+        <>
+          <ToolButton label="Notifications" onClick={() => router.push("/notifications")} badge={unreadNotifications || undefined} className="md:hidden"><Bell size={17} strokeWidth={2.25} fill="currentColor" /></ToolButton>
+          <ToolButton label="Search" onClick={() => router.push("/search")} className="md:hidden"><Search size={17} strokeWidth={2.5} /></ToolButton>
+        </>
+      ) : null}
       <ProfileToolbarButton />
     </>
   );
@@ -149,12 +167,12 @@ export function HeaderTools({ extra }: { extra?: ReactNode }) {
 
 function PanelRow({ icon, title, onClick, badge, tint }: { icon: ReactNode; title: string; onClick: () => void; badge?: number; tint?: string }) {
   return (
-    <button type="button" onClick={onClick} className="flex items-center gap-2.5 px-3 py-[13px] rounded-[10px] hover:bg-surface/60 text-left w-full">
+    <button type="button" onClick={onClick} className="flex items-center gap-2.5 px-3 py-[13px] rounded-[10px] hover:bg-surface/60 text-left w-full min-w-0">
       <span className={clsx("w-5 grid place-items-center", tint ?? "text-secondary")}>{icon}</span>
-      <span className="t-body-md text-primary">{title}</span>
-      <span className="flex-1" />
-      {badge ? <span className="px-[7px] py-[2px] rounded-full bg-violet text-white text-[11px] font-bold">{badge > 99 ? "99+" : badge}</span> : null}
-      <ChevronRight size={14} className="text-muted" />
+      <span className="t-body-md text-primary whitespace-nowrap truncate">{title}</span>
+      <span className="flex-1 min-w-1" />
+      {badge ? <span className="px-[7px] py-[2px] rounded-full bg-violet text-white text-[11px] font-bold leading-[14px] shrink-0">{badge > 99 ? "99+" : badge}</span> : null}
+      <ChevronRight size={14} className="text-muted shrink-0 -ml-1" />
     </button>
   );
 }
@@ -164,21 +182,32 @@ function ProfilePanel({ open, onClose }: { open: boolean; onClose: () => void })
   const { user, isPremium, unreadDMs } = useAppState();
   const go = (href: string) => { onClose(); router.push(href); };
   const Row = PanelRow;
+  // DrawerHeader shows the leaderboard standing ("Top 12%") under the name.
+  const [rank, setRank] = useState<string | null>(null);
+  useEffect(() => {
+    if (!open || !user) return;
+    let active = true;
+    api.get<{ percentile?: unknown }>(endpoints.leaderboardMe("alltime"))
+      .then((r) => { if (active) setRank(rankPercentileText(r?.percentile)); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [open, user, isPremium]);
   return (
     <SidePanel open={open} onClose={onClose}>
       <div className="flex justify-end pt-3 pr-2">
-        <button type="button" onClick={onClose} aria-label="Close" className="p-2 text-muted hover:text-primary"><X size={16} /></button>
+        <button type="button" onClick={onClose} aria-label="Close" className="p-2 text-muted hover:text-primary"><X size={15} strokeWidth={2.5} /></button>
       </div>
       {user ? (
         <div className="flex flex-col gap-3 px-3.5 pb-4">
-          <span className={clsx("inline-grid place-items-center rounded-full", isPremium && "size-[60px] border-2 border-violet")}>
+          <span className={clsx("inline-grid place-items-center rounded-full self-start", isPremium && "size-[60px] border-2 border-violet")}>
             <InitialAvatar name={user.username} imageURL={user.avatarURL} size={50} />
           </span>
-          <div className="flex flex-col gap-[3px]">
-            <span className="flex items-center gap-[5px]">
+          <div className="flex flex-col gap-[3px] min-w-0">
+            <span className="flex items-center gap-[5px] min-w-0">
               <span className="text-[16px] font-bold text-primary truncate">{user.username}</span>
-              {isPremium ? <span className="text-[9px] font-bold tracking-[0.5px] text-gold">PRO</span> : null}
+              {isPremium ? <span className="text-[9px] font-bold tracking-[0.5px] text-gold shrink-0">PRO</span> : null}
             </span>
+            {rank ? <span className="t-label-sm text-gold">{rank}</span> : null}
             <span className="flex items-center gap-1 t-label-sm text-violet"><Star size={11} className="fill-violet" />{user.tokenBalance.toLocaleString()} pts</span>
           </div>
         </div>

@@ -31,16 +31,26 @@ function PredictionFlow() {
   const [targetType, setTargetType] = useState<PredictionTargetType>("player");
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-10 pt-2">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-10 pt-2">
       {/* ── Predict ── */}
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-5 min-w-0">
         <Hero title="Build a prediction" subtitle="Pick a game and whether you're analyzing a player or a team." />
 
         <DotKicker className="px-4">PREDICT</DotKicker>
 
-        <div className="flex flex-col gap-2.5 px-4">
-          <span className="t-label-sm text-muted">GAME</span>
-          <FilterSegment options={SELECTABLE_GAMES.map((g) => ({ label: g.label, value: g.id }))} value={game} onChange={setGame} />
+        <div className="flex flex-col gap-2.5">
+          <span className="t-label-sm text-muted px-4">GAME</span>
+          {/* Phones: the app's capsule chips (brand gradient when picked) in a strip; desktop keeps the underline segment. */}
+          <div className="flex gap-2.5 px-4 overflow-x-auto no-scrollbar md:hidden">
+            {SELECTABLE_GAMES.map((g) => (
+              <button key={g.id} type="button" onClick={() => setGame(g.id)} aria-pressed={game === g.id} className={clsx("shrink-0 px-[18px] py-2.5 rounded-full t-label-md border transition-colors", game === g.id ? "bg-violet-gradient text-white border-transparent" : "bg-surface text-secondary border-border-subtle")}>
+                {g.label}
+              </button>
+            ))}
+          </div>
+          <div className="hidden md:block px-4">
+            <FilterSegment options={SELECTABLE_GAMES.map((g) => ({ label: g.label, value: g.id }))} value={game} onChange={setGame} />
+          </div>
         </div>
 
         <div className="flex flex-col gap-2.5 px-4">
@@ -62,7 +72,7 @@ function PredictionFlow() {
       </div>
 
       {/* ── Breakdowns + report ── */}
-      <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-5 min-w-0">
         <div className="mx-4 hairline-b lg:hidden" />
 
         <DotKicker className="px-4">BREAKDOWNS</DotKicker>

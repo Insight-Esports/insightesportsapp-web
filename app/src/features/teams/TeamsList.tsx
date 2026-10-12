@@ -11,6 +11,7 @@ import { SlidersHorizontal, Users, X } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { normalizeTeams, SELECTABLE_GAMES, teamRecord, type GameId, type Team } from "@/lib/types";
 import { clsx, fmt2 } from "@/lib/format";
+import { useReveal } from "@/lib/use-reveal";
 import { EmptyState, GameTabBar, Ledger, LedgerHeader, LoadFailure, Page, SearchField, SkeletonLedger, Spinner, TabHeader, TeamMark, TierBadge, ToolButton } from "@/components/ui";
 import { HeaderTools } from "@/components/shell/AppShell";
 import { usePagedList } from "@/features/players/usePagedList";
@@ -62,7 +63,9 @@ export function TeamsList() {
     [game, urlQuery, tier],
     { firstPage: FIRST_PAGE, pageSize: PAGE_SIZE },
   );
-  const sentinel = useLoadMore(list.loadMore, list.hasLoaded && !list.reachedEnd && !list.loadingMore);
+  // TeamsViewModel.load: warm page-one crests, then publish the list complete.
+  const revealed = useReveal(list.loading || !list.hasLoaded, () => list.items.map((t) => t.logoURL));
+  const sentinel = useLoadMore(list.loadMore, revealed && !list.reachedEnd && !list.loadingMore);
 
   // Region + sort apply client-side to the loaded pages (unchanged behavior).
   const teams = useMemo(() => {
@@ -93,12 +96,12 @@ export function TeamsList() {
   );
 
   let content;
-  if (list.loading || !list.hasLoaded) content = <SkeletonLedger rows={10} avatar={44} className="mx-4 mt-3" />;
+  if (!revealed) content = <SkeletonLedger rows={10} avatar={44} className="mx-4 mt-3" />;
   else if (list.error && list.items.length === 0) content = <LoadFailure error={list.error} connectionProblem={list.connectionProblem} onRetry={list.reload} />;
-  else if (teams.length === 0) content = <div className="py-16"><EmptyState icon={<Users />} title="No teams found" subtitle="Try adjusting your filters" /></div>;
+  else if (teams.length === 0) content = <div className="py-16 max-md:min-h-[50vh] max-md:flex max-md:flex-col max-md:justify-center"><EmptyState icon={<Users />} title="No teams found" subtitle="Try adjusting your filters" /></div>;
   else content = (
     <div className="px-4 pt-3">
-      <Ledger>
+      <Ledger className="phone-cards">
         <LedgerHeader className="hidden md:grid md:grid-cols-[44px_minmax(0,2fr)_120px_90px_110px_90px] md:gap-3">
           <span className="t-kicker text-center">#</span>
           <span className="t-kicker">Team</span>
@@ -108,8 +111,8 @@ export function TeamsList() {
           <span className="t-kicker text-right">Rating</span>
         </LedgerHeader>
         {teams.map((t) => <TeamRow key={t.id} team={t} rank={(t.ranking ?? 0) > 0 ? t.ranking : null} />)}
-        {list.loadingMore ? <div className="flex justify-center py-3"><Spinner size={18} /></div> : null}
       </Ledger>
+      {list.loadingMore ? <div className="flex justify-center py-3"><Spinner size={18} /></div> : null}
       {/* Ranking source footnote — rows stay a plain "#N"; this tells you which number it is. */}
       <p className="t-label-sm text-muted text-center px-6 pt-2.5">{rankingSourceNote(game)}</p>
       <div ref={sentinel} className="h-px" />
@@ -121,10 +124,19 @@ export function TeamsList() {
       <TabHeader title="Teams" tools={<HeaderTools extra={filterTool} />} />
       <GameTabBar selected={game} onChange={(g) => set({ game: g, tier: null, region: null, sort: null }, { push: true })} games={SELECTABLE_GAMES} className="pt-2" />
       <div className="px-4 pt-2.5">
-        <SearchField value={query} onChange={setQuery} placeholder="Search teams" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search teams"
+          aria-label="Search teams"
+          autoCapitalize="none"
+          autoCorrect="off"
+          className="md:hidden w-full p-3 rounded-[10px] bg-card text-primary t-body-md outline-none placeholder:text-muted"
+        />
+        <div className="hidden md:block"><SearchField value={query} onChange={setQuery} placeholder="Search teams" /></div>
       </div>
       {hasActiveFilters ? (
-        <div className="flex gap-2 px-4 pt-2.5 overflow-x-auto no-scrollbar">
+        <div className="flex gap-2 px-4 py-1.5 md:pt-2.5 md:pb-0 overflow-x-auto no-scrollbar">
           {tier != null ? <ActiveFilterTag label={`Tier ${tier}`} onRemove={() => set({ tier: null })} /> : null}
           {region ? <ActiveFilterTag label={region} onRemove={() => set({ region: null })} /> : null}
           {sort !== "Ranking" ? <ActiveFilterTag label={sort} onRemove={() => set({ sort: null })} /> : null}
@@ -146,7 +158,7 @@ export function TeamsList() {
 
 function ActiveFilterTag({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <span className="inline-flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-md bg-violet text-white t-label-md shrink-0">
+    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full md:rounded-md bg-violet text-white t-label-md shrink-0">
       {label}
       <button type="button" aria-label={`Remove ${label}`} onClick={onRemove} className="text-white/80 hover:text-white"><X size={11} strokeWidth={3} /></button>
     </span>
@@ -163,7 +175,7 @@ function TeamRow({ team, rank }: { team: Team; rank: number | null }) {
       className={clsx("ledger-row hover:bg-surface/60 transition-colors", "md:grid md:grid-cols-[44px_minmax(0,2fr)_120px_90px_110px_90px] md:gap-3")}
     >
       <span className="t-mono-md text-muted min-w-[30px] text-center shrink-0">{rank != null ? `#${rank}` : "—"}</span>
-      <span className="flex items-center gap-3 min-w-0 flex-1">
+      <span className="flex items-center gap-3.5 md:gap-3 min-w-0 flex-1">
         <TeamMark name={team.abbreviation} logoURL={team.logoURL} color="var(--surface)" size={44} />
         <span className="flex flex-col gap-1 min-w-0">
           <span className="t-headline-sm text-primary truncate">{team.name}</span>

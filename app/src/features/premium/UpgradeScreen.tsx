@@ -5,9 +5,9 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { ChevronLeft } from "lucide-react";
 import { useAppState } from "@/store/app-state";
 import { Page } from "@/components/ui";
+import { NavBar } from "@/components/shell/NavBar";
 import { BenefitList, PremiumLegalFooter, PremiumMark, PremiumPlanPicker, PurchaseButton } from "./PremiumGate";
 import { PREMIUM_BENEFITS, type Plan } from "./plans";
 import { isStripe, renewalLine, useCheckout, usePaymentStatus } from "./usePayments";
@@ -23,10 +23,7 @@ export function UpgradeScreen() {
 
   return (
     <Page>
-      <div className="flex items-center gap-2 px-3 pt-3">
-        <button type="button" onClick={() => router.back()} aria-label="Back" className="grid place-items-center size-8 rounded-lg text-secondary hover:text-primary hover:bg-card"><ChevronLeft size={20} /></button>
-        <span className="t-headline-sm text-primary">Premium</span>
-      </div>
+      <NavBar title="Premium" />
 
       <div className="flex flex-col items-center gap-6 pt-8">
         <PremiumMark />

@@ -13,10 +13,12 @@ import { api, endpoints } from "@/lib/api";
 import { clsx } from "@/lib/format";
 import { gameLabel, normalizeTeams } from "@/lib/types";
 import { useFetch } from "@/lib/use-fetch";
+import { useReveal } from "@/lib/use-reveal";
 import { FilterChip, LoadFailure, SearchField, SkeletonLedger, TeamMark } from "@/components/ui";
+import { SkeletonHeadToHead } from "@/components/ui/skeletons";
 import { PredictScreen } from "./PredictScreen";
 import { flowHref, readTarget } from "./flow";
-import { Disclaimer, FlowError, LoadingLine, Section, StripedTable, WarningCard } from "./shared";
+import { Disclaimer, FlowError, Section, StripedTable, WarningCard } from "./shared";
 import { gameMaps, normalizeHeadToHead, type HeadToHeadResponse, type PredictionTargetItem, type SideStats } from "./types";
 
 // MARK: - Step 1 — pick the opponent (+ optional map)
@@ -40,6 +42,8 @@ export function HeadToHeadSetupScreen() {
     const all = teams.data ?? [];
     return (term ? all.filter((x) => x.name.toLowerCase().includes(term)) : all).slice(0, 50);
   }, [teams.data, query]);
+  // The opponent ledger publishes once the first 30 crests are warm (the app's team-picker rule).
+  const revealed = useReveal(teams.loading, () => (teams.data ?? []).slice(0, 30).map((x) => x.imageURL));
 
   return (
     <PredictScreen title="Head-to-Head" back={flowHref.options(t)}>
@@ -71,7 +75,7 @@ export function HeadToHeadSetupScreen() {
         <div className="px-4"><SearchField value={query} onChange={setQuery} placeholder="Search teams" /></div>
 
         <div className="px-4">
-          {teams.loading ? <SkeletonLedger rows={8} avatar={44} />
+          {!revealed ? <SkeletonLedger rows={8} avatar={44} />
             : teams.error ? <LoadFailure error={teams.error} connectionProblem={teams.connectionProblem} onRetry={teams.reload} />
             : results.length === 0 ? <div className="py-6 text-center t-body-md text-muted">No teams found</div>
             : (
@@ -116,7 +120,7 @@ export function HeadToHeadResultScreen() {
   return (
     <PredictScreen title="Win Odds" back={flowHref.h2h(t, team2Id, team2Name, map)} wide>
       <div className="px-4 pt-2 max-w-3xl mx-auto w-full">
-        {loading ? <LoadingLine text="Weighing both sides…" />
+        {loading ? <SkeletonHeadToHead />
           : error || !r ? (connectionProblem ? <LoadFailure error={error ?? ""} connectionProblem onRetry={reload} /> : <FlowError title={error ?? "Something went wrong."} />)
           : <H2HResult r={r} game={t.game} team1Name={t.targetName} team2Name={team2Name} />}
       </div>
@@ -155,7 +159,7 @@ function H2HResult({ r, game, team1Name, team2Name }: { r: HeadToHeadResponse; g
 
       {r.summary ? <div className="p-3.5 rounded-xl bg-card border border-border-subtle t-body-md text-secondary">{r.summary}</div> : null}
 
-      <div className="grid gap-5 md:grid-cols-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-5 md:grid-cols-2">
         {s1 && s2 ? (
           <Section title="WHY THESE ODDS" className="md:col-span-2">
             <StripedTable

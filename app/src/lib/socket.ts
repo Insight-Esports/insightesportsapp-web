@@ -7,6 +7,7 @@
 "use client";
 
 import { io, type Socket } from "socket.io-client";
+import { withBase } from "./base-path";
 
 let socket: Socket | null = null;
 let tokenPromise: Promise<string | null> | null = null;
@@ -17,7 +18,7 @@ export function socketHost(): string {
 
 async function fetchToken(): Promise<string | null> {
   try {
-    const r = await fetch("/api/auth/socket-token", { cache: "no-store" });
+    const r = await fetch(withBase("/api/auth/socket-token"), { cache: "no-store" });
     if (!r.ok) return null;
     const j = await r.json();
     return typeof j?.token === "string" ? j.token : null;

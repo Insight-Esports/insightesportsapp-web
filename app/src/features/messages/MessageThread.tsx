@@ -8,10 +8,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, Ellipsis, Hand, ImagePlus, Send, Trash2 } from "lucide-react";
+import { ArrowUp, ChevronLeft, Ellipsis, Hand, ImagePlus, Trash2 } from "lucide-react";
+import { useHideTabBar } from "@/components/shell/tab-bar";
 import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
-import { ConfirmDialog, EmptyState, InitialAvatar, Spinner, Toast } from "@/components/ui";
+import { ConfirmDialog, EmptyState, InitialAvatar, SkeletonBar, Toast } from "@/components/ui";
+import { SkeletonBubbles, SkeletonCircle } from "@/components/ui/skeletons";
 import { blockUser, conversation as fetchConversation, removeConversation, sendTyping } from "./service";
 import { DMMediaError, prepareImage, prepareVideo } from "./media";
 import { emitRemovedLocal, forgetRow, knownRow, queueInboxToast, rememberRow } from "./dm-local";
@@ -50,11 +52,24 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
       </div>
     );
   }
-  return <div className="flex-1 grid place-items-center"><Spinner /></div>;
+  // The conversation's own silhouette while its row resolves: header person + bubbles.
+  return (
+    <div className="flex-1 min-h-0 flex flex-col bg-bg">
+      <div className="flex items-center gap-2.5 px-3 pt-1.5 pb-2 hairline-b shrink-0">
+        <span className="size-8 md:hidden" />
+        <SkeletonCircle size={30} />
+        <SkeletonBar width={120} height={14} />
+      </div>
+      <div className="flex-1 min-h-0 px-4"><SkeletonBubbles /></div>
+    </div>
+  );
 }
 
 function ThreadView({ row }: { row: DMConversationRow }) {
   const router = useRouter();
+  // MessageThreadView: `.toolbar(.hidden, for: .tabBar)` — the thread owns
+  // the whole phone screen and the composer sits on the bottom edge.
+  useHideTabBar();
   const { status } = useAppState();
   const visible = usePageVisible();
   const now = useNow(60_000);
@@ -182,13 +197,13 @@ function ThreadView({ row }: { row: DMConversationRow }) {
     <div className="flex-1 min-h-0 flex flex-col bg-bg">
       {/* Header: back · avatar · name — the person, plainly */}
       <div className="flex items-center gap-2.5 px-3 pt-1.5 pb-2 hairline-b shrink-0">
-        <Link href="/messages" aria-label="Back" className="grid place-items-center size-8 text-primary hover:text-violet md:hidden"><ChevronLeft size={20} /></Link>
+        <Link href="/messages" aria-label="Back" className="grid place-items-center size-8 text-primary hover:text-violet md:hidden"><ChevronLeft size={20} strokeWidth={2.5} /></Link>
         <Link href={profileHref} className="flex items-center gap-2.5 min-w-0 hover:opacity-80">
           <InitialAvatar name={row.otherUsername} imageURL={row.otherAvatarURL} size={30} />
           <span className="text-[17px] font-bold tracking-[-0.3px] text-primary truncate">{row.otherUsername}</span>
         </Link>
         <span className="flex-1" />
-        <span className="relative">
+        <span className="relative hidden md:block">
           <button type="button" aria-label="More" title="More" onClick={(e) => { e.stopPropagation(); setMenu((m) => !m); }} className="grid place-items-center size-8 rounded-lg text-secondary hover:text-primary hover:bg-card"><Ellipsis size={18} /></button>
           {menu ? (
             <div className="absolute right-0 top-9 z-20 min-w-44 ledger py-1" role="menu">
@@ -202,7 +217,7 @@ function ThreadView({ row }: { row: DMConversationRow }) {
       {/* Messages */}
       <div ref={list} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-4 pt-2 pb-1.5">
         {!loaded && messages.length === 0 ? (
-          <div className="h-full grid place-items-center"><Spinner /></div>
+          <SkeletonBubbles />
         ) : (
           <div className="flex flex-col gap-0.5 max-w-[860px]">
             {canLoadMore ? (
@@ -237,7 +252,7 @@ function ThreadView({ row }: { row: DMConversationRow }) {
       </div>
 
       {/* Blocked state, read-only switch, or composer */}
-      <div className="shrink-0 hairline-t bg-bg pb-[calc(var(--tabbar-h)+8px)] md:pb-2">
+      <div className="shrink-0 hairline-t bg-bg pb-[max(8px,env(safe-area-inset-bottom))] md:pb-2">
         {readOnly.readOnly ? (
           <div className="px-4 py-3 text-center t-body-sm text-muted">{readOnly.message ?? "Messaging is temporarily read-only."}</div>
         ) : blockedState ? (
@@ -264,7 +279,7 @@ function ThreadView({ row }: { row: DMConversationRow }) {
                 className="flex-1 min-w-0 resize-none bg-transparent outline-none t-body-md text-white placeholder:text-muted py-[5px] max-h-[120px] leading-[1.4]"
               />
               <button type="button" onClick={submit} aria-label="Send" title="Send" disabled={!canSend} className={clsx("grid place-items-center size-[30px] shrink-0 rounded-full bg-violet text-white transition-opacity", canSend ? "opacity-100 hover:brightness-110" : "opacity-0 pointer-events-none")}>
-                <Send size={14} strokeWidth={2.5} className="-ml-px" />
+                <ArrowUp size={15} strokeWidth={3} />
               </button>
             </div>
           </div>

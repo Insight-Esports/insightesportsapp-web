@@ -8,14 +8,17 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowLeftRight, ChevronRight, Target } from "lucide-react";
-import { AssetIcon, InitialAvatar, Page, SectionHeader, SkeletonBar, SkeletonLedger, SkeletonStatRow, SplitLayout, TeamMark } from "@/components/ui";
+import { AssetIcon, InitialAvatar, Page, SectionHeader, SplitLayout, TeamMark } from "@/components/ui";
 import { api, endpoints } from "@/lib/api";
 import { clsx, formatDate, formatTime, relativeDayLabel } from "@/lib/format";
 import { matchResultTime, normalizeMatches, normalizePlayers, normalizeTeams, team1Color, team2Color, type Json, type Match, type Player } from "@/lib/types";
+import { useReveal } from "@/lib/use-reveal";
 import { useAppState } from "@/store/app-state";
+import { NavBar } from "@/components/shell/NavBar";
 import { MapPoolSection } from "../MapPoolSection";
 import { FollowTeamsRow } from "./FollowTeams";
 import { MatchCommentsSection } from "./MatchComments";
+import { MatchMainSkeleton, MatchRailSkeleton } from "./MatchSkeleton";
 import { playerHref, teamHref } from "./sections";
 
 interface PreviewState {
@@ -133,30 +136,16 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Skeleton() {
-  return (
-    <div className="flex flex-col gap-6 pt-2">
-      <div className="flex items-start px-4">
-        {[0, 1].map((i) => (
-          <div key={i} className="flex-1 flex flex-col items-center gap-2">
-            <span className="size-16 rounded-full bg-surface" />
-            <SkeletonBar width={88} height={12} />
-            <SkeletonBar width={48} height={8} />
-          </div>
-        ))}
-      </div>
-      <div className="flex flex-col items-center gap-1.5"><SkeletonBar width={140} height={10} /><SkeletonBar width={180} height={8} /></div>
-      <div className="px-4"><SkeletonStatRow columns={2} /></div>
-      <div className="px-4"><SkeletonLedger rows={4} avatar={0} /></div>
-      <div className="px-4"><SkeletonLedger rows={2} avatar={20} /></div>
-      <div className="px-4 grid grid-cols-2 gap-2.5"><SkeletonLedger rows={5} avatar={24} /><SkeletonLedger rows={5} avatar={24} /></div>
-    </div>
-  );
-}
-
 export function UpcomingMatchScreen({ match }: { match: Match }) {
   const { isPremium } = useAppState();
   const vm = usePreview(match);
+  // "Everything loads, THEN everything appears" — plus the crests and the
+  // rosters' faces, so the hero and both line-ups arrive complete.
+  const revealed = useReveal(vm.loading, () => [
+    match.team1LogoURL, match.team2LogoURL,
+    ...vm.team1Roster.slice(0, 5).map((p) => p.imageURL), ...vm.team2Roster.slice(0, 5).map((p) => p.imageURL),
+    ...vm.meetings.flatMap((m) => [m.team1LogoURL, m.team2LogoURL]),
+  ]);
   const c1 = team1Color(match);
   const c2 = team2Color(match);
   const kickoff = kickoffLabel(match.scheduledAt);
@@ -214,7 +203,7 @@ export function UpcomingMatchScreen({ match }: { match: Match }) {
   const q = (v: string) => encodeURIComponent(v);
   const iconBox = (node: React.ReactNode) => <span className="grid place-items-center size-[30px] rounded-lg bg-surface text-violet shrink-0">{node}</span>;
 
-  const main = vm.loading ? <Skeleton /> : (
+  const main = (
     <div className="flex flex-col gap-6 pt-2">
       {/* Hero */}
       <div className="flex flex-col gap-3.5">
@@ -273,7 +262,7 @@ export function UpcomingMatchScreen({ match }: { match: Match }) {
       ) : null}
 
       {/* Map pools */}
-      <div className="grid gap-6 md:grid-cols-2 -mx-4">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 md:grid-cols-2 -mx-4">
         {vm.team1Id ? <MapPoolSection teamId={vm.team1Id} teamName={match.team1Name} game={match.game} title={`${match.team1Name} · Map Pool`} maxRows={3} /> : null}
         {vm.team2Id ? <MapPoolSection teamId={vm.team2Id} teamName={match.team2Name} game={match.game} title={`${match.team2Name} · Map Pool`} maxRows={3} /> : null}
       </div>
@@ -345,10 +334,10 @@ export function UpcomingMatchScreen({ match }: { match: Match }) {
 
   return (
     <Page wide>
-      <div className="flex items-center gap-1.5 px-4 pt-3 pb-1">
-        <span className="t-headline-sm text-primary">Match Preview</span>
-      </div>
-      <SplitLayout main={main} rail={rail} />
+      <NavBar title="Match Preview" hideBackOnDesktop />
+      {revealed
+        ? <SplitLayout main={main} rail={rail} />
+        : <SplitLayout main={<MatchMainSkeleton variant="upcoming" />} rail={<MatchRailSkeleton variant="upcoming" />} />}
     </Page>
   );
 }

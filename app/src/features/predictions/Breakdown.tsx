@@ -13,10 +13,11 @@ import { api, endpoints } from "@/lib/api";
 import { clsx } from "@/lib/format";
 import { gameLabel } from "@/lib/types";
 import { useFetch } from "@/lib/use-fetch";
-import { FilterSegment, LoadFailure, SkeletonStatRow } from "@/components/ui";
+import { FilterSegment, LoadFailure, SkeletonBar } from "@/components/ui";
+import { SkeletonBreakdown } from "@/components/ui/skeletons";
 import { PredictScreen } from "./PredictScreen";
 import { flowHref, readTarget, type FlowTarget } from "./flow";
-import { Disclaimer, FormPips, LoadingLine, Section, StatRow, StepHeader, StripedTable, Track } from "./shared";
+import { Disclaimer, FormPips, Section, StatRow, StepHeader, StripedTable, Track } from "./shared";
 import { BREAKDOWN_PERIODS, normalizePlayerOverview, normalizeTeamOverview, overviewLabel, pctDisplay, PredictionFormat, type BreakdownPeriodKey, type NamedHighlight, type OverviewPeriod, type PlayerOverview, type SideStats, type TeamOverview } from "./types";
 
 export function BreakdownScreen() {
@@ -44,11 +45,12 @@ export function BreakdownPanel({ target: t, compact }: { target: FlowTarget; com
   const [period, setPeriod] = useState<BreakdownPeriodKey>("last10");
 
   if (loading) {
+    // PredictionBreakdownView's wait, as the breakdown's own silhouette:
+    // header lines, the period row, the record strip, form pips, averages.
     return (
-      <div className="flex flex-col gap-4 px-4 pt-3">
-        <LoadingLine text="Building the breakdown…" className="py-6" />
-        <SkeletonStatRow columns={3} />
-        <SkeletonStatRow columns={2} />
+      <div className="flex flex-col gap-5 px-4 pt-3">
+        <div className={clsx("flex flex-col gap-2", !compact && "items-center")}><SkeletonBar width={180} height={18} /><SkeletonBar width={120} height={10} /></div>
+        <SkeletonBreakdown />
       </div>
     );
   }
@@ -163,7 +165,7 @@ export function BreakdownPanel({ target: t, compact }: { target: FlowTarget; com
   return (
     <div className="flex flex-col gap-5 pt-2">
       <StepHeader title={t.targetName} subtitle={subtitle} center={!compact} />
-      <div className={clsx("px-4 grid gap-5", !compact && "lg:grid-cols-2 lg:gap-x-8")}>
+      <div className={clsx("px-4 grid grid-cols-[minmax(0,1fr)] gap-5", !compact && "lg:grid-cols-2 lg:gap-x-8")}>
         <div className="flex flex-col gap-4">{periodBlock}</div>
         <div className="flex flex-col gap-5">{extras}</div>
       </div>

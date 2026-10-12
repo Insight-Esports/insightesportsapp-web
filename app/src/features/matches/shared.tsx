@@ -144,7 +144,7 @@ export function cleanUpcoming(matches: Match[], now = Date.now()): Match[] {
 /** Sticky day header (ScheduleDateHeader / DateSectionHeader). */
 export function DateSectionHeader({ label, className }: { label: string; className?: string }) {
   return (
-    <div className={clsx("sticky top-0 z-10 flex items-center px-5 py-2 bg-bg/[.98] backdrop-blur-sm", className)}>
+    <div className={clsx("sticky top-0 max-md:top-[env(safe-area-inset-top,0px)] z-10 flex items-center px-5 py-2 bg-bg/[.98] backdrop-blur-sm", className)}>
       <span className="t-label-md text-secondary">{label}</span>
     </div>
   );
@@ -175,7 +175,7 @@ export function ScheduleTabs({ value, game, className }: { value: ScheduleSegmen
 /** A section's cards: one column on phones, two from md when asked. */
 export function CardGrid({ children, columns = 1, className }: { children: ReactNode; columns?: 1 | 2 | 3; className?: string }) {
   return (
-    <div className={clsx("grid gap-3 items-start", columns >= 2 && "md:grid-cols-2", columns === 3 && "xl:grid-cols-3", className)}>
+    <div className={clsx("grid grid-cols-[minmax(0,1fr)] gap-3 items-start", columns >= 2 && "md:grid-cols-2", columns === 3 && "xl:grid-cols-3", className)}>
       {children}
     </div>
   );

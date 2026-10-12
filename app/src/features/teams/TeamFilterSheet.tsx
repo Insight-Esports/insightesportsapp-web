@@ -27,10 +27,7 @@ export function TeamFilterSheet({ open, onClose, game, tier, region, sort, onApp
   const apply = () => { onApply(tempTier === 0 ? null : tempTier, tempRegion, tempSort); onClose(); };
 
   return (
-    <Sheet open={open} onClose={onClose} title="Filter Teams" trailing={<button type="button" onClick={apply} className="t-label-lg text-violet">Done</button>}>
-      <div className="flex justify-start -mt-1 mb-1">
-        <button type="button" onClick={() => { setTempTier(0); setTempRegion(null); setTempSort("Ranking"); }} className="t-label-lg text-violet">Reset</button>
-      </div>
+    <Sheet open={open} onClose={onClose} title="Filter Teams" leading={<button type="button" onClick={() => { setTempTier(0); setTempRegion(null); setTempSort("Ranking"); }} className="t-label-lg text-violet">Reset</button>} trailing={<button type="button" onClick={apply} className="t-label-lg text-violet">Done</button>}>
       <FilterRow title="Tier">
         <FilterSegment<TierValue>
           options={[{ label: "All", value: 0 }, { label: "Tier 1", value: 1 }, { label: "Tier 2", value: 2 }, { label: "Tier 3", value: 3 }]}
@@ -48,7 +45,7 @@ export function TeamFilterSheet({ open, onClose, game, tier, region, sort, onApp
       <FilterRow title="Sort by">
         <FilterSegment<TeamSortOption> options={TEAM_SORT_OPTIONS.map((o) => ({ label: o, value: o }))} value={tempSort} onChange={setTempSort} />
       </FilterRow>
-      <PrimaryButton onClick={apply} className="w-full mt-5 !rounded-xl !py-3.5 bg-violet-gradient">Apply Filters</PrimaryButton>
+      <PrimaryButton onClick={apply} className="w-full mt-5 !rounded-xl !py-4 bg-violet-gradient max-md:mb-3">Apply Filters</PrimaryButton>
     </Sheet>
   );
 }
