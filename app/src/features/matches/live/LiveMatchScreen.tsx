@@ -22,6 +22,7 @@ import { MatchMainSkeleton, MatchRailSkeleton } from "./MatchSkeleton";
 import { CollapsedScoreBar, FanPollSection, LeagueObjectives, PredictionTeaserSection, RoundTracker, ScoreHUD, StatsTableSection, WinProbabilityBar } from "./sections";
 import { isRoundBasedGame } from "./types";
 import { useLiveMatch } from "./use-live-match";
+import { SkeletonScoreboard } from "@/components/ui/skeletons";
 
 /** Title strip above the HUD: Live/Final + tournament (the iOS principal toolbar). */
 export function MatchTitleStrip({ match, isComplete, children }: { match: Match; isComplete: boolean; children?: React.ReactNode }) {
@@ -62,7 +63,7 @@ export function LiveMatchScreen({ match }: { match: Match }) {
   // LiveMatchView warms every scoreboard face before the table's first
   // render; here the whole body waits for the first-screen requests AND
   // those faces, then appears complete. Later polls publish immediately.
-  const revealed = useReveal(!vm.initialLoaded, () => [
+  const revealed = useReveal(!vm.coreLoaded, () => [
     // Crests only: ten scoreboard faces could hold the reveal for the full
     // 1.5 s cap; rows fill in as photos arrive (same as the app's list rows).
     match.team1LogoURL, match.team2LogoURL,
@@ -144,8 +145,11 @@ export function LiveMatchScreen({ match }: { match: Match }) {
 
       <WinProbabilityBar team1Color={c1} team2Color={c2} team1Name={match.team1Name} team2Name={match.team2Name} team1Probability={vm.team1WinProbability} />
 
+      {!vm.statsLoaded ? <SkeletonScoreboard columns={5} /> : (
       <StatsTableSection team1Color={c1} team2Color={c2} game={match.game} team1Name={match.team1Name} team2Name={match.team2Name} team1Stats={vm.team1Stats} team2Stats={vm.team2Stats} />
+      )}
 
+      {!vm.statsLoaded ? null : (
       <PredictionTeaserSection
         team1Color={c1}
         team2Color={c2}
@@ -157,6 +161,7 @@ export function LiveMatchScreen({ match }: { match: Match }) {
         team2Name={match.team2Name}
         isPremium={isPremium}
       />
+      )}
       </>
       ) : <MatchMainSkeleton variant="live" withHUD={false} />}
     </div>
@@ -198,7 +203,7 @@ export function LiveMatchScreen({ match }: { match: Match }) {
         <CollapsedScoreBar match={match} team1Score={vm.team1Rounds} team2Score={vm.team2Rounds} isComplete={vm.isMatchComplete} />
       </div>
       {/* The hero shows at once (from the tapped match); sections and the rail are skeletons until their data lands. */}
-      <SplitLayout main={main} rail={revealed ? rail : <MatchRailSkeleton variant="live" />} />
+      <SplitLayout main={main} rail={revealed && vm.railLoaded ? rail : <MatchRailSkeleton variant="live" />} />
     </Page>
   );
 }

@@ -47,6 +47,10 @@ export interface LiveMatchState {
   socketConnected: boolean;
   /** Every first-screen request (progress, detail, stats, odds, poll, chat history) has settled. */
   initialLoaded: boolean;
+  /** Per-request arrival, so each section reveals on its own (LiveMatchView's sections load independently). */
+  coreLoaded: boolean;
+  statsLoaded: boolean;
+  railLoaded: boolean;
 }
 
 const STATS_POLL_MS = 8000;
@@ -77,6 +81,9 @@ export function useLiveMatch(match: Match) {
     chatMessages: [],
     socketConnected: false,
     initialLoaded: false,
+    coreLoaded: false,
+    statsLoaded: false,
+    railLoaded: false,
   }));
 
   // Mutable bookkeeping that must not trigger renders.
@@ -490,8 +497,12 @@ export function useLiveMatch(match: Match) {
   useEffect(() => {
     let active = true;
     (async () => {
-      // One wave, not two: every first-screen request in parallel.
-      await Promise.all([loadProgress(), loadDetail(), loadStats(), loadWinProbability(), loadPoll(), loadChatHistory()]);
+      // Every first-screen request in parallel; each section reveals as its
+      // own data lands instead of waiting for the slowest request.
+      const core = Promise.all([loadProgress(), loadDetail(), loadWinProbability()]).then(() => { if (active) patch({ coreLoaded: true }); });
+      const stats = loadStats().then(() => { if (active) patch({ statsLoaded: true }); });
+      const rail = Promise.all([loadPoll(), loadChatHistory()]).then(() => { if (active) patch({ railLoaded: true }); });
+      await Promise.all([core, stats, rail]);
       if (active) patch({ initialLoaded: true });
     })();
 
