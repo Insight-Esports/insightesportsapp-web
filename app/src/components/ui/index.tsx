@@ -523,13 +523,13 @@ export function HScroll({ children, className }: { children: ReactNode; classNam
 export function Page({ children, className, wide }: { children: ReactNode; className?: string; wide?: boolean }) {
   // Left-aligned against the sidebar (not centered): on wide monitors the
   // content stays next to the menu instead of floating in the middle.
-  return <div className={clsx("w-full min-w-0 pb-[calc(var(--tabbar-h)+24px)] md:pb-10", wide ? "max-w-[1400px]" : "max-w-[1200px]", className)}>{children}</div>;
+  return <div className={clsx("w-full min-w-0 pb-[calc(var(--tabbar-h)+24px)] md:pb-10", wide ? "max-w-[1760px]" : "max-w-[1520px]", className)}>{children}</div>;
 }
 
 /** Two-column layout on desktop (main + rail), single column on phones. */
 export function SplitLayout({ main, rail, className }: { main: ReactNode; rail?: ReactNode; className?: string }) {
   return (
-    <div className={clsx("grid grid-cols-[minmax(0,1fr)] gap-4 px-4", rail ? "lg:grid-cols-[minmax(0,1fr)_340px]" : "", className)}>
+    <div className={clsx("grid grid-cols-[minmax(0,1fr)] gap-4 px-4", rail ? "lg:grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,1fr)_420px]" : "", className)}>
       <div className="min-w-0">{main}</div>
       {rail ? <div className="min-w-0">{rail}</div> : null}
     </div>

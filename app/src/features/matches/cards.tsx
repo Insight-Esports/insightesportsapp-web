@@ -13,6 +13,7 @@ import { BadgeCheck, Calendar, ChevronDown, ChevronRight, Eye, Flag, ListOrdered
 import { GamePill, LiveBadge, StagePill, TeamMark } from "@/components/ui";
 import { clsx, formatTime } from "@/lib/format";
 import { matchResultTime, team1Color, team2Color, type Match } from "@/lib/types";
+import { rememberMatch } from "./match-cache";
 
 /** The one door to a match, whatever its state (CompletedMatchLoaderView routes by status server-side). */
 export function matchHref(id: string): string {
@@ -37,7 +38,7 @@ export function LiveMatchCard({ match, className }: { match: Match; className?: 
   const c1 = team1Color(match);
   const c2 = team2Color(match);
   return (
-    <Link href={matchHref(match.id)} className={clsx(CARD_LINK, "px-3.5 py-3", className)}>
+    <Link href={matchHref(match.id)} onClick={() => rememberMatch(match)} className={clsx(CARD_LINK, "px-3.5 py-3", className)}>
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <LiveBadge />
@@ -127,7 +128,7 @@ export function UpcomingMatchCard({ match, className, defaultExpanded = false }:
             {match.stage ? <DetailRow icon={<Flag size={12} />} text={match.stage} /> : null}
 
             {/* The door to the pre-match hub. */}
-            <Link href={matchHref(match.id)} className="flex items-center gap-2 px-3 py-2.5 rounded-[10px] bg-surface hover:bg-surface/70 transition-colors">
+            <Link href={matchHref(match.id)} onClick={() => rememberMatch(match)} className="flex items-center gap-2 px-3 py-2.5 rounded-[10px] bg-surface hover:bg-surface/70 transition-colors">
               <span className="t-label-md text-violet">Match preview</span>
               <span className="flex-1" />
               <ChevronRight size={12} className="text-violet" />
@@ -178,7 +179,7 @@ export function CompletedMatchRow({ match, className }: { match: Match; classNam
   const team1Won = match.team1Score > match.team2Score;
   const team2Won = match.team2Score > match.team1Score;
   return (
-    <Link href={matchHref(match.id)} className={clsx(CARD_LINK, "p-4", className)}>
+    <Link href={matchHref(match.id)} onClick={() => rememberMatch(match)} className={clsx(CARD_LINK, "p-4", className)}>
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <GamePill game={match.game} />

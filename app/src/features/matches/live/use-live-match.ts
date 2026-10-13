@@ -490,9 +490,8 @@ export function useLiveMatch(match: Match) {
   useEffect(() => {
     let active = true;
     (async () => {
-      await Promise.all([loadProgress(), loadDetail()]);
-      if (!active) return;
-      await Promise.all([loadStats(), loadWinProbability(), loadPoll(), loadChatHistory()]);
+      // One wave, not two: every first-screen request in parallel.
+      await Promise.all([loadProgress(), loadDetail(), loadStats(), loadWinProbability(), loadPoll(), loadChatHistory()]);
       if (active) patch({ initialLoaded: true });
     })();
 

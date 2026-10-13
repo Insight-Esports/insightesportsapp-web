@@ -6,6 +6,7 @@
 // have landed, so the reveal is one step, not two.
 "use client";
 
+import { useMemo } from "react";
 import { useParams } from "next/navigation";
 import { WifiOff } from "lucide-react";
 import { Page } from "@/components/ui";
@@ -13,6 +14,7 @@ import { api, endpoints } from "@/lib/api";
 import { useFetch } from "@/lib/use-fetch";
 import { useReveal } from "@/lib/use-reveal";
 import { normalizeMatch, type Json, type Match } from "@/lib/types";
+import { recallMatch } from "@/features/matches/match-cache";
 import { LiveMatchScreen } from "@/features/matches/live/LiveMatchScreen";
 import { CompletedMatchScreen } from "@/features/matches/live/CompletedMatchScreen";
 import { UpcomingMatchScreen } from "@/features/matches/live/UpcomingMatchScreen";
@@ -35,11 +37,17 @@ async function withTeamLogos(m: Match, signal: AbortSignal): Promise<Match> {
 export default function MatchPage() {
   const params = useParams<{ id: string }>();
   const id = typeof params?.id === "string" ? decodeURIComponent(params.id) : "";
-  const { data: match, loading, error, reload } = useFetch(
-    (signal) => api.get<Json>(endpoints.matchDetail(id), { signal }).then(normalizeMatch).then((m) => withTeamLogos(m, signal)),
+  // The card's Match (crests included) renders the screen immediately; the
+  // detail fetch refreshes it underneath.
+  const cached = useMemo(() => (id ? recallMatch(id) : null), [id]);
+  const { data: fetched, loading: fetching, error, reload } = useFetch(
+    (signal) => api.get<Json>(endpoints.matchDetail(id), { signal }).then(normalizeMatch)
+      .then((m) => withTeamLogos({ ...m, team1LogoURL: m.team1LogoURL ?? cached?.team1LogoURL ?? null, team2LogoURL: m.team2LogoURL ?? cached?.team2LogoURL ?? null }, signal)),
     [id],
     { enabled: !!id },
   );
+  const match = fetched ?? cached;
+  const loading = fetching && !cached;
   const revealed = useReveal(loading || (!match && !error), () => [match?.team1LogoURL, match?.team2LogoURL]);
 
   if (!revealed && !error) return <MatchScreenSkeleton />;

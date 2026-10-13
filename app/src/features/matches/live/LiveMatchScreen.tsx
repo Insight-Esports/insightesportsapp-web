@@ -63,8 +63,9 @@ export function LiveMatchScreen({ match }: { match: Match }) {
   // render; here the whole body waits for the first-screen requests AND
   // those faces, then appears complete. Later polls publish immediately.
   const revealed = useReveal(!vm.initialLoaded, () => [
+    // Crests only: ten scoreboard faces could hold the reveal for the full
+    // 1.5 s cap; rows fill in as photos arrive (same as the app's list rows).
     match.team1LogoURL, match.team2LogoURL,
-    ...vm.team1Stats.map((s) => s.imageURL), ...vm.team2Stats.map((s) => s.imageURL),
   ]);
 
   // The HUD collapses to a compact sticky bar once it scrolls away.
