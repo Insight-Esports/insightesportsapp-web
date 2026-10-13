@@ -37,6 +37,7 @@ export function NewsScreen() {
   const { data, loading, error, connectionProblem, reload } = useFetch<NewsArticle[]>(
     async (signal) => normalizeArticles(await api.get(endpoints.news(game === "all" ? "all" : game), { signal })),
     [game],
+    { cacheKey: `news:${game}` },
   );
 
   // NewsView: six card silhouettes until `hasLoaded` — and, here, until the

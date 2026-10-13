@@ -16,7 +16,8 @@ import { useEffect, useRef, useState } from "react";
 import { prefetchImages, type PrefetchOptions } from "./prefetch";
 
 export function useReveal(loading: boolean, imageUrls: () => (string | null | undefined)[], opts: PrefetchOptions = {}): boolean {
-  const [revealed, setRevealed] = useState(false);
+  // Cached data at mount (useFetch cacheKey) reveals immediately.
+  const [revealed, setRevealed] = useState(!loading);
   const urlsRef = useRef(imageUrls);
   urlsRef.current = imageUrls;
   const { cap, timeoutMs } = opts;

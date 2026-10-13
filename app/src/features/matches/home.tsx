@@ -27,8 +27,8 @@ export function HomeScreen() {
 
   // Both feeds are fetched unfiltered (the app filters client-side too) so
   // the live dots on the tab bar always reflect every game.
-  const live = useFetch<Match[]>(async (signal) => normalizeMatches(await api.get(endpoints.liveMatches, { signal })), []);
-  const upcoming = useFetch<Match[]>(async (signal) => normalizeMatches(await api.get(endpoints.upcomingMatches, { signal })), []);
+  const live = useFetch<Match[]>(async (signal) => normalizeMatches(await api.get(endpoints.liveMatches, { signal })), [], { cacheKey: "home:live" });
+  const upcoming = useFetch<Match[]>(async (signal) => normalizeMatches(await api.get(endpoints.upcomingMatches, { signal })), [], { cacheKey: "home:upcoming" });
 
   // Silent refresh: keep whatever's on screen on a transient failure.
   const { setData: setLive } = live;

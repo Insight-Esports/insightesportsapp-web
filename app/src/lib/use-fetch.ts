@@ -15,10 +15,17 @@ export interface FetchState<T> {
   setData: (updater: T | null | ((prev: T | null) => T | null)) => void;
 }
 
-export function useFetch<T>(fetcher: (signal: AbortSignal) => Promise<T>, deps: DependencyList, opts: { enabled?: boolean; keepData?: boolean } = {}): FetchState<T> {
+// Screen cache (SwiftUI keeps a tab's view model alive; React remounts the
+// page on every visit). A `cacheKey` makes a remount render the last data at
+// once and refresh underneath, instead of a skeleton on every tab switch or
+// back-navigation.
+const screenCache = new Map<string, unknown>();
+
+export function useFetch<T>(fetcher: (signal: AbortSignal) => Promise<T>, deps: DependencyList, opts: { enabled?: boolean; keepData?: boolean; cacheKey?: string } = {}): FetchState<T> {
   const enabled = opts.enabled ?? true;
-  const [data, setData] = useState<T | null>(null);
-  const [loading, setLoading] = useState(enabled);
+  const cached = opts.cacheKey && screenCache.has(opts.cacheKey) ? (screenCache.get(opts.cacheKey) as T) : null;
+  const [data, setData] = useState<T | null>(cached);
+  const [loading, setLoading] = useState(enabled && cached === null);
   const [error, setError] = useState<string | null>(null);
   const [connectionProblem, setConnectionProblem] = useState(false);
   const [tick, setTick] = useState(0);
@@ -29,12 +36,14 @@ export function useFetch<T>(fetcher: (signal: AbortSignal) => Promise<T>, deps: 
     if (!enabled) { setLoading(false); return; }
     const controller = new AbortController();
     let active = true;
-    setLoading(true);
+    const key = opts.cacheKey;
+    const warm = !!key && screenCache.has(key);
+    if (warm) setData(screenCache.get(key!) as T); else setLoading(true);
     setError(null);
     setConnectionProblem(false);
-    if (!opts.keepData) setData(null);
+    if (!opts.keepData && !warm) setData(null);
     fetcherRef.current(controller.signal)
-      .then((d) => { if (active) { setData(d); setLoading(false); } })
+      .then((d) => { if (key) screenCache.set(key, d); if (active) { setData(d); setLoading(false); } })
       .catch((e) => {
         if (!active || (e instanceof DOMException && e.name === "AbortError")) return;
         setError(errorMessage(e));
