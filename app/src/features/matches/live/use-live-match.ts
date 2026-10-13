@@ -55,8 +55,12 @@ export interface LiveMatchState {
 
 const STATS_POLL_MS = 8000;
 
+// Last known state per match: reopening a match shows the previous
+// scoreboard/poll/chat at once while the first-screen requests refresh it.
+const liveStateCache = new Map<string, LiveMatchState>();
+
 export function useLiveMatch(match: Match) {
-  const [s, setS] = useState<LiveMatchState>(() => ({
+  const [s, setS] = useState<LiveMatchState>(() => liveStateCache.get(match.id) ?? ({
     team1Rounds: match.team1Score,
     team2Rounds: match.team2Score,
     team1Maps: 0,
@@ -118,8 +122,8 @@ export function useLiveMatch(match: Match) {
   const isLeague = match.game === "League";
 
   const patch = useCallback((p: Partial<LiveMatchState> | ((prev: LiveMatchState) => Partial<LiveMatchState>)) => {
-    setS((prev) => ({ ...prev, ...(typeof p === "function" ? p(prev) : p) }));
-  }, []);
+    setS((prev) => { const next = { ...prev, ...(typeof p === "function" ? p(prev) : p) }; liveStateCache.set(match.id, next); return next; });
+  }, [match.id]);
 
   // ── Rounds + series helpers ─────────────────────────────────────────────
   const rebuildRounds = useCallback(() => {

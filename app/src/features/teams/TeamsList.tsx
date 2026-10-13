@@ -19,6 +19,7 @@ import { useDebounced, useLoadMore } from "@/features/players/useLoadMore";
 import { useQueryParams } from "@/features/players/useQueryParams";
 import { TEAM_SORT_OPTIONS, type TeamSortOption } from "./types";
 import { TeamFilterSheet } from "./TeamFilterSheet";
+import { teamsCacheKey } from "@/features/players/cache-keys";
 
 const FIRST_PAGE = 20;
 const PAGE_SIZE = 20;
@@ -61,7 +62,7 @@ export function TeamsList() {
   const list = usePagedList<Team>(
     async (limit, offset, signal) => normalizeTeams(await api.get(endpoints.teams(game, urlQuery.trim() || null, limit, offset, tier), { signal })),
     [game, urlQuery, tier],
-    { firstPage: FIRST_PAGE, pageSize: PAGE_SIZE },
+    { firstPage: FIRST_PAGE, pageSize: PAGE_SIZE, cacheKey: teamsCacheKey(game, urlQuery, tier) },
   );
   // TeamsViewModel.load: warm page-one crests, then publish the list complete.
   const revealed = useReveal(list.loading || !list.hasLoaded, () => list.items.map((t) => t.logoURL));

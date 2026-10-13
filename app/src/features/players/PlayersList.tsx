@@ -20,6 +20,7 @@ import { usePagedList } from "./usePagedList";
 import { useDebounced, useLoadMore } from "./useLoadMore";
 import { useQueryParams } from "./useQueryParams";
 import { PlayerFilterSheet } from "./PlayerFilterSheet";
+import { playersCacheKey } from "./cache-keys";
 
 const FIRST_PAGE = 20;
 const PAGE_SIZE = 20;
@@ -69,7 +70,7 @@ export function PlayersList() {
         : fetched;
     },
     [game, role, region, urlQuery],
-    { firstPage: FIRST_PAGE, pageSize: PAGE_SIZE },
+    { firstPage: FIRST_PAGE, pageSize: PAGE_SIZE, cacheKey: playersCacheKey(game, role, region, urlQuery) },
   );
   // PlayersViewModel.load: warm page-one photos + team logos, then publish
   // the list complete — no per-row pop-in. Every game / filter / search

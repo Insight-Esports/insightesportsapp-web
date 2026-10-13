@@ -59,7 +59,7 @@ export function SchedulePhone({ game, setGame }: { game: GameId; setGame: (g: Ga
     if (pendingScheduleGame !== null) { setGame(parseGameParam(pendingScheduleGame)); setPendingScheduleGame(null); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const feed = useFetch<Match[]>(async (signal) => cleanUpcoming(normalizeMatches(await api.get(endpoints.upcomingMatches, { signal }))), []);
+  const feed = useFetch<Match[]>(async (signal) => cleanUpcoming(normalizeMatches(await api.get(endpoints.upcomingMatches, { signal }))), [], { cacheKey: "schedule:upcoming" });
   const matches = useMemo(() => filterByGame(feed.data ?? [], game), [feed.data, game]);
   const days = useMemo(() => {
     const grouped = groupByDay(matches, (m) => m.scheduledAt);

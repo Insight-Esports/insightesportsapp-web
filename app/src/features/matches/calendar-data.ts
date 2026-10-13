@@ -88,14 +88,18 @@ function sortDay(matches: Match[]): Match[] {
   });
 }
 
+// Calendar days survive remounts (the app keeps ScheduleView alive).
+const calendarCache: { byDay: Map<string, Match[]>; loaded: Map<string, number> } = { byDay: new Map(), loaded: new Map() };
+
 export function useCalendarData(monthAnchor: Date): CalendarData {
-  const [byDay, setByDay] = useState<Map<string, Match[]>>(() => new Map());
-  const [loading, setLoading] = useState(true);
+  const [byDay, setByDayState] = useState<Map<string, Match[]>>(() => calendarCache.byDay);
+  const setByDay = (m: Map<string, Match[]>) => { calendarCache.byDay = m; setByDayState(m); };
+  const [loading, setLoading] = useState(calendarCache.byDay.size === 0);
   const [error, setError] = useState<string | null>(null);
   const [connectionProblem, setConnectionProblem] = useState(false);
   const [pastWindowStart, setPastWindowStart] = useState<Date | null>(null);
   const [tick, setTick] = useState(0);
-  const lastLoaded = useRef<Map<string, number>>(new Map());
+  const lastLoaded = useRef<Map<string, number>>(calendarCache.loaded);
   const lastTick = useRef(0);
   const byDayRef = useRef(byDay);
   byDayRef.current = byDay;

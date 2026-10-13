@@ -21,18 +21,25 @@ export interface PagedList<T> {
   setItems: (updater: (prev: T[]) => T[]) => void;
 }
 
+// First pages kept across remounts (and primed at launch by lib/warm.ts, the
+// app's ListWarmStore), so a list renders at once and refreshes underneath.
+const pageCache = new Map<string, unknown[]>();
+export function primePagedCache<T>(key: string, items: T[]) { pageCache.set(key, items); }
+export function hasPagedCache(key: string) { return pageCache.has(key); }
+
 export function usePagedList<T>(
   fetchPage: (limit: number, offset: number, signal: AbortSignal) => Promise<T[]>,
   deps: DependencyList,
-  opts: { firstPage?: number; pageSize?: number; enabled?: boolean } = {},
+  opts: { firstPage?: number; pageSize?: number; enabled?: boolean; cacheKey?: string } = {},
 ): PagedList<T> {
   const firstPage = opts.firstPage ?? 20;
   const pageSize = opts.pageSize ?? 20;
   const enabled = opts.enabled ?? true;
-  const [items, setItems] = useState<T[]>([]);
-  const [loading, setLoading] = useState(enabled);
+  const cached = opts.cacheKey && pageCache.has(opts.cacheKey) ? (pageCache.get(opts.cacheKey) as T[]) : null;
+  const [items, setItems] = useState<T[]>(cached ?? []);
+  const [loading, setLoading] = useState(enabled && cached === null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [hasLoaded, setHasLoaded] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(cached !== null);
   const [error, setError] = useState<string | null>(null);
   const [connectionProblem, setConnectionProblem] = useState(false);
   const [reachedEnd, setReachedEnd] = useState(false);
@@ -47,13 +54,14 @@ export function usePagedList<T>(
     if (!enabled) { setLoading(false); return; }
     const gen = ++generation.current;
     const controller = new AbortController();
-    setLoading(true);
+    const key = opts.cacheKey;
+    const warm = key ? (pageCache.get(key) as T[] | undefined) : undefined;
+    if (warm) { setItems(warm); setHasLoaded(true); offset.current = warm.length; setReachedEnd(warm.length < firstPage); } else { setLoading(true); setReachedEnd(false); offset.current = 0; }
     setError(null);
     setConnectionProblem(false);
-    setReachedEnd(false);
-    offset.current = 0;
     fetcher.current(firstPage, 0, controller.signal)
       .then((page) => {
+        if (key) pageCache.set(key, page);
         if (gen !== generation.current) return;
         setItems(page);
         offset.current = page.length;

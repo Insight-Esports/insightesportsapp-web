@@ -8,6 +8,7 @@ import { normalizeUser, type AppStatus, type InsightUser } from "@/lib/types";
 import { resetSocket } from "@/lib/socket";
 import { currentLinkState, forgetKeyState, startDM, subscribeUnread as subscribeDMUnread } from "@/features/messages/service";
 import { withBase } from "@/lib/base-path";
+import { warmLists } from "@/lib/warm";
 
 export type ProfileRoute = "profile" | "messages" | "leaderboard" | "weeklyReport" | "settings" | "premium";
 
@@ -117,6 +118,7 @@ export function AppStateProvider({ children, initialUser = null }: { children: R
   useEffect(() => {
     if (!user) return;
     void startDM(user.id);
+    void warmLists();   // ListWarmStore: Players/Teams first pages for every game
     return subscribeDMUnread((n) => setUnreadDMs(n));
   }, [user?.id]);  // eslint-disable-line react-hooks/exhaustive-deps
 
