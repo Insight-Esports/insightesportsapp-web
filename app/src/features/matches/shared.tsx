@@ -164,7 +164,7 @@ export function ScheduleTabs({ value, game, className }: { value: ScheduleSegmen
   return (
     <div className={clsx("px-4 pt-2 pb-1", className)}>
       <FilterSegment<ScheduleSegment>
-        options={[{ label: "Schedule", value: "schedule" }, { label: "Results", value: "results" }]}
+        options={[{ label: "Upcoming", value: "schedule" }, { label: "Results", value: "results" }]}
         value={value}
         onChange={go}
       />

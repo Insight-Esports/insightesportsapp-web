@@ -20,7 +20,7 @@ import { HeaderTools } from "@/components/shell/AppShell";
 import { NavBar } from "@/components/shell/NavBar";
 import { api, endpoints } from "@/lib/api";
 import { clsx } from "@/lib/format";
-import { gameLabel, normalizeMatches, type GameId, type Match } from "@/lib/types";
+import { gameLabel, normalizeMatches, type GameId, type Match, SELECTABLE_GAMES } from "@/lib/types";
 import { useFetch } from "@/lib/use-fetch";
 import { useReveal } from "@/lib/use-reveal";
 import { useAppState } from "@/store/app-state";
@@ -90,8 +90,8 @@ export function SchedulePhone({ game, setGame }: { game: GameId; setGame: (g: Ga
           {days.map(({ key, day, matches: ms }) => (
             <section key={key}>
               <DateSectionHeader label={scheduleDayLabel(day)} />
-              <div className="flex flex-col px-4">
-                {ms.map((m) => <UpcomingMatchCard key={m.id} match={m} className="my-1.5" />)}
+              <div className="grid grid-cols-[minmax(0,1fr)] gap-3 px-4 py-1.5 lg:grid-cols-2 lg:gap-x-6 items-stretch">
+                {ms.map((m) => <UpcomingMatchCard key={m.id} match={m} className="h-full" />)}
               </div>
             </section>
           ))}
@@ -153,10 +153,12 @@ export function CalendarPhone({ game }: { game: GameId }) {
   }, [monthKey, first]);
 
   const dayMatchesAll = scoped.get(selectedKey) ?? [];
-  const dayGames: string[] = [];
-  for (const m of dayMatchesAll) if (!dayGames.includes(m.game)) dayGames.push(m.game);
-  const dayMatches = dayGameFilter ? dayMatchesAll.filter((m) => m.game === dayGameFilter) : dayMatchesAll;
   const isPast = selectedDay < today;
+  // Under the calendar: Upcoming | Results for the picked day, then the three games.
+  const [segment, setSegment] = useState<{ forKey: string; value: "upcoming" | "results" } | null>(null);
+  const daySegment: "upcoming" | "results" = segment && segment.forKey === selectedKey ? segment.value : (isPast ? "results" : "upcoming");
+  const bySegment = dayMatchesAll.filter((m) => (daySegment === "results" ? m.status === "completed" : m.status !== "completed"));
+  const dayMatches = dayGameFilter ? bySegment.filter((m) => m.game === dayGameFilter) : bySegment;
   const beyondWindow = isPast && data.pastWindowStart !== null && selectedDay < data.pastWindowStart;
   const n = dayMatchesAll.length;
   const title = game === "all" ? "Calendar" : `${gameLabel(game)} · Calendar`;
@@ -199,29 +201,36 @@ export function CalendarPhone({ game }: { game: GameId }) {
             <span className="flex-1" />
             <span className="t-label-sm text-muted">{n > 0 ? `${n} match${n === 1 ? "" : "es"}` : ""}</span>
           </div>
-          {dayGames.length > 1 ? (
-            <div className="flex gap-2 px-4 overflow-x-auto no-scrollbar">
-              {[null, ...dayGames].map((g) => {
-                const sel = dayGameFilter === g;
-                return (
-                  <button key={g ?? "all"} type="button" aria-pressed={sel} onClick={() => setDayFilter({ forKey: selectedKey, game: g })} className={clsx("shrink-0 px-3.5 py-[7px] rounded-[18px] t-label-md border", sel ? "bg-violet text-bg border-transparent" : "bg-card text-secondary border-border-subtle")}>
-                    {g ?? "All"}
-                  </button>
-                );
-              })}
+          <div className="px-4">
+            <div className="ios-segment">
+              {(["upcoming", "results"] as const).map((v) => (
+                <button key={v} type="button" aria-pressed={daySegment === v} onClick={() => setSegment({ forKey: selectedKey, value: v })} className={clsx("ios-segment-item", daySegment === v && "is-selected")}>
+                  {v === "upcoming" ? "Upcoming" : "Results"}
+                </button>
+              ))}
             </div>
-          ) : null}
+          </div>
+          <div className="flex gap-2 px-4 overflow-x-auto no-scrollbar">
+            {[null, ...SELECTABLE_GAMES.map((g) => g.id)].map((g) => {
+              const sel = dayGameFilter === g;
+              return (
+                <button key={g ?? "all"} type="button" aria-pressed={sel} onClick={() => setDayFilter({ forKey: selectedKey, game: g })} className={clsx("shrink-0 px-3.5 py-[7px] rounded-[18px] t-label-md border", sel ? "bg-violet text-bg border-transparent" : "bg-card text-secondary border-border-subtle")}>
+                  {g ? gameLabel(g) : "All"}
+                </button>
+              );
+            })}
+          </div>
           {data.loading && data.byDay.size === 0 ? (
             <div className="flex justify-center py-[30px]"><Spinner /></div>
           ) : dayMatches.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-7 text-center px-6">
               <CalendarMinus size={28} className="text-muted" />
-              <span className="t-body-sm text-muted">{isPast ? "No results recorded for this day" : "No matches scheduled this day"}</span>
+              <span className="t-body-sm text-muted">{daySegment === "results" ? "No results recorded for this day" : "No matches scheduled this day"}</span>
               {beyondWindow ? <span className="t-label-sm text-muted">Results this far back aren&apos;t in our recent window yet.</span> : null}
             </div>
           ) : (
-            <div className="flex flex-col gap-3 px-4">
-              {dayMatches.map((m) => (m.status === "completed" ? <CompletedMatchRow key={m.id} match={m} /> : <UpcomingMatchCard key={m.id} match={m} />))}
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-3 px-4 lg:grid-cols-2 lg:gap-x-6 items-stretch">
+              {dayMatches.map((m) => (m.status === "completed" ? <CompletedMatchRow key={m.id} match={m} className="h-full" /> : <UpcomingMatchCard key={m.id} match={m} className="h-full" />))}
             </div>
           )}
           <div className="h-[30px]" />

@@ -135,7 +135,7 @@ export function ResultsScreen() {
   return (
     <Page>
       <TabHeader title="Schedule" tools={<HeaderTools extra={phone ? <CalendarTool game={game} /> : undefined} />} />
-      {phone ? <ScheduleSegmentPicker value="results" game={game} /> : <ScheduleTabs value="results" game={game} />}
+      <ScheduleSegmentPicker value="results" game={game} />
       <GameTabBar selected={game} onChange={setGame} className="pt-2 pb-1" />
 
       {team ? (
@@ -148,7 +148,7 @@ export function ResultsScreen() {
 
       <div className="pt-3">
         {!revealed ? (
-          <div className="px-4 max-md:pt-2"><CardGrid columns={3}>{[0, 1, 2, 3, 4].map((i) => <SkeletonMatchCard key={i} />)}</CardGrid></div>
+          <div className="px-4 max-md:pt-2"><CardGrid columns={2}>{[0, 1, 2, 3, 4].map((i) => <SkeletonMatchCard key={i} />)}</CardGrid></div>
         ) : error ? (
           <LoadFailure error={error} connectionProblem={connectionProblem} onRetry={reload} />
         ) : days.length === 0 ? (
@@ -172,7 +172,7 @@ export function ResultsScreen() {
               <section key={key} className="flex flex-col">
                 <DateSectionHeader label={resultsDayLabel(day)} />
                 <div className="px-4 pt-1 pb-3">
-                  <CardGrid columns={3}>
+                  <CardGrid columns={2}>
                     {matches.map((m) => <CompletedMatchRow key={m.id} match={m} />)}
                   </CardGrid>
                 </div>

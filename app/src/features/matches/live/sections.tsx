@@ -28,7 +28,9 @@ export function abbr(name: string): string {
 
 /** The bordered section box every live section sits in (InsightCard). */
 export function SectionBox({ children, className, live }: { children: ReactNode; className?: string; live?: boolean }) {
-  return <div className={clsx("rounded-xl bg-card border p-3.5", live ? "border-live/40" : "border-border-subtle", className)}>{children}</div>;
+  // Same hairline as every other box — the Live badge is the live signal, not a red outline.
+  void live;
+  return <div className={clsx("rounded-xl bg-card border border-border-subtle p-3.5", className)}>{children}</div>;
 }
 
 // ── Score HUD ─────────────────────────────────────────────────────────────
