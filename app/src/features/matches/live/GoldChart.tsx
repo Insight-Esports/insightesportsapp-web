@@ -139,7 +139,7 @@ export function GoldChart({ team1Color: c1, team2Color: c2, team1Name, team2Name
           {yTicks.map((t) => (
             <g key={`y${t}`}>
               <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} stroke="var(--border-subtle)" strokeWidth={0.5} />
-              <text x={PAD.left - 6} y={y(t) + 3.5} textAnchor="end" fontSize={10} fill={t === 0 ? "var(--text-secondary)" : "var(--text-muted)"}>{axisLabel(t)}</text>
+              <text x={0} y={y(t) + 3.5} textAnchor="start" fontSize={10} fill={t === 0 ? "var(--text-secondary)" : "var(--text-muted)"}>{axisLabel(t)}</text>
             </g>
           ))}
           {xTicks.map((m) => (
