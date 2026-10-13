@@ -61,12 +61,16 @@ export function LiveMatchCard({ match, className }: { match: Match; className?: 
           <LiveTeamRow name={match.team2Name} logo={match.team2LogoURL} color={c2} score={match.team2Score} leads={match.team2Score >= match.team1Score} />
         </div>
 
-        {match.mapName ? (
-          <div className="flex items-center gap-1.5">
-            <span className="text-[9px] font-semibold tracking-[1.2px] text-muted">MAP</span>
-            <span className="t-label-sm text-secondary">{match.mapName}</span>
-          </div>
-        ) : null}
+        {/* The map line is always laid out (empty for League) so every live
+            card is the same height across games. */}
+        <div className="flex items-center gap-1.5 min-h-[18px]">
+          {match.mapName ? (
+            <>
+              <span className="text-[9px] font-semibold tracking-[1.2px] text-muted">MAP</span>
+              <span className="t-label-sm text-secondary">{match.mapName}</span>
+            </>
+          ) : null}
+        </div>
       </div>
     </Link>
   );

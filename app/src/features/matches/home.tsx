@@ -16,7 +16,7 @@ import { useReveal } from "@/lib/use-reveal";
 import { normalizeMatches, type Match } from "@/lib/types";
 import { useAppState } from "@/store/app-state";
 import { LiveMatchCard, UpcomingMatchCard } from "./cards";
-import { CardGrid, filterByGame, gameQuery, sortUpcomingAsc, useGameParam } from "./shared";
+import { filterByGame, gameQuery, sortUpcomingAsc, useGameParam } from "./shared";
 
 const AUTO_REFRESH_MS = 20_000;
 
@@ -85,15 +85,19 @@ export function HomeScreen() {
         {connectionFailed ? (
           <ConnectionErrorView onRetry={reload} className="min-h-[420px]" />
         ) : (
-          <div className="grid grid-cols-[minmax(0,1fr)] gap-6 px-4 lg:grid-cols-2 lg:gap-6 items-start">
+          // One left-dominant flow: live cards fill rows left → right (5 live
+          // = 3 left, 2 right), the Upcoming header sits under the last live
+          // row, and upcoming cards continue the same way. Rows stretch so
+          // every card in a row is the same height.
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-3 px-4 lg:grid-cols-2 lg:gap-x-6 items-stretch">
             {/* ── Live Now ── */}
-            <section className="flex flex-col gap-3 min-w-0">
-              <SectionHeader title="Live Now" className="!px-0" />
-              {showSkeleton ? (
-                <CardGrid>{[0, 1].map((i) => <SkeletonMatchCard key={i} />)}</CardGrid>
-              ) : live.error ? (
-                <LoadFailure error={live.error} connectionProblem={live.connectionProblem} onRetry={live.reload} />
-              ) : liveMatches.length === 0 ? (
+            <SectionHeader title="Live Now" className="!px-0 lg:col-span-2 mb-1" />
+            {showSkeleton ? (
+              [0, 1].map((i) => <SkeletonMatchCard key={`ls${i}`} />)
+            ) : live.error ? (
+              <div className="lg:col-span-2"><LoadFailure error={live.error} connectionProblem={live.connectionProblem} onRetry={live.reload} /></div>
+            ) : liveMatches.length === 0 ? (
+              <div className="lg:col-span-2">
                 <EmptyState
                   icon={<Trophy />}
                   title="No live matches right now"
@@ -102,21 +106,19 @@ export function HomeScreen() {
                   onAction={viewSchedule}
                   className="!mx-0"
                 />
-              ) : (
-                <CardGrid>
-                  {liveMatches.map((m) => <LiveMatchCard key={m.id} match={m} />)}
-                </CardGrid>
-              )}
-            </section>
+              </div>
+            ) : (
+              liveMatches.map((m) => <LiveMatchCard key={m.id} match={m} className="h-full" />)
+            )}
 
             {/* ── Upcoming ── */}
-            <section className="flex flex-col gap-3 min-w-0">
-              <SectionHeader title="Upcoming" className="!px-0" />
-              {showSkeleton ? (
-                <CardGrid>{[0, 1, 2].map((i) => <SkeletonMatchCard key={i} />)}</CardGrid>
-              ) : upcoming.error ? (
-                <LoadFailure error={upcoming.error} connectionProblem={upcoming.connectionProblem} onRetry={upcoming.reload} />
-              ) : upcomingMatches.length === 0 ? (
+            <SectionHeader title="Upcoming" className="!px-0 lg:col-span-2 mt-3 mb-1" />
+            {showSkeleton ? (
+              [0, 1, 2].map((i) => <SkeletonMatchCard key={`us${i}`} />)
+            ) : upcoming.error ? (
+              <div className="lg:col-span-2"><LoadFailure error={upcoming.error} connectionProblem={upcoming.connectionProblem} onRetry={upcoming.reload} /></div>
+            ) : upcomingMatches.length === 0 ? (
+              <div className="lg:col-span-2">
                 <EmptyState
                   icon={<Calendar />}
                   title="No upcoming matches"
@@ -125,12 +127,10 @@ export function HomeScreen() {
                   onAction={viewSchedule}
                   className="!mx-0"
                 />
-              ) : (
-                <CardGrid>
-                  {upcomingMatches.map((m) => <UpcomingMatchCard key={m.id} match={m} />)}
-                </CardGrid>
-              )}
-            </section>
+              </div>
+            ) : (
+              upcomingMatches.map((m) => <UpcomingMatchCard key={m.id} match={m} className="h-full" />)
+            )}
           </div>
         )}
       </div>

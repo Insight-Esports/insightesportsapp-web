@@ -111,6 +111,8 @@ export function LiveMatchScreen({ match }: { match: Match }) {
           isLive={!vm.isMatchComplete}
         />
       </div>
+      {revealed ? (
+      <>
 
       {vm.isMatchComplete ? (
         <div className="flex flex-col rounded-xl overflow-hidden border border-border-subtle">
@@ -155,6 +157,8 @@ export function LiveMatchScreen({ match }: { match: Match }) {
         team2Name={match.team2Name}
         isPremium={isPremium}
       />
+      </>
+      ) : <MatchMainSkeleton variant="live" withHUD={false} />}
     </div>
   );
 
@@ -193,7 +197,8 @@ export function LiveMatchScreen({ match }: { match: Match }) {
       <div className={`sticky top-0 z-20 px-4 pb-2 bg-bg transition-opacity ${collapsed && revealed ? "opacity-100" : "opacity-0 pointer-events-none h-0 pb-0 overflow-hidden"}`} aria-hidden={!collapsed}>
         <CollapsedScoreBar match={match} team1Score={vm.team1Rounds} team2Score={vm.team2Rounds} isComplete={vm.isMatchComplete} />
       </div>
-      {revealed ? <SplitLayout main={main} rail={rail} /> : <SplitLayout main={<MatchMainSkeleton variant="live" />} rail={<MatchRailSkeleton variant="live" />} />}
+      {/* The hero shows at once (from the tapped match); sections and the rail are skeletons until their data lands. */}
+      <SplitLayout main={main} rail={revealed ? rail : <MatchRailSkeleton variant="live" />} />
     </Page>
   );
 }

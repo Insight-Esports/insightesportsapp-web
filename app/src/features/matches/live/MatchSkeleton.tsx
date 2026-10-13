@@ -12,7 +12,7 @@ import { SkeletonMatchHero, SkeletonScoreboard, SkeletonScoreHUD, SkeletonTextLi
 export type MatchSkeletonVariant = "live" | "completed" | "upcoming";
 
 /** The main column only (no Page / title strip) — for screens that keep their own chrome. */
-export function MatchMainSkeleton({ variant }: { variant: MatchSkeletonVariant }) {
+export function MatchMainSkeleton({ variant, withHUD = true }: { variant: MatchSkeletonVariant; withHUD?: boolean }) {
   if (variant === "upcoming") {
     // UpcomingMatchDetailView.previewSkeleton, shape for shape.
     return (
@@ -27,7 +27,7 @@ export function MatchMainSkeleton({ variant }: { variant: MatchSkeletonVariant }
   }
   return (
     <div className="flex flex-col gap-4">
-      <SkeletonScoreHUD />
+      {withHUD ? <SkeletonScoreHUD /> : null}
       {/* Follow row */}
       <div className="flex items-center gap-3 px-1"><SkeletonBar width={120} height={10} /><span className="flex-1" /><SkeletonBar width={64} height={26} /><SkeletonBar width={64} height={26} /></div>
       {/* Round tracker / objectives */}
