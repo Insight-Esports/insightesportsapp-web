@@ -148,7 +148,7 @@ export function CompletedMatchScreen({ match }: { match: Match }) {
           {vm.goldTimeline.length ? <GoldChart team1Color={c1} team2Color={c2} team1Name={match.team1Name} team2Name={match.team2Name} timeline={vm.goldTimeline} /> : null}
         </>
       )}
-      <StatsTableSection team1Color={c1} team2Color={c2} game={match.game} team1Name={match.team1Name} team2Name={match.team2Name} team1Stats={vm.team1Stats} team2Stats={vm.team2Stats} />
+      <StatsTableSection team1Color={c1} team2Color={c2} game={match.game} team1Name={match.team1Name} team2Name={match.team2Name} team1Stats={vm.team1Stats} team2Stats={vm.team2Stats} matchId={match.id} />
     </div>
   );
 

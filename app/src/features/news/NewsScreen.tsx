@@ -1,7 +1,9 @@
 // NewsScreen — NewsView.swift.
 //
 // Esports news articles filtered by game. Game tabs: All, VALORANT, CS2,
-// League. The first article is featured; articles open in a new tab (the
+// League. Laid out as a front page: the newest article is the hero (big
+// 16:9 picture, source · time, display headline, standfirst), the rest a
+// newspaper grid (1 → 2 → 3 columns). Articles open in a new tab (the
 // app's in-app Safari sheet). All news is free — no premium gating.
 // Game lives in the URL (?game=).
 "use client";
@@ -47,10 +49,10 @@ export function NewsScreen() {
   let content;
   if (!revealed) {
     content = (
-      <div className="px-4 pt-3 grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start">
+      <div className="px-4 pt-4 flex flex-col gap-6">
         <SkeletonFeaturedNewsCard />
-        <div className="flex flex-col gap-3">
-          {Array.from({ length: 5 }).map((_, i) => <SkeletonNewsCard key={i} />)}
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => <SkeletonNewsCard key={i} />)}
         </div>
       </div>
     );
@@ -59,13 +61,22 @@ export function NewsScreen() {
   } else if (!data || data.length === 0) {
     content = <div className="py-16"><EmptyState icon={<Newspaper />} title="No news available" subtitle="Check back soon for the latest esports news" /></div>;
   } else {
+    // Front page: the newest story as the hero, the rest in a newspaper grid.
     const [featured, ...rest] = data;
     content = (
-      <div className="px-4 pt-3 grid grid-cols-[minmax(0,1fr)] gap-3 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start">
+      <div className="px-4 pt-4 flex flex-col gap-6">
         <FeaturedNewsCard article={featured} />
-        <div className="flex flex-col gap-3">
-          {rest.map((a) => <NewsCard key={a.id} article={a} />)}
-        </div>
+        {rest.length > 0 ? (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <span className="t-kicker">Latest</span>
+              <span className="flex-1 hairline-b" />
+            </div>
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2 2xl:grid-cols-3 items-stretch">
+              {rest.map((a) => <NewsCard key={a.id} article={a} />)}
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -81,7 +92,7 @@ export function NewsScreen() {
 
 function Dateline({ article, className }: { article: NewsArticle; className?: string }) {
   return (
-    <div className={clsx("flex items-center gap-2", className)}>
+    <div className={clsx("flex items-center gap-2 min-w-0", className)}>
       <span className="text-[10px] font-semibold tracking-[1px] text-muted uppercase truncate">{article.source} · {timeAgo(article.publishedAt)}</span>
       <span className="flex-1" />
       {article.game ? <GamePill game={article.game} /> : null}
@@ -93,35 +104,46 @@ function ArticlePlaceholder({ size }: { size: number }) {
   return <span className="grid place-items-center w-full h-full"><Newspaper size={size} className="text-violet/50" /></span>;
 }
 
-function FeaturedNewsCard({ article }: { article: NewsArticle }) {
-  const href = safeHref(article.url);
-  const Tag = href ? "a" : "div";
+/** 16:9 picture block; the surface tone shows while the picture loads or when there is none. */
+function ArticleImage({ article, placeholder, className }: { article: NewsArticle; placeholder: number; className?: string }) {
   return (
-    <Tag {...(href ? { href, target: "_blank", rel: "noopener noreferrer" } : {})} className="flex flex-col gap-3 p-3 rounded-[14px] bg-card border border-border-subtle hover:border-border-strong transition-colors">
-      <span className="block h-[180px] lg:h-[260px] rounded-[10px] overflow-hidden" style={{ background: "linear-gradient(135deg, rgb(124 92 252 / 0.4), var(--card))" }}>
-        <Img src={article.imageURL} alt="" fallback={<ArticlePlaceholder size={40} />} fit="cover" className="w-full h-full" />
-      </span>
-      <div className="flex flex-col gap-2 px-1 pb-1">
+    <span className={clsx("block w-full aspect-video overflow-hidden bg-surface", className)}>
+      <Img src={article.imageURL} alt="" fallback={<ArticlePlaceholder size={placeholder} />} fit="cover" className="w-full h-full" />
+    </span>
+  );
+}
+
+function articleLinkProps(url: string) {
+  const href = safeHref(url);
+  return { Tag: (href ? "a" : "div") as "a" | "div", props: href ? { href, target: "_blank", rel: "noopener noreferrer" } : {} };
+}
+
+/** The front-page hero: the newest story, picture on top, display headline beneath. */
+function FeaturedNewsCard({ article }: { article: NewsArticle }) {
+  const { Tag, props } = articleLinkProps(article.url);
+  return (
+    <Tag {...props} className="group flex flex-col rounded-2xl bg-card border border-border-subtle hover:border-border-strong transition-colors overflow-hidden">
+      <ArticleImage article={article} placeholder={44} className="lg:max-h-[480px]" />
+      <div className="flex flex-col gap-2.5 px-4 py-4 lg:px-6 lg:py-5">
         <Dateline article={article} />
-        <span className="t-headline-md text-primary line-clamp-3">{article.title}</span>
-        {article.description ? <span className="t-body-sm text-secondary line-clamp-2">{article.description}</span> : null}
-        <span className="text-[10px] font-semibold tracking-[1.4px] text-violet">READ</span>
+        <span className="t-headline-lg lg:t-display-md text-primary line-clamp-3 group-hover:text-violet-light transition-colors">{article.title}</span>
+        {article.description ? <span className="t-body-md lg:t-body-lg text-secondary line-clamp-3 max-w-[72ch]">{article.description}</span> : null}
+        <span className="text-[10px] font-semibold tracking-[1.4px] text-violet pt-0.5">READ</span>
       </div>
     </Tag>
   );
 }
 
+/** Grid story: picture, source · time, headline, a short description. */
 function NewsCard({ article }: { article: NewsArticle }) {
-  const href = safeHref(article.url);
-  const Tag = href ? "a" : "div";
+  const { Tag, props } = articleLinkProps(article.url);
   return (
-    <Tag {...(href ? { href, target: "_blank", rel: "noopener noreferrer" } : {})} className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border-subtle hover:border-border-strong transition-colors">
-      <span className="block size-20 shrink-0 rounded-lg overflow-hidden" style={{ background: "linear-gradient(135deg, rgb(124 92 252 / 0.3), var(--surface))" }}>
-        <Img src={article.imageURL} alt="" fallback={<ArticlePlaceholder size={20} />} fit="cover" className="w-full h-full" />
-      </span>
-      <div className="flex flex-col gap-1.5 min-w-0 flex-1">
+    <Tag {...props} className="group flex flex-col h-full rounded-xl bg-card border border-border-subtle hover:border-border-strong transition-colors overflow-hidden">
+      <ArticleImage article={article} placeholder={24} />
+      <div className="flex flex-col gap-1.5 px-3.5 pt-3 pb-3.5 flex-1">
         <Dateline article={article} />
-        <span className="t-headline-sm text-primary line-clamp-3">{article.title}</span>
+        <span className="t-headline-sm text-primary line-clamp-3 group-hover:text-violet-light transition-colors">{article.title}</span>
+        {article.description ? <span className="t-body-sm text-secondary line-clamp-2">{article.description}</span> : null}
       </div>
     </Tag>
   );

@@ -1,6 +1,6 @@
 // LiveMatchScreen.tsx — LiveMatchView: the live match screen. Score HUD,
 // round/map state, win probability, scoreboard, fan poll, predictions
-// teaser, live chat, match discussion. Two columns on wide screens:
+// teaser, live chat (and the match discussion once the game ends). Two columns on wide screens:
 // scoreboard + stats on the left, chat / poll / discussion in the rail.
 "use client";
 
@@ -14,7 +14,6 @@ import { NavBar } from "@/components/shell/NavBar";
 import { ProfileToolbarButton } from "@/components/shell/AppShell";
 import { useHideTabBar } from "@/components/shell/tab-bar";
 import { featureState } from "./feature-status";
-import { FollowTeamsRow } from "./FollowTeams";
 import { GoldChart } from "./GoldChart";
 import { LiveChatSection } from "./LiveChat";
 import { MatchCommentsSection } from "./MatchComments";
@@ -132,8 +131,6 @@ export function LiveMatchScreen({ match }: { match: Match }) {
         </div>
       ) : null}
 
-      <FollowTeamsRow match={match} team1Id={match.team1Id} team2Id={match.team2Id} />
-
       {isRoundBased ? (
         <RoundTracker team1Color={c1} team2Color={c2} rounds={vm.rounds} isComplete={vm.isMatchComplete} />
       ) : (
@@ -146,7 +143,7 @@ export function LiveMatchScreen({ match }: { match: Match }) {
       <WinProbabilityBar team1Color={c1} team2Color={c2} team1Name={match.team1Name} team2Name={match.team2Name} team1Probability={vm.team1WinProbability} />
 
       {!vm.statsLoaded ? <SkeletonScoreboard columns={5} /> : (
-      <StatsTableSection team1Color={c1} team2Color={c2} game={match.game} team1Name={match.team1Name} team2Name={match.team2Name} team1Stats={vm.team1Stats} team2Stats={vm.team2Stats} />
+      <StatsTableSection team1Color={c1} team2Color={c2} game={match.game} team1Name={match.team1Name} team2Name={match.team2Name} team1Stats={vm.team1Stats} team2Stats={vm.team2Stats} matchId={match.id} />
       )}
 
       {!vm.statsLoaded ? null : (
@@ -157,6 +154,8 @@ export function LiveMatchScreen({ match }: { match: Match }) {
         matchId={match.id}
         team1TopPlayer={vm.team1Stats[0] ?? null}
         team2TopPlayer={vm.team2Stats[0] ?? null}
+        team1Stats={vm.team1Stats}
+        team2Stats={vm.team2Stats}
         team1Name={match.team1Name}
         team2Name={match.team2Name}
         isPremium={isPremium}
@@ -190,7 +189,8 @@ export function LiveMatchScreen({ match }: { match: Match }) {
       <div className="hidden lg:block">
         <LiveChatSection match={match} team1Score={vm.team1Rounds} team2Score={vm.team2Rounds} messages={vm.chatMessages} onSend={onSend} isComplete={vm.isMatchComplete} sendDisabled={chat.off || chat.degraded} variant="panel" />
       </div>
-      <MatchCommentsSection matchId={match.id} />
+      {/* Match Discussion opens once the game is over — never on a live match. */}
+      {vm.isMatchComplete ? <MatchCommentsSection matchId={match.id} /> : null}
     </div>
   );
 

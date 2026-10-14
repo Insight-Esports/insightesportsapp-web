@@ -12,6 +12,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Radio, CalendarDays, User, Users, Newspaper, Search, Bell, WifiOff, Wrench, RadioTower, ChevronRight, UserCircle, Trophy, Settings as SettingsIcon, X, Star } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { rankPercentileText } from "@/features/profile/types";
+import { NotificationsBell } from "@/features/notifications/NotificationsPopover";
 import { useTabBarHidden } from "./tab-bar";
 import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
@@ -40,7 +41,7 @@ function PremiumGlyph() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { user, isCheckingAuth, gate, connectionTrouble, status, profilePanelOpen, setProfilePanelOpen, unreadNotifications, unreadDMs, checkStatus } = useAppState();
+  const { user, isCheckingAuth, gate, connectionTrouble, status, profilePanelOpen, setProfilePanelOpen, unreadDMs, checkStatus } = useAppState();
   // AppState.hidesTabBar — a DM thread takes the whole phone screen.
   const tabBarHidden = useTabBarHidden();
 
@@ -68,14 +69,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Link>
             );
           })}
-          <div className="my-2 hairline-b" />
-          <Link href="/search" className={clsx("flex items-center gap-3 px-3 py-2.5 rounded-lg t-label-lg transition-colors", pathname.startsWith("/search") ? "text-violet bg-violet/10" : "text-secondary hover:text-primary hover:bg-surface/60")}>
-            <span className="w-5 grid place-items-center"><Search size={18} /></span>Search
-          </Link>
-          <Link href="/notifications" className={clsx("flex items-center gap-3 px-3 py-2.5 rounded-lg t-label-lg transition-colors", pathname.startsWith("/notifications") ? "text-violet bg-violet/10" : "text-secondary hover:text-primary hover:bg-surface/60")}>
-            <span className="w-5 grid place-items-center"><Bell size={18} /></span>Notifications
-            {unreadNotifications > 0 ? <span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-violet text-white text-[11px] font-bold grid place-items-center">{unreadNotifications > 99 ? "99+" : unreadNotifications}</span> : null}
-          </Link>
         </nav>
         <div className="flex-1" />
         {user ? (
@@ -147,7 +140,8 @@ export function ProfileToolbarButton() {
 /** The tab headers' tools cluster. On phones only the Live tab carries the
  *  bell and the search (HomeView's cluster: bell · search · avatar); every
  *  other tab shows its own extra tool and the profile door, as the app does.
- *  On desktop the sidebar already has Search and Notifications. */
+ *  On desktop every tab header carries search and the bell next to the
+ *  avatar; the bell opens its popover in place instead of navigating. */
 export function HeaderTools({ extra, home }: { extra?: ReactNode; home?: boolean }) {
   const router = useRouter();
   const { unreadNotifications } = useAppState();
@@ -160,6 +154,10 @@ export function HeaderTools({ extra, home }: { extra?: ReactNode; home?: boolean
           <ToolButton label="Search" onClick={() => router.push("/search")} className="md:hidden"><Search size={17} strokeWidth={2.5} /></ToolButton>
         </>
       ) : null}
+      <span className="hidden md:contents">
+        <ToolButton label="Search" onClick={() => router.push("/search")}><Search size={17} strokeWidth={2.5} /></ToolButton>
+        <NotificationsBell />
+      </span>
       <ProfileToolbarButton />
     </>
   );

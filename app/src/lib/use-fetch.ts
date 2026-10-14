@@ -21,6 +21,11 @@ export interface FetchState<T> {
 // back-navigation.
 const screenCache = new Map<string, unknown>();
 
+/** Forget every cached screen (logout): the next account starts from skeletons, not this one's data. */
+export function clearScreenCaches() {
+  screenCache.clear();
+}
+
 export function useFetch<T>(fetcher: (signal: AbortSignal) => Promise<T>, deps: DependencyList, opts: { enabled?: boolean; keepData?: boolean; cacheKey?: string } = {}): FetchState<T> {
   const enabled = opts.enabled ?? true;
   const cached = opts.cacheKey && screenCache.has(opts.cacheKey) ? (screenCache.get(opts.cacheKey) as T) : null;

@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { backHrefFrom } from "@/features/matches/from-match";
 import { ChevronLeft, Medal, Trophy, UserX } from "lucide-react";
 import { api, ApiError, endpoints } from "@/lib/api";
 import { useFetch } from "@/lib/use-fetch";
@@ -105,9 +106,11 @@ export function TeamDetail({ id }: { id: string }) {
 }
 
 function TitleBar({ title, trailing }: { title: string; trailing?: React.ReactNode }) {
+  // Opened from a match (?from=match:<id>) → back to that match, else the Teams tab.
+  const back = backHrefFrom(useSearchParams().get("from"), "/teams");
   return (
     <div className="flex items-center gap-2.5 px-3 pt-2 pb-2 bg-bg sticky top-0 max-md:top-[env(safe-area-inset-top,0px)] z-10 max-md:min-h-11 max-md:hairline-b">
-      <Link href="/teams" aria-label="Back to Teams" className="grid place-items-center size-8 rounded-lg text-violet hover:bg-card"><ChevronLeft size={20} strokeWidth={2.5} /></Link>
+      <Link href={back} aria-label="Back" className="grid place-items-center size-8 rounded-lg text-violet hover:bg-card"><ChevronLeft size={20} strokeWidth={2.5} /></Link>
       <span className="text-[22px] font-bold tracking-[-0.4px] text-primary truncate flex-1">{title}</span>
       {trailing}
     </div>

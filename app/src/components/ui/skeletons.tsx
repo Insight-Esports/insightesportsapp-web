@@ -162,24 +162,30 @@ export function SkeletonScoreboard({ columns = 5, rows = 5, className }: { colum
 
 // ── Lists ─────────────────────────────────────────────────────────────────
 
-/** News list: a featured card (image block + lines) then compact cards. */
+/** News front page: the hero (16:9 picture + display headline) then grid cards. */
 export function SkeletonNewsCard({ className }: { className?: string }) {
   return (
-    <div className={clsx("flex items-center gap-3 p-3 rounded-xl bg-card border border-border-subtle", className)}>
-      <span className="size-20 shrink-0 rounded-lg bg-surface" />
-      <div className="flex flex-col gap-2 flex-1"><SkeletonBar height={12} /><SkeletonBar height={12} width="85%" /><SkeletonBar width={80} height={10} /></div>
+    <div className={clsx("flex flex-col rounded-xl bg-card border border-border-subtle overflow-hidden", className)}>
+      <span className="block w-full aspect-video bg-surface" />
+      <div className="flex flex-col gap-2 px-3.5 pt-3 pb-3.5">
+        <SkeletonBar width={120} height={9} />
+        <SkeletonBar height={13} />
+        <SkeletonBar width="85%" height={13} />
+        <SkeletonBar width="70%" height={10} />
+      </div>
     </div>
   );
 }
 export function SkeletonFeaturedNewsCard({ className }: { className?: string }) {
   return (
-    <div className={clsx("flex flex-col gap-3 p-3 rounded-[14px] bg-card border border-border-subtle", className)}>
-      <span className="block h-[180px] lg:h-[260px] rounded-[10px] bg-surface" />
-      <div className="flex flex-col gap-2 px-1 pb-1">
+    <div className={clsx("flex flex-col rounded-2xl bg-card border border-border-subtle overflow-hidden", className)}>
+      <span className="block w-full aspect-video lg:max-h-[480px] bg-surface" />
+      <div className="flex flex-col gap-2.5 px-4 py-4 lg:px-6 lg:py-5">
         <SkeletonBar width={140} height={9} />
-        <SkeletonBar height={16} />
-        <SkeletonBar width="80%" height={16} />
-        <SkeletonBar width="92%" height={10} />
+        <SkeletonBar height={22} width="90%" />
+        <SkeletonBar width="64%" height={22} />
+        <SkeletonBar width="80%" height={11} />
+        <SkeletonBar width="52%" height={11} />
         <SkeletonBar width={36} height={9} />
       </div>
     </div>

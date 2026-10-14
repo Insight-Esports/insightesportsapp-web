@@ -20,6 +20,7 @@ import { FollowTeamsRow } from "./FollowTeams";
 import { MatchCommentsSection } from "./MatchComments";
 import { MatchMainSkeleton, MatchRailSkeleton } from "./MatchSkeleton";
 import { playerHref, teamHref } from "./sections";
+import { withFromMatch } from "../from-match";
 
 interface PreviewState {
   loading: boolean;
@@ -154,7 +155,7 @@ export function UpcomingMatchScreen({ match }: { match: Match }) {
   const star2 = vm.team2Roster.reduce<Player | null>((b, p) => (!b || (p.rating ?? 0) > (b.rating ?? 0) ? p : b), null);
 
   const teamColumn = (name: string, logo: string | null, id: string | null, rank: number | null) => (
-    <Link href={teamHref(id || null, name)} className="flex-1 flex flex-col items-center gap-2 min-w-0 rounded-xl py-2 hover:bg-surface/40 transition-colors">
+    <Link href={withFromMatch(teamHref(id || null, name), match.id)} className="flex-1 flex flex-col items-center gap-2 min-w-0 rounded-xl py-2 hover:bg-surface/40 transition-colors">
       <TeamMark name={name} logoURL={logo} size={64} />
       <span className="t-headline-sm text-primary text-center line-clamp-2">{name}</span>
       {rank && rank > 0 ? <span className="flex gap-1 t-label-sm"><span className="text-muted">Rank</span><span className="text-primary">#{rank}</span></span> : null}
@@ -164,7 +165,7 @@ export function UpcomingMatchScreen({ match }: { match: Match }) {
   const rosterColumn = (roster: Player[], star: Player | null) => (
     <div className="ledger flex-1 min-w-0">
       {roster.slice(0, 5).map((p, i) => (
-        <Link key={p.id} href={playerHref(p.id, p.name)} className={clsx("flex items-center gap-2 px-2.5 py-2 hover:bg-surface/60 transition-colors", i > 0 && "border-t border-border-subtle")}>
+        <Link key={p.id} href={withFromMatch(playerHref(p.id, p.name), match.id)} className={clsx("flex items-center gap-2 px-2.5 py-2 hover:bg-surface/60 transition-colors", i > 0 && "border-t border-border-subtle")}>
           <InitialAvatar name={p.name} imageURL={p.imageURL} size={28} />
           <span className="flex flex-col min-w-0">
             <span className="flex items-center gap-1 min-w-0">

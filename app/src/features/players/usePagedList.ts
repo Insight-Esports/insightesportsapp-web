@@ -26,6 +26,8 @@ export interface PagedList<T> {
 const pageCache = new Map<string, unknown[]>();
 export function primePagedCache<T>(key: string, items: T[]) { pageCache.set(key, items); }
 export function hasPagedCache(key: string) { return pageCache.has(key); }
+/** Forget every cached first page (logout). */
+export function clearPagedCache() { pageCache.clear(); }
 
 export function usePagedList<T>(
   fetchPage: (limit: number, offset: number, signal: AbortSignal) => Promise<T[]>,

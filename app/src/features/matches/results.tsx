@@ -14,7 +14,7 @@ import { ApiError, api, endpoints, errorMessage } from "@/lib/api";
 import { matchResultTime, normalizeMatches, type Match } from "@/lib/types";
 import { useReveal } from "@/lib/use-reveal";
 import { CompletedMatchRow } from "./cards";
-import { CardGrid, DateSectionHeader, ScheduleTabs, gameQuery, groupByDay, parseDayKey, resultsDayLabel, sortResultsDesc, useGameParam } from "./shared";
+import { CardGrid, DateSectionHeader, gameQuery, groupByDay, parseDayKey, resultsDayLabel, sortResultsDesc, useGameParam } from "./shared";
 import { useIsPhone } from "@/components/shell/use-phone";
 import { CalendarTool, ScheduleSegmentPicker } from "./schedule-phone";
 
@@ -134,7 +134,7 @@ export function ResultsScreen() {
 
   return (
     <Page>
-      <TabHeader title="Schedule" tools={<HeaderTools extra={phone ? <CalendarTool game={game} /> : undefined} />} />
+      <TabHeader title="Schedule" tools={<HeaderTools extra={<CalendarTool game={game} from="results" />} />} />
       <ScheduleSegmentPicker value="results" game={game} />
       <GameTabBar selected={game} onChange={setGame} className="pt-2 pb-1" />
 

@@ -12,7 +12,7 @@ import { useState, type ReactNode } from "react";
 import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
 import { AssetIcon, PickDot } from "@/components/ui";
-import { monthlySavingsPercent, PREMIUM_BENEFITS, priceLabel, PRIVACY_URL, TERMS_URL, weeklyPerMonth, type Plan } from "./plans";
+import { monthlySavingsPercent, PLAN_PRICE, PREMIUM_BENEFITS, priceLabel, PRIVACY_URL, TERMS_URL, weeklyPerMonth, type Plan } from "./plans";
 import { useCheckout } from "./usePayments";
 import { withBase } from "@/lib/base-path";
 
@@ -170,7 +170,9 @@ export function PremiumLegalFooter({ plan }: { plan: Plan }) {
   const { refreshUser } = useAppState();
   const [restoring, setRestoring] = useState(false);
   const period = plan === "weekly" ? "weekly" : "monthly";
-  const renewal = `Auto-renews ${period} at ${priceLabel(plan)} until cancelled. Cancel anytime in your App Store settings.`;
+  // "Auto-renews weekly at $1.99 / monthly at $5.99 until cancelled." — the
+  // web subscription is managed from the account's settings, not the App Store.
+  const renewal = `Auto-renews ${period} at $${PLAN_PRICE[plan].toFixed(2)} until cancelled. Cancel anytime in your account settings.`;
   // No StoreKit on the web: "Restore" re-syncs the account's entitlement from the server.
   const restore = async () => { setRestoring(true); try { await refreshUser(); } finally { setRestoring(false); } };
   return (

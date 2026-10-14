@@ -28,24 +28,51 @@ import { dayLoadOf, useCalendarData } from "./calendar-data";
 import { CompletedMatchRow, UpcomingMatchCard } from "./cards";
 import { DateSectionHeader, addDays, addMonths, calendarDayTitle, cleanUpcoming, dayKey, filterByGame, gameQuery, groupByDay, isSameLocalDay, parseDayKey, parseGameParam, scheduleDayLabel, sortUpcomingAsc, startOfDay, startOfMonth } from "./shared";
 
-/** The system segmented Picker under the header (Upcoming | Results). */
-export function ScheduleSegmentPicker({ value, game }: { value: "schedule" | "results"; game: GameId }) {
-  const router = useRouter();
+/** Two-way selection in the app's own style (the sidebar / tab-bar look):
+ *  the chosen option sits in violet on a soft violet cloud, the other one is
+ *  muted with no background, a gap between them. */
+export function CloudSegment<T extends string>({ options, value, onChange, className }: { options: { label: string; value: T }[]; value: T; onChange: (v: T) => void; className?: string }) {
   return (
-    <div className="px-4 pt-2 pb-1">
-      <div className="ios-segment">
-        <button type="button" aria-pressed={value === "schedule"} onClick={() => { if (value !== "schedule") router.push(`/schedule${gameQuery(game)}`); }}>Upcoming</button>
-        <button type="button" aria-pressed={value === "results"} onClick={() => { if (value !== "results") router.push(`/results${gameQuery(game)}`); }}>Results</button>
-      </div>
+    <div className={clsx("flex items-center gap-2", className)} role="tablist">
+      {options.map((o) => {
+        const selected = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => { if (!selected) onChange(o.value); }}
+            className={clsx("px-3.5 py-[7px] rounded-lg t-label-lg leading-none whitespace-nowrap transition-colors", selected ? "text-violet bg-violet/15" : "text-muted hover:text-primary")}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
-/** The header's calendar door — NavigationLink(destination: CalendarScheduleView()). */
-export function CalendarTool({ game }: { game: GameId }) {
+/** The picker under the Schedule header (Upcoming | Results). */
+export function ScheduleSegmentPicker({ value, game }: { value: "schedule" | "results"; game: GameId }) {
   const router = useRouter();
   return (
-    <ToolButton label="Calendar" onClick={() => router.push(`/schedule${gameQuery(game, { view: "calendar" })}`)} className="text-violet hover:text-violet">
+    <div className="px-4 pt-3 pb-2">
+      <CloudSegment<"schedule" | "results">
+        options={[{ label: "Upcoming", value: "schedule" }, { label: "Results", value: "results" }]}
+        value={value}
+        onChange={(v) => router.push(v === "schedule" ? `/schedule${gameQuery(game)}` : `/results${gameQuery(game)}`)}
+      />
+    </div>
+  );
+}
+
+/** The header's calendar door — NavigationLink(destination: CalendarScheduleView()).
+ *  `from` tells the calendar which face of the Schedule tab to return to. */
+export function CalendarTool({ game, from = "schedule" }: { game: GameId; from?: "schedule" | "results" }) {
+  const router = useRouter();
+  return (
+    <ToolButton label="Calendar" onClick={() => router.push(`/schedule${gameQuery(game, { view: "calendar", from: from === "results" ? "results" : null })}`)} className="text-violet hover:text-violet">
       <CalendarDays size={16} strokeWidth={2.5} />
     </ToolButton>
   );
@@ -162,10 +189,12 @@ export function CalendarPhone({ game }: { game: GameId }) {
   const beyondWindow = isPast && data.pastWindowStart !== null && selectedDay < data.pastWindowStart;
   const n = dayMatchesAll.length;
   const title = game === "all" ? "Calendar" : `${gameLabel(game)} · Calendar`;
+  // Back returns to the face of the Schedule tab the calendar was opened from.
+  const backHref = params.get("from") === "results" ? `/results${gameQuery(game)}` : `/schedule${gameQuery(game)}`;
 
   return (
     <Page>
-      <NavBar title={title} back={`/schedule${gameQuery(game)}`} />
+      <NavBar title={title} back={backHref} />
       <div className="flex flex-col gap-5 pt-2">
         {/* Month header: name + chevrons */}
         <div className="flex items-center px-3">
@@ -201,14 +230,12 @@ export function CalendarPhone({ game }: { game: GameId }) {
             <span className="flex-1" />
             <span className="t-label-sm text-muted">{n > 0 ? `${n} match${n === 1 ? "" : "es"}` : ""}</span>
           </div>
-          <div className="px-4">
-            <div className="ios-segment">
-              {(["upcoming", "results"] as const).map((v) => (
-                <button key={v} type="button" aria-pressed={daySegment === v} onClick={() => setSegment({ forKey: selectedKey, value: v })} className={clsx("ios-segment-item", daySegment === v && "is-selected")}>
-                  {v === "upcoming" ? "Upcoming" : "Results"}
-                </button>
-              ))}
-            </div>
+          <div className="px-4 py-1">
+            <CloudSegment<"upcoming" | "results">
+              options={[{ label: "Upcoming", value: "upcoming" }, { label: "Results", value: "results" }]}
+              value={daySegment}
+              onChange={(v) => setSegment({ forKey: selectedKey, value: v })}
+            />
           </div>
           <div className="flex gap-2 px-4 overflow-x-auto no-scrollbar">
             {[null, ...SELECTABLE_GAMES.map((g) => g.id)].map((g) => {

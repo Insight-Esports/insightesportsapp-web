@@ -6,12 +6,27 @@
 // not stateful). Adds a hover crosshair + tooltip for the web.
 "use client";
 
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { SectionBox, abbr } from "./sections";
 import type { GoldTimelinePoint } from "./types";
 
-const W = 640;
+// The SVG's viewBox width follows the container (ResizeObserver) so the
+// drawing always fills it edge to edge. A fixed viewBox with the default
+// "xMidYMid meet" scaling centered the plot in wide boxes — the chart sat
+// shifted right of the "Gold Difference" title on wider screens.
 const H = 200;
+const DEFAULT_W = 640;
+function useMeasuredWidth<T extends Element>(ref: React.RefObject<T | null>, fallback: number): number {
+  const [w, setW] = useState(fallback);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => { const cw = entries[0]?.contentRect.width; if (cw && cw > 0) setW(Math.round(cw)); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ref]);
+  return w;
+}
 const PAD = { top: 10, right: 12, bottom: 22, left: 40 };
 
 function formatK(v: number): string {
@@ -78,6 +93,7 @@ function signRuns(points: GoldTimelinePoint[]): Run[] {
 export function GoldChart({ team1Color: c1, team2Color: c2, team1Name, team2Name, timeline, liveDiff = null }: { team1Color: string; team2Color: string; team1Name: string; team2Name: string; timeline: GoldTimelinePoint[]; liveDiff?: number | null }) {
   const id = useId();
   const svgRef = useRef<SVGSVGElement>(null);
+  const W = useMeasuredWidth(svgRef, DEFAULT_W);
   const [hover, setHover] = useState<GoldTimelinePoint | null>(null);
 
   const currentDiff = liveDiff ?? timeline[timeline.length - 1]?.goldDiff ?? 0;
@@ -133,7 +149,7 @@ export function GoldChart({ team1Color: c1, team2Color: c2, team1Name, team2Name
         <span className="t-label-sm truncate" style={{ color: c2 }}>{team2Name} ▼</span>
       </div>
       <div className="relative">
-        <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full h-[200px] block" role="img" aria-label={`Gold difference over time, currently ${leadLabel}`} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+        <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMinYMid meet" className="w-full h-[200px] block" role="img" aria-label={`Gold difference over time, currently ${leadLabel}`} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
           <clipPath id={`${id}-clip`}><rect x={PAD.left} y={PAD.top} width={iw} height={ih} /></clipPath>
           {/* grid + axes (recessive) */}
           {yTicks.map((t) => (

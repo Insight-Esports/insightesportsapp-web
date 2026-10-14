@@ -109,7 +109,7 @@ export function NotificationsInbox() {
   }
 
   const hasUnread = items.some((i) => !i.isRead);
-  const groups = useMemo(() => groupByDay(items), [items]);
+  const groups = useMemo(() => groupNotificationsByDay(items), [items]);
   // NotificationsView: the row silhouettes until the first page is in (icons are local assets, nothing to warm).
   const revealed = useReveal(loading, () => []);
 
@@ -144,7 +144,8 @@ export function NotificationsInbox() {
   );
 }
 
-function groupByDay(items: NotificationItem[]) {
+/** TODAY / YESTERDAY / THIS WEEK / EARLIER chapters (shared with the bell's popover). */
+export function groupNotificationsByDay(items: NotificationItem[]) {
   const now = new Date();
   const today: NotificationItem[] = [], yesterday: NotificationItem[] = [], week: NotificationItem[] = [], earlier: NotificationItem[] = [];
   const same = (a: Date, b: Date) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
@@ -186,7 +187,8 @@ function TypeGlyph({ icon, tint }: { icon: string; tint: NotificationTint }) {
   }
 }
 
-function NotificationRow({ item, isLastInGroup, onOpen }: { item: NotificationItem; isLastInGroup: boolean; onOpen: () => void }) {
+/** One inbox row — also the rows of the desktop bell popover. */
+export function NotificationRow({ item, isLastInGroup, onOpen }: { item: NotificationItem; isLastInGroup: boolean; onOpen: () => void }) {
   const href = notificationHref(item);
   const body = (
     <>

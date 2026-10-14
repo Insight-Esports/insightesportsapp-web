@@ -4,14 +4,14 @@
 // URL stays shareable; the rest are their own routes under /settings/*.
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { UserCircle, Mail, Lock, Hand, Gamepad2, Bell, Eye, Users, CircleHelp, FileText, ShieldCheck, LayoutGrid } from "lucide-react";
-import { api, endpoints, errorMessage, ApiError } from "@/lib/api";
+import { api, endpoints, errorMessage, request, ApiError } from "@/lib/api";
 import { normalizeUser, type Json } from "@/lib/types";
 import { useAppState } from "@/store/app-state";
-import { AssetIcon, ConfirmDialog, FilterSegment, Sheet, Toast } from "@/components/ui";
-import { SettingsFrame, SettingsSection, SettingsRow, SettingsLinkRow, SettingsToggleRow } from "./components";
+import { AssetIcon, ConfirmDialog, Field, FilterSegment, Sheet, Toast } from "@/components/ui";
+import { SettingsFrame, SettingsSection, SettingsRow, SettingsLinkRow, SettingsToggleRow, LabeledField } from "./components";
 import { ChangeEmailForm } from "./ChangeEmail";
 import { ChangePasswordForm } from "./ChangePassword";
 import { resetFollows } from "@/features/profile/follow-store";
@@ -49,6 +49,10 @@ export function SettingsRoot() {
   const [portalBusy, setPortalBusy] = useState(false);
   const [confirm, setConfirm] = useState<"logout" | "delete" | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // DELETE /users/me may answer PASSWORD_REQUIRED: then the password sheet
+  // opens and the delete is retried with { password } in the body.
+  const [passwordPrompt, setPasswordPrompt] = useState<{ error: string | null } | null>(null);
+  const [deletePassword, setDeletePassword] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [toastKind, setToastKind] = useState<"info" | "error" | "success">("info");
   const say = useCallback((m: string, k: "info" | "error" | "success" = "info") => { setToast(m); setToastKind(k); }, []);
@@ -103,17 +107,32 @@ export function SettingsRoot() {
     }
   }
 
-  async function deleteAccount() {
+  async function deleteAccount(password?: string) {
     setDeleting(true);
     try {
       // Call the server FIRST so a failure doesn't strand a live account.
-      await api.delete(endpoints.deleteAccount);
+      if (password) await request(endpoints.deleteAccount, "DELETE", { password });
+      else await api.delete(endpoints.deleteAccount);
+      setPasswordPrompt(null);
       resetFollows();
       await logout();
     } catch (e) {
-      say(errorMessage(e), "error");
+      if (e instanceof ApiError && e.code === "PASSWORD_REQUIRED") {
+        setDeletePassword("");
+        setPasswordPrompt({ error: null });
+      } else if (e instanceof ApiError && e.code === "WRONG_PASSWORD") {
+        setDeletePassword("");
+        setPasswordPrompt({ error: "Incorrect password. Try again." });
+      } else {
+        say(errorMessage(e), "error");
+      }
       setDeleting(false);
     }
+  }
+  function submitDeletePassword(e: FormEvent) {
+    e.preventDefault();
+    if (!deletePassword || deleting) return;
+    void deleteAccount(deletePassword);
   }
 
   const closePanel = () => router.replace("/settings");
@@ -193,6 +212,15 @@ export function SettingsRoot() {
 
       <ConfirmDialog open={confirm === "logout"} title="Log Out?" message="You'll need to sign in again to access your account." confirmTitle="Log Out" destructive onConfirm={() => { setConfirm(null); resetFollows(); void logout(); }} onCancel={() => setConfirm(null)} />
       <ConfirmDialog open={confirm === "delete"} title="Delete Account?" message="This permanently deletes your account, predictions, points, and follows. This can't be undone." confirmTitle={deleting ? "Deleting…" : "Delete"} destructive onConfirm={() => { setConfirm(null); void deleteAccount(); }} onCancel={() => setConfirm(null)} />
+      <Sheet open={passwordPrompt !== null} onClose={() => { if (!deleting) setPasswordPrompt(null); }} title="Confirm Your Password">
+        <form onSubmit={submitDeletePassword} className="flex flex-col gap-5">
+          <p className="t-body-sm text-muted">Enter your password to permanently delete your account. This can&apos;t be undone.</p>
+          <LabeledField label="Password"><Field type="password" placeholder="Enter your password" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} autoComplete="current-password" autoFocus /></LabeledField>
+          {passwordPrompt?.error ? <span className="t-label-md text-error">{passwordPrompt.error}</span> : null}
+          <button type="submit" disabled={!deletePassword || deleting} className="w-full py-3.5 rounded-xl bg-error t-label-lg text-white transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">{deleting ? "Deleting…" : "Delete Account"}</button>
+          <button type="button" onClick={() => setPasswordPrompt(null)} disabled={deleting} className="w-full py-3 t-label-lg text-secondary hover:text-primary">Cancel</button>
+        </form>
+      </Sheet>
       <Toast message={toast} kind={toastKind} />
     </SettingsFrame>
   );

@@ -9,6 +9,9 @@ import { resetSocket } from "@/lib/socket";
 import { currentLinkState, forgetKeyState, startDM, subscribeUnread as subscribeDMUnread } from "@/features/messages/service";
 import { withBase } from "@/lib/base-path";
 import { warmLists } from "@/lib/warm";
+import { clearScreenCaches } from "@/lib/use-fetch";
+import { clearPagedCache } from "@/features/players/usePagedList";
+import { resetFollows } from "@/features/profile/follow-store";
 
 export type ProfileRoute = "profile" | "messages" | "leaderboard" | "weeklyReport" | "settings" | "premium";
 
@@ -81,9 +84,26 @@ export function AppStateProvider({ children, initialUser = null }: { children: R
     try { await fetch(withBase("/api/auth/logout"), { method: "POST" }); } catch { /* ignore */ }
     await resetSocket();
     forgetKeyState();   // the linked key stays in IndexedDB (like the Keychain); only memory is cleared
+    // Start the next session clean: no screen / list caches from this
+    // account, no per-user bits in web storage (recent searches, cached
+    // match cards), no unread counts, no follow state.
+    clearScreenCaches();
+    clearPagedCache();
+    resetFollows();
+    try {
+      for (const store of [localStorage, sessionStorage]) {
+        for (const k of Object.keys(store)) {
+          if (k === "insight.recentSearches" || k.startsWith("insight.match.") || k.startsWith("insight.cachedAvatar")) store.removeItem(k);
+        }
+      }
+    } catch { /* private window */ }
+    setUnreadNotifications(0);
+    setUnreadDMs(0);
     setUser(null);
     setProfilePanelOpen(false);
-    router.replace("/login");
+    // An explicit logout always lands the next login on Live, never on the
+    // page it was left from (the proxy's ?next= is for expired sessions).
+    router.replace("/login?next=%2F");
   }, [router, setUser]);
 
   const checkStatus = useCallback(async () => {

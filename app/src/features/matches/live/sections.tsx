@@ -14,6 +14,7 @@ import { ChevronDown, ChevronRight, Clock, Eye, Flag, MessageCircle, MoveHorizon
 import { AssetIcon, GamePill, InitialAvatar, LiveBadge, TeamMark } from "@/components/ui";
 import { clsx } from "@/lib/format";
 import { team1Color, team2Color, type Match } from "@/lib/types";
+import { withFromMatch } from "../from-match";
 import type { FanPoll, FanPollOption, LeagueObjective, LivePlayerStat, LiveRound } from "./types";
 
 export function teamHref(id: string | null, name: string): string {
@@ -113,7 +114,7 @@ function HUDTeamColumn({ p, side }: { p: ScoreHUDProps; side: 1 | 2 }) {
   const sl = sideLabel(match, isRoundBased, side === 1 ? p.team1Side : p.team2Side, side === 1, p.team1Score, p.team2Score);
   return (
     <div className={clsx("flex-1 min-w-0 flex flex-col items-center gap-1.5", winnerSide && winnerSide !== side && "opacity-60")}>
-      <Link href={teamHref(id, name)} className="flex flex-col items-center gap-1.5 min-w-0 max-w-full rounded-lg px-2 py-1 hover:bg-surface/60 transition-colors">
+      <Link href={withFromMatch(teamHref(id, name), match.id)} className="flex flex-col items-center gap-1.5 min-w-0 max-w-full rounded-lg px-2 py-1 hover:bg-surface/60 transition-colors">
         <TeamMark name={name} logoURL={logo} color={color} size={32} />
         <span className="t-label-md text-primary truncate max-w-full">{name}</span>
       </Link>
@@ -315,7 +316,7 @@ export function statColumns(game: string): StatColumn[] {
 const NAME_COL = 150;
 const AGENT_COL = 76;
 
-export function StatsTableSection({ team1Color: c1, team2Color: c2, game, team1Name, team2Name, team1Stats, team2Stats }: { team1Color: string; team2Color: string; game: string; team1Name: string; team2Name: string; team1Stats: LivePlayerStat[]; team2Stats: LivePlayerStat[] }) {
+export function StatsTableSection({ team1Color: c1, team2Color: c2, game, team1Name, team2Name, team1Stats, team2Stats, matchId }: { team1Color: string; team2Color: string; game: string; team1Name: string; team2Name: string; team1Stats: LivePlayerStat[]; team2Stats: LivePlayerStat[]; matchId?: string }) {
   const columns = statColumns(game);
   const showAgent = game === "VALORANT" || game === "League";
   const agentLabel = game === "VALORANT" ? "Agent" : game === "League" ? "Champ" : "";
@@ -351,7 +352,7 @@ export function StatsTableSection({ team1Color: c1, team2Color: c2, game, team1N
     <div className="flex flex-col">
       <span className="t-label-md py-1.5" style={{ color }}>{name}</span>
       {stats.map((st, i) => (
-        <LivePlayerRow key={st.id || `${name}-${i}`} stat={st} columns={columns} showAgent={showAgent} />
+        <LivePlayerRow key={st.id || `${name}-${i}`} stat={st} columns={columns} showAgent={showAgent} matchId={matchId} />
       ))}
     </div>
   );
@@ -373,7 +374,7 @@ export function StatsTableSection({ team1Color: c1, team2Color: c2, game, team1N
   );
 }
 
-function LivePlayerRow({ stat, columns, showAgent }: { stat: LivePlayerStat; columns: StatColumn[]; showAgent: boolean }) {
+function LivePlayerRow({ stat, columns, showAgent, matchId }: { stat: LivePlayerStat; columns: StatColumn[]; showAgent: boolean; matchId?: string }) {
   const colorFor = (c: StatColumn) => {
     if (c.kind === "primary") return "text-violet";
     if (c.kind === "plusMinus") return stat.plusMinus > 0 ? "text-success" : stat.plusMinus < 0 ? "text-error" : "text-muted";
@@ -388,13 +389,13 @@ function LivePlayerRow({ stat, columns, showAgent }: { stat: LivePlayerStat; col
             <InitialAvatar name={stat.name} imageURL={stat.imageURL} size={38} />
           </span>
           {stat.id ? (
-            <Link href={`${playerHref(stat.id, stat.name)}#comments`} aria-label={`Comments on ${stat.name}`} title="Player comments" className="absolute -bottom-[3px] -right-[3px] grid place-items-center size-[18px] rounded-full bg-violet border-2 border-card text-white hover:brightness-110">
+            <Link href={withFromMatch(`${playerHref(stat.id, stat.name)}#comments`, matchId)} aria-label={`Comments on ${stat.name}`} title="Player comments" className="absolute -bottom-[3px] -right-[3px] grid place-items-center size-[18px] rounded-full bg-violet border-2 border-card text-white hover:brightness-110">
               <MessageCircle size={8} className="fill-white" />
             </Link>
           ) : null}
         </span>
         {stat.id ? (
-          <Link href={playerHref(stat.id, stat.name)} className="flex flex-col min-w-0 hover:underline underline-offset-2">
+          <Link href={withFromMatch(playerHref(stat.id, stat.name), matchId)} className="flex flex-col min-w-0 hover:underline underline-offset-2">
             <span className="t-body-sm text-primary truncate">{stat.name}</span>
             {stat.role ? <span className="t-label-sm text-muted truncate">{stat.role}</span> : null}
           </Link>
@@ -413,12 +414,21 @@ function LivePlayerRow({ stat, columns, showAgent }: { stat: LivePlayerStat; col
 }
 
 // ── Prediction Teaser ─────────────────────────────────────────────────────
-export function PredictionTeaserSection({ team1Color: c1, team2Color: c2, game, matchId, team1TopPlayer, team2TopPlayer, team1Name, team2Name, isPremium }: { team1Color: string; team2Color: string; game: string; matchId: string; team1TopPlayer: LivePlayerStat | null; team2TopPlayer: LivePlayerStat | null; team1Name: string; team2Name: string; isPremium: boolean }) {
+export function PredictionTeaserSection({ team1Color: c1, team2Color: c2, game, matchId, team1TopPlayer, team2TopPlayer, team1Name, team2Name, isPremium, team1Stats = [], team2Stats = [] }: { team1Color: string; team2Color: string; game: string; matchId: string; team1TopPlayer: LivePlayerStat | null; team2TopPlayer: LivePlayerStat | null; team1Name: string; team2Name: string; isPremium: boolean; team1Stats?: LivePlayerStat[]; team2Stats?: LivePlayerStat[] }) {
   const [expanded, setExpanded] = useState(false);
+  const [othersOpen, setOthersOpen] = useState(false);
   const top = [team1TopPlayer, team2TopPlayer].filter((p): p is LivePlayerStat => !!p).sort((a, b) => b.kills - a.kills)[0] ?? null;
   const hint = top ? `${top.name} · ${top.kills} kills` : null;
+  const predictHref = (p: LivePlayerStat) => `/premium/predict?game=${encodeURIComponent(game)}&type=player&id=${encodeURIComponent(p.id)}&name=${encodeURIComponent(p.name)}&live=1&matchId=${encodeURIComponent(matchId)}`;
+  // "Predict another player": every other player in the match (headliners
+  // excluded so nobody appears twice), from the scoreboard already in hand.
+  const headliners = new Set([team1TopPlayer?.id, team2TopPlayer?.id].filter((id): id is string => !!id));
+  const others = [
+    ...team1Stats.filter((p) => p.id && !headliners.has(p.id)).map((p) => ({ p, color: c1 })),
+    ...team2Stats.filter((p) => p.id && !headliners.has(p.id)).map((p) => ({ p, color: c2 })),
+  ];
   const row = (p: LivePlayerStat, teamName: string, color: string) => (
-    <Link key={p.id} href={`/premium/predict?game=${encodeURIComponent(game)}&type=player&id=${encodeURIComponent(p.id)}&name=${encodeURIComponent(p.name)}&live=1&matchId=${encodeURIComponent(matchId)}`} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-surface hover:bg-surface/70 transition-colors">
+    <Link key={p.id} href={predictHref(p)} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-surface hover:bg-surface/70 transition-colors">
       <span className="size-[7px] rounded-full shrink-0" style={{ background: color }} />
       <span className="flex flex-col min-w-0">
         <span className="t-body-md text-primary truncate">{p.name}</span>
@@ -454,6 +464,29 @@ export function PredictionTeaserSection({ team1Color: c1, team2Color: c2, game, 
               {team1TopPlayer ? row(team1TopPlayer, team1Name, c1) : null}
               {team2TopPlayer ? row(team2TopPlayer, team2Name, c2) : null}
               {!team1TopPlayer && !team2TopPlayer ? <span className="t-label-sm text-muted">Available once player stats come in</span> : null}
+              {others.length > 0 ? (
+                <div className="rounded-lg border border-border-subtle overflow-hidden">
+                  <button type="button" onClick={() => setOthersOpen((v) => !v)} aria-expanded={othersOpen} className="flex items-center gap-2.5 w-full p-2.5 text-left hover:bg-surface/40 transition-colors">
+                    <span className="t-body-md text-primary">Predict another player</span>
+                    <span className="t-label-sm text-muted">· {others.length}</span>
+                    <span className="flex-1" />
+                    <ChevronDown size={11} className={clsx("text-muted transition-transform", othersOpen && "rotate-180")} />
+                  </button>
+                  {othersOpen ? (
+                    <div className="flex flex-col hairline-t">
+                      {others.map(({ p, color }, i) => (
+                        <Link key={p.id} href={predictHref(p)} className={clsx("flex items-center gap-2.5 px-2.5 py-2 hover:bg-surface/60 transition-colors", i > 0 && "border-t border-border-subtle")}>
+                          <span className="size-[7px] rounded-full shrink-0" style={{ background: color }} />
+                          <span className="t-body-sm text-primary truncate">{p.name}</span>
+                          <span className="flex-1" />
+                          <span className="t-mono-sm text-secondary shrink-0">{p.kills} kills</span>
+                          <ChevronRight size={11} className="text-muted shrink-0" />
+                        </Link>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </>
           )}
         </div>
