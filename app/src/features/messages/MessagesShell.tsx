@@ -59,7 +59,7 @@ export function MessagesShell({ children }: { children: ReactNode }) {
           <EmptyState
             icon={<AssetIcon name="messages" height={30} />}
             title="Link your phone to use Messages here"
-            subtitle="Your messages are end-to-end encrypted with a key that lives on your phone. Open the Insight app on your phone → Settings → Messages → Link web, then scan its QR code with this computer's camera."
+            subtitle="Your messages are end-to-end encrypted with a key that lives on your phone. Open the Insight app on your phone → Settings → Messages → Link web, and scan the code shown here."
             actionTitle="Link this browser"
             onAction={() => router.push("/messages/link")}
           />

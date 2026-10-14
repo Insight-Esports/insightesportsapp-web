@@ -17,6 +17,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 
 export const DM_ALGORITHM = "x25519-hkdf-sha256+aes-256-gcm";
 const HKDF_INFO = new TextEncoder().encode("insight-dm-v1");
+const LINK_HKDF_INFO = new TextEncoder().encode("insight-link-v1");
 
 // ── base64 ─────────────────────────────────────────────────────────────────
 export function b64encode(bytes: Uint8Array): string {
@@ -66,12 +67,23 @@ export function randomPrivateKey(): Uint8Array {
 
 /** HKDF-SHA256 over the X25519 shared secret → an AES-256-GCM key. */
 export async function deriveSymmetricKey(myPrivateKey: Uint8Array, theirPublicKeyBase64: string): Promise<CryptoKey> {
+  return deriveWithInfo(myPrivateKey, theirPublicKeyBase64, HKDF_INFO);
+}
+
+/** The "Link web" hand-off key: same recipe, info "insight-link-v1". The
+ *  phone seals its DM private key to the browser's ephemeral public key with
+ *  exactly this (LinkWebView.swift). */
+export async function deriveLinkKey(myPrivateKey: Uint8Array, theirPublicKeyBase64: string): Promise<CryptoKey> {
+  return deriveWithInfo(myPrivateKey, theirPublicKeyBase64, LINK_HKDF_INFO);
+}
+
+async function deriveWithInfo(myPrivateKey: Uint8Array, theirPublicKeyBase64: string, info: Uint8Array): Promise<CryptoKey> {
   let theirPub: Uint8Array;
   try { theirPub = b64decode(theirPublicKeyBase64); } catch { throw new DMCryptoError("badKey"); }
   if (theirPub.length !== 32 || myPrivateKey.length !== 32) throw new DMCryptoError("badKey");
   let shared: Uint8Array;
   try { shared = x25519.getSharedSecret(myPrivateKey, theirPub); } catch { throw new DMCryptoError("badKey"); }
-  const raw = hkdf(sha256, shared, new Uint8Array(0), HKDF_INFO, 32);
+  const raw = hkdf(sha256, shared, new Uint8Array(0), info, 32);
   return crypto.subtle.importKey("raw", raw as BufferSource, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 

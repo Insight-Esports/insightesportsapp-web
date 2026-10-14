@@ -3,12 +3,14 @@
 // The app keeps one X25519 key pair per device in the Keychain. The backend
 // encrypts every message to ONE recipient key version, so a browser that
 // minted its own key would silently cut the phone off (and vice versa).
-// Instead the browser is a LINKED device, WhatsApp Web style: the phone
-// shows its current private key as a QR / code (Settings → Link web), the
-// browser imports it and from then on reads and writes with the phone's key.
+// Instead the browser is a LINKED device, WhatsApp Web style: the browser
+// shows a QR code (Messages → Link this browser), the phone scans it
+// (Settings → Messages → Link web) and hands over its current private key,
+// sealed to the browser's ephemeral key; from then on the browser reads and
+// writes with the phone's key. (LinkDevice.tsx has the hand-off.)
 //
 // Storage: IndexedDB, origin-bound. Nothing is ever published from here —
-// the phone owns the key; this file only verifies that what was scanned is
+// the phone owns the key; this file only verifies that what arrived is
 // the account's current key (GET /dm/keys/:me) and remembers its version.
 "use client";
 
@@ -26,7 +28,7 @@ export interface StoredKey {
   linkedAt: number;
 }
 
-/** Link payload, as the phone shows it: INSIGHT-DM:1:<base64 private key>:<version> */
+/** Link payload, as the phone hands it over (inside the sealed hand-off, or pasted): INSIGHT-DM:1:<base64 private key>:<version> */
 export const LINK_PREFIX = "INSIGHT-DM:1:";
 
 export function parseLinkPayload(text: string): { privateKey: Uint8Array; version: number } | null {

@@ -15,7 +15,7 @@ await page.goto(base + "/messages/link", { waitUntil: "load" });
 await page.waitForTimeout(800);
 await page.screenshot({ path: "/tmp/shots/dm_link.png" });
 const payload = (await (await fetch("http://localhost:4000/mock/dm/link-payload")).json()).payload;
-await page.getByText("Paste code").click();
+await page.getByText("Have a code? Paste it").click();
 await page.locator("textarea").fill(payload);
 await page.getByRole("button", { name: "Link" }).click();
 await page.waitForTimeout(2500);

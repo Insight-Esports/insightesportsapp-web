@@ -146,15 +146,25 @@ PORTING.md             the iOS → web porting contract (read before adding scre
 DMs are end-to-end encrypted and the backend encrypts each message to ONE
 recipient key version, so a browser must use the *phone's* key rather than
 minting its own (that would cut the phone off). The web therefore works like
-WhatsApp Web:
+WhatsApp Web — the browser shows a code, the phone scans it:
 
-1. In the iOS app: Settings → Messages → **Link web** shows the key as a QR
-   code (`ios/LinkWebView.swift` in this folder is that screen — add it to
-   the Xcode target and the one `NavigationLink` the file's header describes).
-2. On the web: Messages → **Link this browser** scans it with the webcam (or
-   you paste the code). The browser checks the key against `GET /dm/keys/:me`
-   and stores it in IndexedDB. Nothing is published; the server never sees it.
-3. From then on `/messages` is the full app experience: inbox with previews
+1. On the web: Messages → **Link this browser** mints an ephemeral X25519 key,
+   opens a relay session (`POST /api/link`, cookie session) and shows a QR
+   code: `INSIGHT-LINK:1:<session id>:<web public key>:<user id>`.
+2. In the iOS app: Settings → Messages → **Link web** scans it with the camera
+   (`ios/LinkWebView.swift` in this folder is that screen — add it to the
+   Xcode target, the `NavigationLink` and the `NSCameraUsageDescription` the
+   file's header describes). The phone refuses a code for a different
+   account; otherwise it seals `INSIGHT-DM:1:<private key>:<version>` to the
+   web key (X25519 → HKDF-SHA256 `insight-link-v1` → AES-256-GCM) and POSTs it
+   to `/api/link/:id` with its own JWT. The relay (`src/lib/server/link-sessions.ts`,
+   an in-memory 5-minute mailbox) checks that JWT resolves to the same user
+   (`GET /users/me`) and holds the ciphertext — it can't read it.
+3. The browser polls `GET /api/link/:id`, opens the blob with its ephemeral
+   key, checks the key against `GET /dm/keys/:me` and stores it in IndexedDB.
+   Nothing is published; the server never sees the key in the clear. "Have a
+   code? Paste it" is still there for the mock / local flow.
+4. From then on `/messages` is the full app experience: inbox with previews
    and unread dots, threads with read receipts and typing, links as cards,
    encrypted photos/videos (upload + decrypt in the browser), block / remove,
    new message with people search. Crypto lives in
