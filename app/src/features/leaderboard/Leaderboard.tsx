@@ -133,7 +133,7 @@ export function Leaderboard() {
 
   return (
     <Page>
-      <NavBar title="Leaderboard" hideBackOnDesktop />
+      <NavBar title="Leaderboard" />
 
       <div className="px-4 pt-3 max-w-3xl flex flex-col gap-3">
         <FilterSegment options={PERIODS} value={period} onChange={setPeriod} />

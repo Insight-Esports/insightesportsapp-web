@@ -26,6 +26,19 @@ export function clearScreenCaches() {
   screenCache.clear();
 }
 
+/** Seed a screen's cache ahead of its mount (hover prefetch): the next
+ *  `useFetch` with this `cacheKey` renders `data` on its first paint and
+ *  refreshes underneath. */
+export function primeScreenCache<T>(key: string, data: T) {
+  screenCache.set(key, data);
+}
+export function hasScreenCache(key: string): boolean {
+  return screenCache.has(key);
+}
+export function readScreenCache<T>(key: string): T | null {
+  return screenCache.has(key) ? (screenCache.get(key) as T) : null;
+}
+
 export function useFetch<T>(fetcher: (signal: AbortSignal) => Promise<T>, deps: DependencyList, opts: { enabled?: boolean; keepData?: boolean; cacheKey?: string } = {}): FetchState<T> {
   const enabled = opts.enabled ?? true;
   const cached = opts.cacheKey && screenCache.has(opts.cacheKey) ? (screenCache.get(opts.cacheKey) as T) : null;

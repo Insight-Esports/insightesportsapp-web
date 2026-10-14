@@ -7,6 +7,7 @@
 // The query and game live in the URL (?q=&game=).
 "use client";
 
+import { prefetchPlayer, prefetchTeam, rememberPlayer, rememberTeam } from "@/features/entity-cache";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, CircleHelp, Clock, Search, X } from "lucide-react";
@@ -16,7 +17,7 @@ import { clsx } from "@/lib/format";
 import { useReveal } from "@/lib/use-reveal";
 import { AssetIcon, GamePill, GameTabBar, InitialAvatar, Page, SearchField, Spinner, TabHeaderTitle, TeamMark } from "@/components/ui";
 import { SkeletonPeopleRows } from "@/components/ui/skeletons";
-import { NavBar } from "@/components/shell/NavBar";
+import { BackButton, NavBar } from "@/components/shell/NavBar";
 import { FollowButton } from "@/features/follow/FollowButton";
 import { useDebounced } from "@/features/players/useLoadMore";
 import { useQueryParams } from "@/features/players/useQueryParams";
@@ -215,7 +216,7 @@ export function SearchScreen() {
   return (
     <Page>
       <NavBar title="Search" phoneOnly />
-      <div className="hidden md:flex items-center px-4 pt-1.5 pb-2"><TabHeaderTitle text="Search" /></div>
+      <div className="hidden md:flex items-center gap-2.5 px-3 pt-1.5 pb-2"><BackButton /><TabHeaderTitle text="Search" /></div>
       <div className="px-4 pb-2 flex items-center gap-3">
         <div className="flex-1"><SearchField value={query} onChange={setQuery} placeholder="Search players and teams" autoFocus /></div>
         {/* The app's small spinner beside the field while a search refines rows already on screen. */}
@@ -235,7 +236,7 @@ const rowCls = "flex items-center gap-3 px-4 py-2.5 hover:bg-card transition-col
 
 function PlayerSearchRow({ player, onNavigate }: { player: Player; onNavigate?: () => void }) {
   return (
-    <Link href={`/players/${encodeURIComponent(player.id)}`} onClick={onNavigate} className={rowCls}>
+    <Link href={`/players/${encodeURIComponent(player.id)}`} onClick={() => { rememberPlayer(player); onNavigate?.(); }} onMouseEnter={() => prefetchPlayer(player.id)} className={rowCls}>
       <InitialAvatar name={player.name} imageURL={player.imageURL} size={40} />
       <span className="flex flex-col gap-0.5 min-w-0 flex-1">
         <span className="t-body-md text-primary truncate">{player.name}</span>
@@ -248,7 +249,7 @@ function PlayerSearchRow({ player, onNavigate }: { player: Player; onNavigate?: 
 
 function TeamSearchRow({ team, onNavigate }: { team: Team; onNavigate?: () => void }) {
   return (
-    <Link href={`/teams/${encodeURIComponent(team.id)}`} onClick={onNavigate} className={rowCls}>
+    <Link href={`/teams/${encodeURIComponent(team.id)}`} onClick={() => { rememberTeam(team); onNavigate?.(); }} onMouseEnter={() => prefetchTeam(team.id)} className={rowCls}>
       <TeamMark name={team.name} logoURL={team.logoURL} size={40} />
       <span className="flex flex-col gap-0.5 min-w-0 flex-1">
         <span className="t-body-md text-primary truncate">{team.name}</span>

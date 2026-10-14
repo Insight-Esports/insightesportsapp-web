@@ -13,9 +13,9 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
 import { clsx } from "@/lib/format";
 import { AssetIcon, EmptyState, TabHeaderTitle } from "@/components/ui";
+import { BackButton } from "@/components/shell/NavBar";
 import { MessagesInbox } from "./MessagesInbox";
 import { useDMLink } from "./hooks";
 
@@ -52,14 +52,14 @@ export function MessagesShell({ children }: { children: ReactNode }) {
     return (
       <div className="flex flex-col pb-[calc(var(--tabbar-h)+24px)] md:pb-10">
         <div className="flex items-center gap-2.5 px-3 pt-1.5 pb-2">
-          <button type="button" onClick={() => router.back()} aria-label="Back" className="grid place-items-center size-8 text-primary hover:text-violet md:hidden"><ChevronLeft size={20} strokeWidth={2.5} /></button>
+          <BackButton />
           <TabHeaderTitle text="Messages" />
         </div>
         <div className="pt-10 max-w-2xl">
           <EmptyState
             icon={<AssetIcon name="messages" height={30} />}
             title="Link your phone to use Messages here"
-            subtitle="Your messages are end-to-end encrypted with a key that lives on your phone. Link this browser once from the app: Settings → Link web."
+            subtitle="Your messages are end-to-end encrypted with a key that lives on your phone. Open the Insight app on your phone → Settings → Messages → Link web, then scan its QR code with this computer's camera."
             actionTitle="Link this browser"
             onAction={() => router.push("/messages/link")}
           />

@@ -7,11 +7,12 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, SquarePen, Ellipsis, Hand, Trash2, TriangleAlert } from "lucide-react";
+import { SquarePen, Ellipsis, Hand, Trash2, TriangleAlert } from "lucide-react";
 import { clsx } from "@/lib/format";
 import { useReveal } from "@/lib/use-reveal";
 import { AssetIcon, ConfirmDialog, EmptyState, InitialAvatar, LoadFailure, TabHeaderTitle, Toast } from "@/components/ui";
 import { SkeletonThreadRows } from "@/components/ui/skeletons";
+import { BackButton } from "@/components/shell/NavBar";
 import { readLedger, type LinkState } from "./service";
 import { useInbox, threadUnread, type InboxThread } from "./use-inbox";
 import { useNow } from "./hooks";
@@ -51,7 +52,7 @@ export function MessagesInbox({ selectedId, linkState }: { selectedId: string | 
     <div className="flex flex-col h-full min-h-0">
       {/* In-content header — back arrow, title, compose */}
       <div className="flex items-center gap-2.5 px-3 pt-1.5 pb-2 shrink-0">
-        <button type="button" onClick={() => router.back()} aria-label="Back" className="grid place-items-center size-8 text-primary hover:text-violet md:hidden"><ChevronLeft size={20} strokeWidth={2.5} /></button>
+        <BackButton />
         <TabHeaderTitle text="Messages" />
         <span className="flex-1 min-w-2" />
         <Link href="/messages/new" aria-label="New message" title="New message" className="grid place-items-center size-8 rounded-lg text-violet hover:bg-card transition-colors"><SquarePen size={18} /></Link>

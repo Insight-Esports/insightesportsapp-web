@@ -335,7 +335,7 @@ export function UpcomingMatchScreen({ match }: { match: Match }) {
 
   return (
     <Page wide>
-      <NavBar title="Match Preview" hideBackOnDesktop />
+      <NavBar title="Match Preview" />
       {revealed
         ? <SplitLayout main={main} rail={rail} />
         : <SplitLayout main={<MatchMainSkeleton variant="upcoming" />} rail={<MatchRailSkeleton variant="upcoming" />} />}

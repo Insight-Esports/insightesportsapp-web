@@ -17,11 +17,11 @@ import { backHrefFrom } from "@/features/matches/from-match";
 import { ChevronLeft, Medal, Trophy, UserX } from "lucide-react";
 import { api, ApiError, endpoints } from "@/lib/api";
 import { useFetch } from "@/lib/use-fetch";
-import { useReveal } from "@/lib/use-reveal";
 import { clsx, fmt1, fmt2 } from "@/lib/format";
 import { matchResultTime, normalizePlayers, normalizeTeam, normalizeTeams, teamStub, type Match, type Player, type Team } from "@/lib/types";
-import { EmptyState, GamePill, InitialAvatar, LoadFailure, Page, SectionHeader, StatCard, TeamMark, TierBadge } from "@/components/ui";
-import { SkeletonTeamDetail } from "@/components/ui/skeletons";
+import { EmptyState, GamePill, InitialAvatar, LoadFailure, Page, SectionHeader, SkeletonLedger, SkeletonStatRow, StatCard, TeamMark, TierBadge } from "@/components/ui";
+import { SkeletonSection, SkeletonStripedTable, SkeletonTeamDetail } from "@/components/ui/skeletons";
+import { isUUID, prefetchPlayer, recallTeam, rememberPlayer, teamCacheKey, type ResolvedTeam } from "@/features/entity-cache";
 import { FollowButton } from "@/features/follow/FollowButton";
 import { StripedTable } from "@/features/players/StatTable";
 import { TeamMapPool, useTeamMapPool } from "./TeamMapPool";
@@ -29,11 +29,9 @@ import { TeamRecentGamesList, useTeamRecentGames } from "./RecentGamesList";
 import { UpcomingGamesList } from "./UpcomingGamesList";
 import { normalizeCoachHistory, normalizeTeamSides, normalizeTeamStats, normalizeTeamTitles, type TeamSide, type TeamTitle } from "./types";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-/** The team the page shows, plus whether the backend knows it by this id
- *  (a stub built from a bare name can't load roster / follow). */
-interface ResolvedTeam { team: Team; stub: boolean }
+// ResolvedTeam (entity-cache.ts): the team the page shows, plus whether the
+// backend knows it by this id (a stub built from a bare name can't load
+// roster / follow).
 
 /** Resolve the route id to a Team: by id first; a name falls back to search. */
 async function resolveTeam(id: string, gameHint: string | null, signal: AbortSignal): Promise<ResolvedTeam> {
@@ -43,7 +41,7 @@ async function resolveTeam(id: string, gameHint: string | null, signal: AbortSig
     team = normalizeTeam(await api.get(endpoints.teamDetail(id), { signal }));
   } catch (e) {
     const notFound = e instanceof ApiError && (e.status === 404 || e.status === 400);
-    if (!notFound && UUID.test(id)) throw e;
+    if (!notFound && isUUID(id)) throw e;
   }
   if (!team) {
     // Treat the id as a name (Team(name:) convenience init): combined
@@ -82,19 +80,25 @@ async function resolveTeam(id: string, gameHint: string | null, signal: AbortSig
 export function TeamDetail({ id }: { id: string }) {
   const params = useSearchParams();
   const gameHint = params.get("game");
-  const { data, loading, error, connectionProblem, reload } = useFetch<ResolvedTeam>((signal) => resolveTeam(id, gameHint, signal), [id, gameHint]);
-  const team = data?.team ?? null;
+  // The row (or match-card stub) the link was tapped with renders the header
+  // on the first paint; resolveTeam refreshes it underneath.
+  const recalled = useMemo<ResolvedTeam | null>(() => {
+    const t = recallTeam(id);
+    return t ? { team: t, stub: !isUUID(t.id) } : null;
+  }, [id]);
+  const { data, loading, error, connectionProblem, reload } = useFetch<ResolvedTeam>((signal) => resolveTeam(id, gameHint, signal), [id, gameHint], { cacheKey: teamCacheKey(id, gameHint) });
+  const resolved = data ?? recalled;
+  const team = resolved?.team ?? null;
 
-  if (loading && !team) {
-    // The same silhouette TeamDetailLoaded keeps up until ITS requests land.
-    return (
-      <Page>
-        <TitleBar title="" />
-        <SkeletonTeamDetail />
-      </Page>
-    );
-  }
   if (!team) {
+    if (loading) {
+      return (
+        <Page>
+          <TitleBar title="" />
+          <SkeletonTeamDetail />
+        </Page>
+      );
+    }
     return (
       <Page>
         <TitleBar title="" />
@@ -102,7 +106,7 @@ export function TeamDetail({ id }: { id: string }) {
       </Page>
     );
   }
-  return <TeamDetailLoaded team={team} stub={data?.stub ?? false} />;
+  return <TeamDetailLoaded key={id} team={team} stub={resolved?.stub ?? false} />;
 }
 
 function TitleBar({ title, trailing }: { title: string; trailing?: React.ReactNode }) {
@@ -121,29 +125,20 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
   const game = team.game;
   const hasRealId = !stub;
 
-  const roster = useFetch<Player[]>(async (signal) => normalizePlayers(await api.get(endpoints.teamPlayers(team.id), { signal })), [team.id], { enabled: hasRealId });
-  const titles = useFetch(async (signal) => normalizeTeamTitles(await api.get(endpoints.teamTitles(team.id), { signal })), [team.id], { enabled: hasRealId });
-  const sides = useFetch<TeamSide[]>(async (signal) => normalizeTeamSides(await api.get(endpoints.teamSides(team.id, game), { signal })), [team.id, game], { enabled: hasRealId && (game === "VALORANT" || game === "CS2") });
-  const stats = useFetch(async (signal) => normalizeTeamStats(await api.get(endpoints.teamStats(team.id, game), { signal })), [team.id, game], { enabled: hasRealId && !!game });
-  const coachHistory = useFetch(async (signal) => normalizeCoachHistory(await api.get(endpoints.coach(team.coach!.id!), { signal })), [team.coach?.id], { enabled: !!team.coach?.id });
+  // Every section's request starts from the team id, in parallel with the
+  // detail itself; each section reveals on its own as its data lands.
+  const roster = useFetch<Player[]>(async (signal) => normalizePlayers(await api.get(endpoints.teamPlayers(team.id), { signal })), [team.id], { enabled: hasRealId, cacheKey: `team:${team.id}:roster` });
+  const titles = useFetch(async (signal) => normalizeTeamTitles(await api.get(endpoints.teamTitles(team.id), { signal })), [team.id], { enabled: hasRealId, cacheKey: `team:${team.id}:titles` });
+  const sides = useFetch<TeamSide[]>(async (signal) => normalizeTeamSides(await api.get(endpoints.teamSides(team.id, game), { signal })), [team.id, game], { enabled: hasRealId && (game === "VALORANT" || game === "CS2"), cacheKey: `team:${team.id}:sides:${game}` });
+  const stats = useFetch(async (signal) => normalizeTeamStats(await api.get(endpoints.teamStats(team.id, game), { signal })), [team.id, game], { enabled: hasRealId && !!game, cacheKey: `team:${team.id}:stats:${game}` });
+  const coachHistory = useFetch(async (signal) => normalizeCoachHistory(await api.get(endpoints.coach(team.coach!.id!), { signal })), [team.coach?.id], { enabled: !!team.coach?.id, cacheKey: team.coach?.id ? `coach:${team.coach.id}` : undefined });
 
-  // Recent Games + Map Pool are owned here so the whole screen can wait for
-  // them. Record and streak derive from exactly the games the ledger lists.
+  // Recent Games + Map Pool are owned here because Season (record, streak)
+  // derives from exactly the games the ledger lists.
   const recent = useTeamRecentGames(team.id, game || null);
   const mapPool = useTeamMapPool(hasRealId ? team.id : "", game);
   const recentRows: Match[] | null = recent.loaded ? recent.rows : null;
   const derived = useMemo(() => deriveRecord(team, recentRows ?? []), [team, recentRows]);
-
-  // TeamDetailView: roster · stats · sides · titles · recent games · map pool
-  // all settle, the crest and the roster's faces warm, THEN the page shows.
-  const revealed = useReveal(
-    roster.loading || titles.loading || sides.loading || stats.loading || coachHistory.loading || !recent.loaded || mapPool.loading,
-    () => [
-      team.logoURL,
-      ...(roster.data ?? []).slice(0, 8).map((p) => p.imageURL),
-      ...(recentRows ?? []).flatMap((m) => [m.team1LogoURL, m.team2LogoURL]),
-    ],
-  );
 
   // Precedence: DB season aggregates → legacy wins/losses → derived from the listed matches.
   const seasonWins = (team.seasonWins ?? 0) + (team.seasonLosses ?? 0) > 0 ? (team.seasonWins as number) : team.wins + team.losses > 0 ? team.wins : derived.wins;
@@ -177,7 +172,9 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
     </div>
   );
 
-  const season = (
+  const season = !recent.loaded && seasonGames === 0 ? (
+    <SkeletonSection title="Season"><SkeletonStatRow columns={4} /></SkeletonSection>
+  ) : (
     <section className="flex flex-col gap-3">
       <SectionHeader title="Season" />
       <div className="mx-4 rounded-xl border border-border-subtle overflow-hidden">
@@ -201,7 +198,9 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
     </StripedTable>
   );
 
-  const rosterSection = (
+  const rosterSection = roster.loading && !roster.data ? (
+    <SkeletonSection title="Roster"><SkeletonStripedTable rows={5} columns={3} avatar={24} /></SkeletonSection>
+  ) : (
     <section className="flex flex-col gap-3">
       <SectionHeader title="Roster" />
       {players.length === 0 ? (
@@ -305,15 +304,6 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
     </section>
   ) : null;
 
-  if (!revealed) {
-    return (
-      <Page>
-        <TitleBar title={team.name} trailing={hasRealId ? <FollowButton targetType="team" targetId={team.id} compact /> : null} />
-        <SkeletonTeamDetail />
-      </Page>
-    );
-  }
-
   return (
     <Page>
       <TitleBar title={team.name} trailing={hasRealId ? <FollowButton targetType="team" targetId={team.id} compact /> : null} />
@@ -321,7 +311,11 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
       {/* Phones: the iOS order. Desktop: Upcoming + the extra sections form a rail beside Season / Map Pool / Roster / Recent Games. */}
       <div className="pt-5 grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:pr-4">
         {season}
-        <TeamMapPool teamId={hasRealId ? team.id : ""} game={game} teamName={team.name} entries={mapPool.data} />
+        {mapPool.loading && !mapPool.data ? (
+          <SkeletonSection title={game === "League" ? "Side Record" : "Map Pool"}><SkeletonLedger rows={3} avatar={0} /></SkeletonSection>
+        ) : (
+          <TeamMapPool teamId={hasRealId ? team.id : ""} game={game} teamName={team.name} entries={mapPool.data ?? []} />
+        )}
         {rosterSection}
         <div className="flex flex-col gap-5 lg:col-start-2 lg:row-start-1 lg:row-span-4">
           {upcoming}
@@ -360,7 +354,7 @@ function RosterRow({ player, game }: { player: Player; game: string }) {
   const role = !player.role || player.role.toLowerCase() === "unknown" ? "—" : player.role;
   const rating = player.rating == null ? "—" : game === "VALORANT" ? String(Math.round(player.rating)) : game === "League" ? fmt1(player.rating) : fmt2(player.rating);
   return (
-    <Link href={`/players/${encodeURIComponent(player.id)}`} className="flex items-center gap-1 px-3 py-2.5 hover:bg-surface/70 transition-colors">
+    <Link href={`/players/${encodeURIComponent(player.id)}`} onClick={() => rememberPlayer(player)} onMouseEnter={() => prefetchPlayer(player.id)} className="flex items-center gap-1 px-3 py-2.5 hover:bg-surface/70 transition-colors">
       <span className="flex-1 min-w-0 flex items-center gap-2">
         <InitialAvatar name={player.name} imageURL={player.imageURL} size={24} />
         <span className="t-body-sm text-primary truncate">{player.name}</span>

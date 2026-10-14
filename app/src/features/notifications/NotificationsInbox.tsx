@@ -115,7 +115,7 @@ export function NotificationsInbox() {
 
   return (
     <Page>
-      <NavBar title="Notifications" hideBackOnDesktop trailing={hasUnread ? <button type="button" onClick={markAllRead} className="t-label-md text-violet hover:underline whitespace-nowrap">Mark all read</button> : null} />
+      <NavBar title="Notifications" trailing={hasUnread ? <button type="button" onClick={markAllRead} className="t-label-md text-violet hover:underline whitespace-nowrap">Mark all read</button> : null} />
 
       {!revealed && items.length === 0 ? (
         <div className="px-4 pt-1 max-w-2xl"><SkeletonNotificationRows rows={6} /></div>

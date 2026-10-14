@@ -9,8 +9,21 @@
 // shimmer, no spinner — the structure is the promise; the data fills it.
 "use client";
 
+import type { ReactNode } from "react";
 import { clsx } from "@/lib/format";
-import { SkeletonBar, SkeletonLedger, SkeletonStatRow } from "./index";
+import { SectionHeader, SkeletonBar, SkeletonLedger, SkeletonStatRow } from "./index";
+
+/** A detail-page section at rest: the REAL section title (known before any
+ *  request) over a silhouette body, so the header and every section title
+ *  paint at once and each body fills in as its own request lands. */
+export function SkeletonSection({ title, children, className }: { title: string; children: ReactNode; className?: string }) {
+  return (
+    <section className={clsx("flex flex-col gap-3", className)}>
+      <SectionHeader title={title} />
+      <div className="px-4">{children}</div>
+    </section>
+  );
+}
 
 /** A surface-toned circle (avatar / crest placeholder). */
 export function SkeletonCircle({ size = 28, className }: { size?: number; className?: string }) {

@@ -21,6 +21,7 @@ import { useDebounced, useLoadMore } from "./useLoadMore";
 import { useQueryParams } from "./useQueryParams";
 import { PlayerFilterSheet } from "./PlayerFilterSheet";
 import { playersCacheKey } from "./cache-keys";
+import { prefetchPlayer, rememberPlayer } from "@/features/entity-cache";
 
 const FIRST_PAGE = 20;
 const PAGE_SIZE = 20;
@@ -161,6 +162,8 @@ function PlayerRow({ player, rank, ratingLabel }: { player: Player; rank: number
   return (
     <Link
       href={`/players/${encodeURIComponent(player.id)}`}
+      onClick={() => rememberPlayer(player)}
+      onMouseEnter={() => prefetchPlayer(player.id)}
       className={clsx(
         "ledger-row hover:bg-surface/60 transition-colors",
         "md:grid md:grid-cols-[44px_minmax(0,2fr)_minmax(0,1.6fr)_120px_110px_90px] md:gap-3",

@@ -35,7 +35,7 @@ export function useTeamMapPool(teamId: string, game: string) {
     try {
       return overviewEntries(await api.get(endpoints.teamOverview(teamId, game), { signal }), isLeague);
     } catch { return []; }
-  }, [teamId, game]);
+  }, [teamId, game], { cacheKey: teamId ? `team:${teamId}:mappool:${game}` : undefined });
 }
 
 /** Fetches its own rows unless the page passes `entries` (TeamDetail does, so

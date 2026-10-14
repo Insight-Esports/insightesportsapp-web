@@ -10,6 +10,7 @@ import { currentLinkState, forgetKeyState, startDM, subscribeUnread as subscribe
 import { withBase } from "@/lib/base-path";
 import { warmLists } from "@/lib/warm";
 import { clearScreenCaches } from "@/lib/use-fetch";
+import { clearEntityCaches } from "@/features/entity-cache";
 import { clearPagedCache } from "@/features/players/usePagedList";
 import { resetFollows } from "@/features/profile/follow-store";
 
@@ -88,6 +89,7 @@ export function AppStateProvider({ children, initialUser = null }: { children: R
     // account, no per-user bits in web storage (recent searches, cached
     // match cards), no unread counts, no follow state.
     clearScreenCaches();
+    clearEntityCaches();
     clearPagedCache();
     resetFollows();
     try {

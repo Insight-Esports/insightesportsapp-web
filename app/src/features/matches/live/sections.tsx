@@ -13,7 +13,8 @@ import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Clock, Eye, Flag, MessageCircle, MoveHorizontal } from "lucide-react";
 import { AssetIcon, GamePill, InitialAvatar, LiveBadge, TeamMark } from "@/components/ui";
 import { clsx } from "@/lib/format";
-import { team1Color, team2Color, type Match } from "@/lib/types";
+import { team1Color, team2Color, teamStub, type Match } from "@/lib/types";
+import { prefetchPlayer, prefetchTeam, rememberTeam } from "@/features/entity-cache";
 import { withFromMatch } from "../from-match";
 import type { FanPoll, FanPollOption, LeagueObjective, LivePlayerStat, LiveRound } from "./types";
 
@@ -114,7 +115,7 @@ function HUDTeamColumn({ p, side }: { p: ScoreHUDProps; side: 1 | 2 }) {
   const sl = sideLabel(match, isRoundBased, side === 1 ? p.team1Side : p.team2Side, side === 1, p.team1Score, p.team2Score);
   return (
     <div className={clsx("flex-1 min-w-0 flex flex-col items-center gap-1.5", winnerSide && winnerSide !== side && "opacity-60")}>
-      <Link href={withFromMatch(teamHref(id, name), match.id)} className="flex flex-col items-center gap-1.5 min-w-0 max-w-full rounded-lg px-2 py-1 hover:bg-surface/60 transition-colors">
+      <Link href={withFromMatch(teamHref(id, name), match.id)} onClick={() => rememberTeam(teamStub(name, match.game, logo, id))} onMouseEnter={() => prefetchTeam(id)} className="flex flex-col items-center gap-1.5 min-w-0 max-w-full rounded-lg px-2 py-1 hover:bg-surface/60 transition-colors">
         <TeamMark name={name} logoURL={logo} color={color} size={32} />
         <span className="t-label-md text-primary truncate max-w-full">{name}</span>
       </Link>
@@ -395,7 +396,7 @@ function LivePlayerRow({ stat, columns, showAgent, matchId }: { stat: LivePlayer
           ) : null}
         </span>
         {stat.id ? (
-          <Link href={withFromMatch(playerHref(stat.id, stat.name), matchId)} className="flex flex-col min-w-0 hover:underline underline-offset-2">
+          <Link href={withFromMatch(playerHref(stat.id, stat.name), matchId)} onMouseEnter={() => prefetchPlayer(stat.id)} className="flex flex-col min-w-0 hover:underline underline-offset-2">
             <span className="t-body-sm text-primary truncate">{stat.name}</span>
             {stat.role ? <span className="t-label-sm text-muted truncate">{stat.role}</span> : null}
           </Link>

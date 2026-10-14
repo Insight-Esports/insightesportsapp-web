@@ -84,7 +84,6 @@ export function ProfileDetail({ userId = null }: { userId?: string | null }) {
     <Page>
       <NavBar
         title={title}
-        hideBackOnDesktop
         trailing={isOwn ? (
           <ToolButton label="Edit Profile" onClick={() => router.push("/profile/edit")}><SquarePen size={18} /></ToolButton>
         ) : data && revealed ? (

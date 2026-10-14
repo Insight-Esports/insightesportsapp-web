@@ -20,6 +20,7 @@ import { useQueryParams } from "@/features/players/useQueryParams";
 import { TEAM_SORT_OPTIONS, type TeamSortOption } from "./types";
 import { TeamFilterSheet } from "./TeamFilterSheet";
 import { teamsCacheKey } from "@/features/players/cache-keys";
+import { prefetchTeam, rememberTeam } from "@/features/entity-cache";
 
 const FIRST_PAGE = 20;
 const PAGE_SIZE = 20;
@@ -173,6 +174,8 @@ function TeamRow({ team, rank }: { team: Team; rank: number | null }) {
   return (
     <Link
       href={`/teams/${encodeURIComponent(team.id)}`}
+      onClick={() => rememberTeam(team)}
+      onMouseEnter={() => prefetchTeam(team.id)}
       className={clsx("ledger-row hover:bg-surface/60 transition-colors", "md:grid md:grid-cols-[44px_minmax(0,2fr)_120px_90px_110px_90px] md:gap-3")}
     >
       <span className="t-mono-md text-muted min-w-[30px] text-center shrink-0">{rank != null ? `#${rank}` : "—"}</span>

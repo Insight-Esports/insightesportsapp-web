@@ -24,7 +24,7 @@ export function UpcomingGamesList({ teamId, teamName, game, limit = 5 }: { teamI
       .filter((m) => (teamId != null && (m.team1Id === teamId || m.team2Id === teamId)) || m.team1Name === teamName || m.team2Name === teamName)
       .sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt))
       .slice(0, limit);
-  }, [teamId, teamName, game, limit]);
+  }, [teamId, teamName, game, limit], { cacheKey: `upcoming:${teamId ?? teamName}|${game ?? ""}|${limit}` });
 
   const calendarHref = `/schedule?${new URLSearchParams({ ...(game ? { game } : {}), team: teamId ?? teamName }).toString()}`;
   const rows = data ?? [];

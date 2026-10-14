@@ -181,10 +181,13 @@ export function CalendarPhone({ game }: { game: GameId }) {
 
   const dayMatchesAll = scoped.get(selectedKey) ?? [];
   const isPast = selectedDay < today;
-  // Under the calendar: Upcoming | Results for the picked day, then the three games.
+  const isTodaySelected = isSameLocalDay(selectedDay, today);
+  // Under the calendar: Upcoming | Results — only today has both kinds. A past
+  // day is all results and a future day all upcoming, so the picker only shows
+  // for today and other days list everything.
   const [segment, setSegment] = useState<{ forKey: string; value: "upcoming" | "results" } | null>(null);
   const daySegment: "upcoming" | "results" = segment && segment.forKey === selectedKey ? segment.value : (isPast ? "results" : "upcoming");
-  const bySegment = dayMatchesAll.filter((m) => (daySegment === "results" ? m.status === "completed" : m.status !== "completed"));
+  const bySegment = isTodaySelected ? dayMatchesAll.filter((m) => (daySegment === "results" ? m.status === "completed" : m.status !== "completed")) : dayMatchesAll;
   const dayMatches = dayGameFilter ? bySegment.filter((m) => m.game === dayGameFilter) : bySegment;
   const beyondWindow = isPast && data.pastWindowStart !== null && selectedDay < data.pastWindowStart;
   const n = dayMatchesAll.length;
@@ -230,13 +233,15 @@ export function CalendarPhone({ game }: { game: GameId }) {
             <span className="flex-1" />
             <span className="t-label-sm text-muted">{n > 0 ? `${n} match${n === 1 ? "" : "es"}` : ""}</span>
           </div>
-          <div className="px-4 py-1">
-            <CloudSegment<"upcoming" | "results">
-              options={[{ label: "Upcoming", value: "upcoming" }, { label: "Results", value: "results" }]}
-              value={daySegment}
-              onChange={(v) => setSegment({ forKey: selectedKey, value: v })}
-            />
-          </div>
+          {isTodaySelected ? (
+            <div className="px-4 py-1">
+              <CloudSegment<"upcoming" | "results">
+                options={[{ label: "Upcoming", value: "upcoming" }, { label: "Results", value: "results" }]}
+                value={daySegment}
+                onChange={(v) => setSegment({ forKey: selectedKey, value: v })}
+              />
+            </div>
+          ) : null}
           <div className="flex gap-2 px-4 overflow-x-auto no-scrollbar">
             {[null, ...SELECTABLE_GAMES.map((g) => g.id)].map((g) => {
               const sel = dayGameFilter === g;
@@ -252,7 +257,7 @@ export function CalendarPhone({ game }: { game: GameId }) {
           ) : dayMatches.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-7 text-center px-6">
               <CalendarMinus size={28} className="text-muted" />
-              <span className="t-body-sm text-muted">{daySegment === "results" ? "No results recorded for this day" : "No matches scheduled this day"}</span>
+              <span className="t-body-sm text-muted">{isPast ? "No results recorded for this day" : "No matches scheduled this day"}</span>
               {beyondWindow ? <span className="t-label-sm text-muted">Results this far back aren&apos;t in our recent window yet.</span> : null}
             </div>
           ) : (

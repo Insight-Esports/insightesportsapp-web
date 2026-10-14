@@ -9,12 +9,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, ChevronLeft, ClipboardPaste, Link2, Link2Off, ShieldCheck } from "lucide-react";
+import { Camera, ClipboardPaste, Link2, Link2Off, ShieldCheck } from "lucide-react";
 import jsQR from "jsqr";
 import { api, endpoints } from "@/lib/api";
 import { socketHost } from "@/lib/socket";
 import { useAppState } from "@/store/app-state";
 import { Kicker, Page, PrimaryButton, TabHeaderTitle } from "@/components/ui";
+import { BackButton } from "@/components/shell/NavBar";
 import { publicKeyFor } from "./crypto";
 import { clearKeys, parseLinkPayload, publicKeyBase64, saveKey, type StoredKey } from "./keys";
 import { adoptKey, currentLinkState, forgetKeyState, onDM, refreshUnread, type LinkState } from "./service";
@@ -93,7 +94,7 @@ export function LinkDevice() {
   return (
     <Page className="px-4">
       <div className="flex items-center gap-2.5 pt-1.5 pb-2">
-        <button type="button" onClick={() => router.back()} aria-label="Back" className="grid place-items-center size-8 text-primary hover:text-violet"><ChevronLeft size={20} /></button>
+        <BackButton />
         <TabHeaderTitle text="Link this browser" />
       </div>
 
@@ -122,8 +123,8 @@ export function LinkDevice() {
         <div>
           <Kicker>On your phone</Kicker>
           <ol className="mt-2 flex flex-col gap-1.5 t-body-md text-secondary list-decimal pl-5">
-            <li>Open the Insight app and go to <span className="text-primary">Settings → Link web</span>.</li>
-            <li>Point this computer&apos;s camera at the QR code, or copy the code and paste it below.</li>
+            <li>Open the Insight app on your phone and go to <span className="text-primary">Settings → Messages → Link web</span>.</li>
+            <li>Scan its QR code with this computer&apos;s camera below (press <span className="text-primary">Start camera</span> if your browser hasn&apos;t asked for it), or copy the code and paste it instead.</li>
           </ol>
         </div>
 
@@ -172,30 +173,62 @@ export function LinkDevice() {
   );
 }
 
-/** Webcam + jsQR: samples the video frame a few times a second until a payload decodes. */
+/** Webcam + jsQR: samples the video frame a few times a second until a payload decodes.
+ *
+ *  The camera is requested on mount and again from an explicit "Start camera"
+ *  press (Safari only prompts reliably from a user gesture). A rear-camera
+ *  request that fails because there is no such camera (desktops) retries with
+ *  any camera; a refusal shows the browser's own error and a "Try again". */
+type ScanState =
+  | { kind: "idle" }
+  | { kind: "starting" }
+  | { kind: "scanning" }
+  | { kind: "denied"; name: string; message: string }
+  | { kind: "unsupported" };
+
+function cameraSupported(): boolean {
+  return typeof navigator !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
+}
+
+/** A rear camera at 720p when there is one, otherwise whatever camera exists. */
+async function openCamera(): Promise<MediaStream> {
+  try {
+    return await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+  } catch (e) {
+    const name = e instanceof Error ? e.name : "";
+    if (name === "OverconstrainedError" || name === "NotFoundError" || name === "ConstraintNotSatisfiedError" || name === "DevicesNotFoundError") {
+      return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    }
+    throw e;
+  }
+}
+
 function QRScanner({ active, onCode }: { active: boolean; onCode: (text: string) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [state, setState] = useState<"idle" | "starting" | "scanning" | "denied" | "unsupported">("idle");
+  const [state, setState] = useState<ScanState>({ kind: "idle" });
+  // Bumped by "Start camera" / "Try again" so the effect requests the camera again.
+  const [attempt, setAttempt] = useState(0);
   const onCodeRef = useRef(onCode);
   onCodeRef.current = onCode;
 
   useEffect(() => {
-    if (!active) return;
-    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) { setState("unsupported"); return; }
+    if (!active) { setState({ kind: "idle" }); return; }
+    if (!cameraSupported()) { setState({ kind: "unsupported" }); return; }
     let stream: MediaStream | null = null;
     let timer: number | null = null;
     let cancelled = false;
     const canvas = document.createElement("canvas");
-    setState("starting");
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
-      .then((s) => {
+    setState({ kind: "starting" });
+    openCamera()
+      .then(async (s) => {
         if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
         stream = s;
         const v = videoRef.current;
-        if (!v) return;
+        if (!v) { s.getTracks().forEach((t) => t.stop()); return; }
         v.srcObject = s;
-        void v.play();
-        setState("scanning");
+        try { await v.play(); } catch { /* autoPlay + muted covers the gesture rule; play() may still reject while the element is detached */ }
+        if (cancelled) return;
+        setState({ kind: "scanning" });
         timer = window.setInterval(() => {
           if (!v.videoWidth || !v.videoHeight) return;
           canvas.width = v.videoWidth; canvas.height = v.videoHeight;
@@ -210,31 +243,64 @@ function QRScanner({ active, onCode }: { active: boolean; onCode: (text: string)
           }
         }, 250);
       })
-      .catch(() => setState("denied"));
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        const name = e instanceof Error ? e.name : "Error";
+        const message = e instanceof Error && e.message ? e.message : String(e ?? "");
+        setState({ kind: "denied", name, message });
+      });
     return () => {
       cancelled = true;
       if (timer) clearInterval(timer);
       stream?.getTracks().forEach((t) => t.stop());
+      const v = videoRef.current;
+      if (v) v.srcObject = null;
     };
-  }, [active]);
+  }, [active, attempt]);
+
+  const retry = () => setAttempt((n) => n + 1);
+  const deniedHint = (name: string) =>
+    name === "NotAllowedError" || name === "PermissionDeniedError" || name === "SecurityError"
+      ? "Camera access was blocked. Allow the camera for this site in your browser's address bar, then try again — or paste the code instead."
+      : name === "NotFoundError" || name === "OverconstrainedError" || name === "DevicesNotFoundError"
+        ? "No camera was found on this computer. Paste the code instead."
+        : name === "NotReadableError" || name === "AbortError" || name === "TrackStartError"
+          ? "The camera is in use by another app or couldn't start. Close other apps using it, then try again."
+          : "The camera couldn't start. Try again, or paste the code instead.";
 
   return (
     <div className="flex flex-col gap-2">
       <div className="relative w-full max-w-sm aspect-square rounded-xl overflow-hidden bg-card border border-border-subtle">
-        <video ref={videoRef} muted playsInline className="absolute inset-0 size-full object-cover" />
-        {state === "scanning" ? <div className="absolute inset-8 rounded-lg border-2 border-violet/70 pointer-events-none" /> : null}
-        {state !== "scanning" ? (
-          <div className="absolute inset-0 grid place-items-center px-6 text-center">
-            <span className="t-body-sm text-muted">
-              {state === "starting" && "Starting the camera…"}
-              {state === "denied" && "Camera access was blocked. Allow it in your browser, or paste the code instead."}
-              {state === "unsupported" && "This browser can't use the camera here. Paste the code instead."}
-              {state === "idle" && "Camera paused."}
-            </span>
+        <video ref={videoRef} autoPlay muted playsInline className="absolute inset-0 size-full object-cover" />
+        {state.kind === "scanning" ? <div className="absolute inset-8 rounded-lg border-2 border-violet/70 pointer-events-none" /> : null}
+        {state.kind !== "scanning" ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center bg-card/90">
+            {state.kind === "starting" ? <span className="t-body-sm text-muted">Starting the camera…</span> : null}
+            {state.kind === "idle" ? (
+              <>
+                <span className="t-body-sm text-muted">Camera paused.</span>
+                {active ? <PrimaryButton type="button" onClick={retry}><Camera size={15} /> Start camera</PrimaryButton> : null}
+              </>
+            ) : null}
+            {state.kind === "unsupported" ? (
+              <span className="t-body-sm text-muted">This browser can&apos;t use the camera here (it needs HTTPS and camera support). Paste the code instead.</span>
+            ) : null}
+            {state.kind === "denied" ? (
+              <>
+                <span className="t-body-sm text-muted">{deniedHint(state.name)}</span>
+                <span className="t-label-sm text-muted font-mono break-all">{state.name}{state.message ? `: ${state.message}` : ""}</span>
+                <PrimaryButton type="button" onClick={retry}><Camera size={15} /> Try again</PrimaryButton>
+              </>
+            ) : null}
           </div>
         ) : null}
       </div>
-      <span className="t-body-sm text-muted">Hold the QR code inside the frame.</span>
+      <div className="flex items-center gap-3">
+        <span className="t-body-sm text-muted flex-1">Hold the QR code inside the frame.</span>
+        {state.kind === "starting" || state.kind === "scanning" ? (
+          <button type="button" onClick={retry} className="t-label-md text-violet hover:underline whitespace-nowrap">{state.kind === "scanning" ? "Restart camera" : "Start camera"}</button>
+        ) : null}
+      </div>
     </div>
   );
 }

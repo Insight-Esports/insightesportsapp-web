@@ -29,26 +29,41 @@ export function isTeam1(p: RecentGamesPerspective, m: Match): boolean | null {
   return null;
 }
 
+// First pages kept across remounts (same idea as usePagedList's pageCache),
+// so a revisited team shows its results at once and refreshes underneath.
+const FIRST_PAGE_CAP = 32;
+const firstPages = new Map<string, Match[]>();
+const firstPageKey = (teamId: string, game: string | null) => `${teamId}|${game ?? ""}`;
+function rememberFirstPage(key: string, page: Match[]) {
+  firstPages.delete(key);
+  firstPages.set(key, page);
+  if (firstPages.size > FIRST_PAGE_CAP) firstPages.delete(firstPages.keys().next().value as string);
+}
+
 export function useTeamRecentGames(teamId: string, game: string | null) {
-  const [rows, setRows] = useState<Match[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const warmAtMount = teamId ? firstPages.get(firstPageKey(teamId, game)) ?? null : null;
+  const [rows, setRows] = useState<Match[]>(warmAtMount ?? []);
+  const [loaded, setLoaded] = useState(warmAtMount !== null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [reachedEnd, setReachedEnd] = useState(false);
+  const [reachedEnd, setReachedEnd] = useState(warmAtMount !== null && warmAtMount.length < PAGE_SIZE);
   const inFlight = useRef(false);
 
   useEffect(() => {
     let active = true;
-    setLoaded(false); setRows([]); setReachedEnd(false);
-    if (!teamId) { setLoaded(true); setReachedEnd(true); return; }   // idle (the page owns the real pager)
+    if (!teamId) { setLoaded(true); setRows([]); setReachedEnd(true); return; }   // idle (the page owns the real pager)
+    const key = firstPageKey(teamId, game);
+    const warm = firstPages.get(key);
+    if (warm) { setRows(warm); setLoaded(true); setReachedEnd(warm.length < PAGE_SIZE); } else { setLoaded(false); setRows([]); setReachedEnd(false); }
     inFlight.current = true;
     api.get(endpoints.completedMatches(game, PAGE_SIZE, 0, teamId))
       .then((raw) => {
-        if (!active) return;
         const page = normalizeMatches(raw).sort((a, b) => matchResultTime(b).localeCompare(matchResultTime(a)));
+        rememberFirstPage(key, page);
+        if (!active) return;
         setRows(page);
         setReachedEnd(page.length < PAGE_SIZE);
       })
-      .catch(() => { if (active) { setRows([]); setReachedEnd(true); } })
+      .catch(() => { if (active && !warm) { setRows([]); setReachedEnd(true); } })
       .finally(() => { if (active) { setLoaded(true); inFlight.current = false; } });
     return () => { active = false; };
   }, [teamId, game]);

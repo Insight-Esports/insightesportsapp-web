@@ -38,7 +38,7 @@ export function SettingsFrame({ title, trailing, children, backHref }: { title: 
         </nav>
         <div className="min-w-0">
           {/* Phones: the system bar (chevron · title · trailing); desktop: the headline row. */}
-          <NavBar title={title} trailing={trailing} back={backHref} hideBackOnDesktop={isRoot} />
+          <NavBar title={title} trailing={trailing} back={backHref} />
           <div className="px-4 lg:px-0 pt-4 max-w-2xl">{children}</div>
         </div>
       </div>

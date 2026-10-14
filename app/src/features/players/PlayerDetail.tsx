@@ -14,11 +14,11 @@ import { backHrefFrom } from "@/features/matches/from-match";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { useFetch } from "@/lib/use-fetch";
-import { useReveal } from "@/lib/use-reveal";
 import { fmt1, fmt2 } from "@/lib/format";
-import { normalizePlayer, normalizePlayers, normalizeTeam, type Player, type PlayerCareerStats } from "@/lib/types";
-import { InitialAvatar, LoadFailure, Page, SectionHeader, TeamMark } from "@/components/ui";
-import { SkeletonPlayerDetail } from "@/components/ui/skeletons";
+import { normalizePlayer, normalizePlayers, normalizeTeam, teamStub, type Player, type PlayerCareerStats } from "@/lib/types";
+import { InitialAvatar, LoadFailure, Page, SectionHeader, SkeletonStatRow, TeamMark } from "@/components/ui";
+import { SkeletonPlayerDetail, SkeletonSection, SkeletonStripedTable } from "@/components/ui/skeletons";
+import { playerCacheKey, prefetchTeam, recallPlayer, rememberTeam } from "@/features/entity-cache";
 import { FollowButton } from "@/features/follow/FollowButton";
 import { UpcomingGamesList } from "@/features/teams/UpcomingGamesList";
 import { StatTable, StripedTable, type StatCell } from "./StatTable";
@@ -27,22 +27,26 @@ import { PlayerComments } from "./PlayerComments";
 import { normalizePlayerGameRows, normalizePlayerOverview, rowKDA, type AgentStats, type PlayerGameRow } from "./types";
 
 export function PlayerDetail({ id }: { id: string }) {
-  const { data: player, loading, error, connectionProblem, reload } = useFetch<Player>(
+  // The row the list was tapped with renders the header on the first paint
+  // (the app hands the Player into the view); GET /players/:id refreshes it.
+  const recalled = useMemo(() => recallPlayer(id), [id]);
+  const { data, loading, error, connectionProblem, reload } = useFetch<Player>(
     async (signal) => normalizePlayer(await api.get(endpoints.playerDetail(id), { signal })),
     [id],
+    { cacheKey: playerCacheKey(id) },
   );
+  const detail = data && data.id === id ? data : null;
+  const player = detail ?? recalled;
 
-  if (loading && !player) {
-    // The same silhouette PlayerDetailLoaded keeps up until ITS requests
-    // land, so the page reveals once, complete.
-    return (
-      <Page>
-        <TitleBar title="" />
-        <SkeletonPlayerDetail />
-      </Page>
-    );
-  }
   if (!player) {
+    if (loading) {
+      return (
+        <Page>
+          <TitleBar title="" />
+          <SkeletonPlayerDetail />
+        </Page>
+      );
+    }
     return (
       <Page>
         <TitleBar title="" />
@@ -50,7 +54,7 @@ export function PlayerDetail({ id }: { id: string }) {
       </Page>
     );
   }
-  return <PlayerDetailLoaded player={player} />;
+  return <PlayerDetailLoaded key={id} id={id} player={player} detailLoaded={detail !== null} />;
 }
 
 function TitleBar({ title, trailing }: { title: string; trailing?: React.ReactNode }) {
@@ -65,66 +69,64 @@ function TitleBar({ title, trailing }: { title: string; trailing?: React.ReactNo
   );
 }
 
-function PlayerDetailLoaded({ player: initial }: { player: Player }) {
+function PlayerDetailLoaded({ id, player: initial, detailLoaded }: { id: string; player: Player; detailLoaded: boolean }) {
+  // The latest record wins, but a picture the list row carried is kept when
+  // the payload lacks one (the enrichment below fills the rest).
   const [player, setPlayer] = useState(initial);
-  useEffect(() => setPlayer(initial), [initial]);
+  useEffect(() => setPlayer((prev) => (prev.id === initial.id ? { ...initial, imageURL: initial.imageURL ?? prev.imageURL, teamLogoURL: initial.teamLogoURL ?? prev.teamLogoURL } : initial)), [initial]);
   const game = player.game;
 
-  // Recent Games (first page, keyset-paged) — owned here so the whole screen
-  // can wait for it; the rows also feed Recent Form.
-  const pager = usePlayerGames(player.id);
+  // Every section's request starts from the route id, in parallel with the
+  // detail itself; each section reveals on its own as its data lands.
+  const pager = usePlayerGames(id);
   const recentRows: PlayerGameRow[] | null = pager.loaded ? pager.rows : null;
   const form = useMemo(() => deriveAverages(recentRows?.slice(0, 10) ?? []), [recentRows]);
 
   // Agents/champions come from the same overview the prediction screens use.
-  const overview = useFetch(async (signal) => normalizePlayerOverview(await api.get(endpoints.playerOverview(player.id, game), { signal }), game), [player.id, game], { enabled: game !== "CS2" });
+  const overview = useFetch(
+    async (signal) => normalizePlayerOverview(await api.get(endpoints.playerOverview(id, game), { signal }), game),
+    [id, game],
+    { enabled: !!game && game !== "CS2", cacheKey: `player:${id}:overview:${game}` },
+  );
 
   // ALL-TIME (our records): a wider fetch aggregated client-side; yields to
-  // the backend's career_stats once backfilled. Also the photo/crest
-  // enrichment when the row we arrived with lacked them.
-  const [derivedCareer, setDerivedCareer] = useState<PlayerCareerStats | null>(null);
-  const [extrasLoading, setExtrasLoading] = useState(true);
+  // the backend's career_stats once backfilled.
+  const derived = useFetch<PlayerCareerStats | null>(
+    async (signal) => {
+      const rows = normalizePlayerGameRows(await api.get(endpoints.playerMatches(id, 100), { signal }));
+      return rows.length > 10 ? aggregateCareer(rows) : null;
+    },
+    [id],
+    { enabled: !player.careerStats, cacheKey: `player:${id}:career` },
+  );
+  const career = player.careerStats ?? derived.data ?? null;
+  // Unknown until the payload (which may carry career_stats) and the aggregate have both answered.
+  const careerPending = !career && (!detailLoaded || (derived.loading && !derived.data));
+
+  // Photo / crest enrichment when the record we have lacks them.
+  const needsExtras = !player.imageURL || !player.teamLogoURL;
   useEffect(() => {
+    if (!needsExtras || !game) return;
     let active = true;
-    setDerivedCareer(null);
-    setExtrasLoading(true);
-    const tasks: Promise<unknown>[] = [];
-    if (!player.careerStats) {
-      tasks.push(api.get(endpoints.playerMatches(player.id, 100)).then((raw) => {
-        if (!active) return;
-        const rows = normalizePlayerGameRows(raw);
-        if (rows.length > 10) setDerivedCareer(aggregateCareer(rows));
-      }).catch(() => { /* real empty state */ }));
-    }
-    if (!player.imageURL || !player.teamLogoURL) {
-      tasks.push(api.get(endpoints.topPlayers(game, null, null, player.name, 5)).then(async (raw) => {
-        if (!active) return;
-        const hit = normalizePlayers(raw).find((p) => p.id === player.id);
-        if (hit && ((!player.imageURL && hit.imageURL) || (!player.teamLogoURL && hit.teamLogoURL))) {
-          setPlayer((p) => ({ ...p, imageURL: p.imageURL ?? hit.imageURL, teamLogoURL: p.teamLogoURL ?? hit.teamLogoURL }));
-        } else if (!player.teamLogoURL && player.teamId) {
-          await api.get(endpoints.teamDetail(player.teamId)).then((t) => {
-            if (!active) return;
-            const team = normalizeTeam(t);
-            if (team.logoURL) setPlayer((p) => ({ ...p, teamLogoURL: p.teamLogoURL ?? team.logoURL }));
-          }).catch(() => { /* ignore */ });
-        }
-      }).catch(() => { /* ignore */ }));
-    }
-    void Promise.allSettled(tasks).then(() => { if (active) setExtrasLoading(false); });
+    api.get(endpoints.topPlayers(game, null, null, player.name, 5)).then(async (raw) => {
+      if (!active) return;
+      const hit = normalizePlayers(raw).find((p) => p.id === id);
+      if (hit && ((!player.imageURL && hit.imageURL) || (!player.teamLogoURL && hit.teamLogoURL))) {
+        setPlayer((p) => ({ ...p, imageURL: p.imageURL ?? hit.imageURL, teamLogoURL: p.teamLogoURL ?? hit.teamLogoURL }));
+      } else if (!player.teamLogoURL && player.teamId) {
+        await api.get(endpoints.teamDetail(player.teamId)).then((t) => {
+          if (!active) return;
+          const team = normalizeTeam(t);
+          if (team.logoURL) setPlayer((p) => ({ ...p, teamLogoURL: p.teamLogoURL ?? team.logoURL }));
+        }).catch(() => { /* ignore */ });
+      }
+    }).catch(() => { /* ignore */ });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [player.id]);
+  }, [id, game, needsExtras]);
 
-  const career = player.careerStats ?? derivedCareer;
-
-  // PlayerDetailView: every section's `isLoading*` settles, the photo and
-  // crest (and the recent games' opponent logos) warm, THEN the page shows.
-  const revealed = useReveal(
-    !pager.loaded || overview.loading || extrasLoading,
-    () => [player.imageURL, player.teamLogoURL, ...(recentRows ?? []).map((r) => r.opponentLogoURL)],
-  );
   const teamHref = player.teamId ? `/teams/${encodeURIComponent(player.teamId)}` : player.teamName ? `/teams/${encodeURIComponent(player.teamName)}?game=${encodeURIComponent(game)}` : null;
+  const rememberOwnTeam = () => { if (player.teamName) rememberTeam(teamStub(player.teamName, game, player.teamLogoURL, player.teamId)); };
 
   const header = (
     <div className="flex flex-col items-center gap-3 px-4 pt-4 text-center">
@@ -135,7 +137,7 @@ function PlayerDetailLoaded({ player: initial }: { player: Player }) {
       </div>
       <div className="flex items-center gap-1.5 flex-wrap justify-center">
         {player.teamName && teamHref ? (
-          <Link href={teamHref} className="inline-flex items-center gap-1.5 text-secondary hover:text-primary transition-colors">
+          <Link href={teamHref} onClick={rememberOwnTeam} onMouseEnter={() => prefetchTeam(player.teamId)} className="inline-flex items-center gap-1.5 text-secondary hover:text-primary transition-colors">
             <TeamMark name={player.teamName} logoURL={player.teamLogoURL} size={18} />
             <span className="t-body-md">{player.teamName}</span>
             <ChevronRight size={10} strokeWidth={3} className="text-muted" />
@@ -151,7 +153,9 @@ function PlayerDetailLoaded({ player: initial }: { player: Player }) {
     </div>
   );
 
-  const recentForm = (
+  const recentForm = !pager.loaded ? (
+    <SkeletonSection title="Recent Form"><SkeletonStatRow columns={5} /></SkeletonSection>
+  ) : (
     <section className="flex flex-col gap-3">
       <SectionHeader title="Recent Form" />
       <div className="px-4">
@@ -160,7 +164,9 @@ function PlayerDetailLoaded({ player: initial }: { player: Player }) {
     </section>
   );
 
-  const allTime = career ? (
+  const allTime = careerPending ? (
+    <SkeletonSection title="All-Time"><div className="flex flex-col gap-2.5"><SkeletonStatRow columns={5} /><SkeletonStatRow columns={3} /></div></SkeletonSection>
+  ) : career ? (
     <section className="flex flex-col gap-3">
       <SectionHeader title="All-Time" />
       <div className="px-4 flex flex-col gap-2.5">
@@ -170,33 +176,29 @@ function PlayerDetailLoaded({ player: initial }: { player: Player }) {
     </section>
   ) : null;
 
-  const agents = game !== "CS2" ? (
-    <section className="flex flex-col gap-3">
-      <SectionHeader title={game === "League" ? "Champion Pool" : "Top Agents"} />
-      {!overview.data || overview.data.agents.length === 0 ? (
-        <p className="px-4 t-body-sm text-muted">{game === "League" ? "No champion data available" : "No agent data available"}</p>
-      ) : (
-        <div className="px-4"><AgentTable agents={overview.data.agents} game={game} /></div>
-      )}
-    </section>
+  const agentsTitle = game === "League" ? "Champion Pool" : "Top Agents";
+  const agents = !game ? null : game !== "CS2" ? (
+    overview.loading && !overview.data ? (
+      <SkeletonSection title={agentsTitle}><SkeletonStripedTable rows={4} columns={4} /></SkeletonSection>
+    ) : (
+      <section className="flex flex-col gap-3">
+        <SectionHeader title={agentsTitle} />
+        {!overview.data || overview.data.agents.length === 0 ? (
+          <p className="px-4 t-body-sm text-muted">{game === "League" ? "No champion data available" : "No agent data available"}</p>
+        ) : (
+          <div className="px-4"><AgentTable agents={overview.data.agents} game={game} /></div>
+        )}
+      </section>
+    )
   ) : null;
 
   const upcoming = player.teamName ? <UpcomingGamesList teamId={player.teamId} teamName={player.teamName} game={game} /> : null;
-  const recent = <PlayerRecentGamesList playerId={player.id} game={game} pager={pager} />;
+  const recent = <PlayerRecentGamesList playerId={id} game={game} pager={pager} />;
   const comments = <PlayerComments player={player} />;
-
-  if (!revealed) {
-    return (
-      <Page>
-        <TitleBar title={player.name} trailing={<FollowButton targetType="player" targetId={player.id} compact />} />
-        <SkeletonPlayerDetail />
-      </Page>
-    );
-  }
 
   return (
     <Page>
-      <TitleBar title={player.name} trailing={<FollowButton targetType="player" targetId={player.id} compact />} />
+      <TitleBar title={player.name} trailing={<FollowButton targetType="player" targetId={id} compact />} />
       {header}
       {/* Phones: the iOS order top to bottom. Desktop: the rail (agents, upcoming) sits beside the main column. Every section renders exactly once. */}
       <div className={`pt-5 grid grid-cols-[minmax(0,1fr)] gap-5 lg:items-start ${agents || upcoming ? "lg:grid-cols-[minmax(0,1fr)_360px] lg:pr-4" : ""}`}>

@@ -12,8 +12,9 @@ import { useRouter } from "next/navigation";
 import { BadgeCheck, Calendar, ChevronDown, ChevronRight, Eye, Flag, ListOrdered } from "lucide-react";
 import { GamePill, LiveBadge, StagePill, TeamMark } from "@/components/ui";
 import { clsx, formatTime } from "@/lib/format";
-import { matchResultTime, team1Color, team2Color, type Match } from "@/lib/types";
+import { matchResultTime, team1Color, team2Color, teamStub, type Match } from "@/lib/types";
 import { rememberMatch } from "./match-cache";
+import { prefetchTeam, rememberTeam } from "@/features/entity-cache";
 
 /** The one door to a match, whatever its state (CompletedMatchLoaderView routes by status server-side). */
 export function matchHref(id: string): string {
@@ -114,9 +115,9 @@ export function UpcomingMatchCard({ match, className, defaultExpanded = false }:
       </button>
 
       {/* Team rows — the row hops to the team's page; a hairline between. */}
-      <UpcomingTeamRow name={match.team1Name} logo={match.team1LogoURL} id={match.team1Id} />
+      <UpcomingTeamRow name={match.team1Name} logo={match.team1LogoURL} id={match.team1Id} game={match.game} />
       <div className="ml-[54px] hairline-b" />
-      <UpcomingTeamRow name={match.team2Name} logo={match.team2LogoURL} id={match.team2Id} />
+      <UpcomingTeamRow name={match.team2Name} logo={match.team2LogoURL} id={match.team2Id} game={match.game} />
 
       {/* Dedicated expand affordance */}
       <button type="button" onClick={toggle} aria-label={expanded ? "Hide details" : "Show details"} aria-expanded={expanded} className="w-full flex justify-center py-1.5 text-muted hover:text-primary transition-colors">
@@ -160,9 +161,9 @@ export function UpcomingMatchCard({ match, className, defaultExpanded = false }:
   );
 }
 
-function UpcomingTeamRow({ name, logo, id }: { name: string; logo: string | null; id: string | null }) {
+function UpcomingTeamRow({ name, logo, id, game }: { name: string; logo: string | null; id: string | null; game: string }) {
   return (
-    <Link href={teamHref(id, name)} className="flex items-center gap-2.5 px-4 py-1.5 min-w-0 hover:bg-surface/60 transition-colors">
+    <Link href={teamHref(id, name)} onClick={() => rememberTeam(teamStub(name, game, logo, id))} onMouseEnter={() => prefetchTeam(id)} className="flex items-center gap-2.5 px-4 py-1.5 min-w-0 hover:bg-surface/60 transition-colors">
       <TeamMark name={name} logoURL={logo} size={28} />
       <span className="t-body-md text-primary truncate">{name}</span>
     </Link>
@@ -193,8 +194,8 @@ export function CompletedMatchRow({ match, className }: { match: Match; classNam
           <FinalPill />
         </div>
 
-        <ResultTeamRow name={match.team1Name} logo={match.team1LogoURL} id={match.team1Id} score={match.team1Score} color={team1Color(match)} won={team1Won} />
-        <ResultTeamRow name={match.team2Name} logo={match.team2LogoURL} id={match.team2Id} score={match.team2Score} color={team2Color(match)} won={team2Won} />
+        <ResultTeamRow name={match.team1Name} logo={match.team1LogoURL} id={match.team1Id} score={match.team1Score} color={team1Color(match)} won={team1Won} game={match.game} />
+        <ResultTeamRow name={match.team2Name} logo={match.team2LogoURL} id={match.team2Id} score={match.team2Score} color={team2Color(match)} won={team2Won} game={match.game} />
 
         <div className="flex items-center">
           <span className="t-label-sm text-muted">{formatTime(matchResultTime(match))}</span>
@@ -210,11 +211,11 @@ export function FinalPill({ className }: { className?: string }) {
   return <span className={clsx("text-[9px] font-bold text-muted px-1.5 py-0.5 rounded-full bg-surface", className)}>FINAL</span>;
 }
 
-function ResultTeamRow({ name, logo, id, score, color, won }: { name: string; logo: string | null; id: string | null; score: number; color: string; won: boolean }) {
+function ResultTeamRow({ name, logo, id, score, color, won, game }: { name: string; logo: string | null; id: string | null; score: number; color: string; won: boolean; game: string }) {
   const router = useRouter();
   const href = teamHref(id, name);
   // The card is one anchor; the mark is a nested hop to the team page.
-  const hop = (e: MouseEvent | KeyboardEvent) => { e.preventDefault(); e.stopPropagation(); router.push(href); };
+  const hop = (e: MouseEvent | KeyboardEvent) => { e.preventDefault(); e.stopPropagation(); rememberTeam(teamStub(name, game, logo, id)); router.push(href); };
   return (
     <div className={clsx("flex items-center gap-2.5 min-w-0", !won && "opacity-70")}>
       <span
@@ -223,6 +224,7 @@ function ResultTeamRow({ name, logo, id, score, color, won }: { name: string; lo
         aria-label={`${name} team page`}
         title={name}
         onClick={hop}
+        onMouseEnter={() => prefetchTeam(id)}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") hop(e); }}
         className="rounded-md hover:ring-1 hover:ring-border-strong transition-shadow"
       >

@@ -1,9 +1,10 @@
 // NewsScreen — NewsView.swift.
 //
 // Esports news articles filtered by game. Game tabs: All, VALORANT, CS2,
-// League. Laid out as a front page: the newest article is the hero (big
-// 16:9 picture, source · time, display headline, standfirst), the rest a
-// newspaper grid (1 → 2 → 3 columns). Articles open in a new tab (the
+// League. Laid out as a front page: the newest article is a compact hero
+// (picture beside the headline on desktop, a capped 16:9 card on phones,
+// text-only without a picture), the rest a newspaper grid (1 → 2 → 3
+// columns). Articles open in a new tab (the
 // app's in-app Safari sheet). All news is free — no premium gating.
 // Game lives in the URL (?game=).
 "use client";
@@ -15,7 +16,7 @@ import { useReveal } from "@/lib/use-reveal";
 import { clsx, timeAgo } from "@/lib/format";
 import { GAMES, normalizeArticle, type GameId, type Json, type NewsArticle } from "@/lib/types";
 import { EmptyState, GamePill, GameTabBar, Img, LoadFailure, Page, TabHeader } from "@/components/ui";
-import { SkeletonFeaturedNewsCard, SkeletonNewsCard } from "@/components/ui/skeletons";
+import { SkeletonNewsCard } from "@/components/ui/skeletons";
 import { HeaderTools } from "@/components/shell/AppShell";
 import { useQueryParams } from "@/features/players/useQueryParams";
 
@@ -50,7 +51,8 @@ export function NewsScreen() {
   if (!revealed) {
     content = (
       <div className="px-4 pt-4 flex flex-col gap-6">
-        <SkeletonFeaturedNewsCard />
+        {/* The hero's silhouette: a single card, bounded like the compact hero. */}
+        <SkeletonNewsCard className="max-w-sm lg:max-w-md" />
         <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2 2xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => <SkeletonNewsCard key={i} />)}
         </div>
@@ -118,17 +120,31 @@ function articleLinkProps(url: string) {
   return { Tag: (href ? "a" : "div") as "a" | "div", props: href ? { href, target: "_blank", rel: "noopener noreferrer" } : {} };
 }
 
-/** The front-page hero: the newest story, picture on top, display headline beneath. */
+/** The front-page hero: the newest story as a compact featured card.
+ *  Desktop: picture left (40% wide, at most 220pt tall), text right. Phones:
+ *  a normal card whose 16:9 picture is capped at 200pt. Without a picture
+ *  it is a text-only card the height of an ordinary row. */
 function FeaturedNewsCard({ article }: { article: NewsArticle }) {
   const { Tag, props } = articleLinkProps(article.url);
-  return (
-    <Tag {...props} className="group flex flex-col rounded-2xl bg-card border border-border-subtle hover:border-border-strong transition-colors overflow-hidden">
-      <ArticleImage article={article} placeholder={44} className="lg:max-h-[480px]" />
-      <div className="flex flex-col gap-2.5 px-4 py-4 lg:px-6 lg:py-5">
+  const cardCls = "group rounded-xl bg-card border border-border-subtle hover:border-border-strong transition-colors overflow-hidden";
+  if (!article.imageURL) {
+    return (
+      <Tag {...props} className={clsx(cardCls, "flex flex-col gap-1.5 px-4 py-3.5")}>
         <Dateline article={article} />
-        <span className="t-headline-lg lg:t-display-md text-primary line-clamp-3 group-hover:text-violet-light transition-colors">{article.title}</span>
-        {article.description ? <span className="t-body-md lg:t-body-lg text-secondary line-clamp-3 max-w-[72ch]">{article.description}</span> : null}
-        <span className="text-[10px] font-semibold tracking-[1.4px] text-violet pt-0.5">READ</span>
+        <span className="t-headline-sm lg:t-headline-md text-primary line-clamp-2 group-hover:text-violet-light transition-colors">{article.title}</span>
+        {article.description ? <span className="t-body-sm text-secondary line-clamp-2 max-w-[80ch]">{article.description}</span> : null}
+      </Tag>
+    );
+  }
+  return (
+    <Tag {...props} className={clsx(cardCls, "flex flex-col lg:flex-row lg:max-h-[220px]")}>
+      <span className="block w-full aspect-video max-h-[200px] lg:aspect-auto lg:max-h-[220px] lg:min-h-[150px] lg:w-2/5 lg:max-w-[40%] lg:self-stretch shrink-0 overflow-hidden bg-surface">
+        <Img src={article.imageURL} alt="" fallback={<ArticlePlaceholder size={32} />} fit="cover" className="w-full h-full" />
+      </span>
+      <div className="flex flex-col gap-1.5 px-4 py-3.5 lg:py-4 min-w-0 flex-1 lg:justify-center">
+        <Dateline article={article} />
+        <span className="t-headline-sm lg:t-headline-md text-primary line-clamp-2 lg:line-clamp-3 group-hover:text-violet-light transition-colors">{article.title}</span>
+        {article.description ? <span className="t-body-sm lg:t-body-md text-secondary line-clamp-2 max-w-[72ch]">{article.description}</span> : null}
       </div>
     </Tag>
   );

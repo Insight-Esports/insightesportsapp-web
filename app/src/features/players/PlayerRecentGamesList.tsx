@@ -19,28 +19,39 @@ import { StripedTable } from "./StatTable";
 
 const PAGE_SIZE = 10;
 
+// First pages kept across remounts (same idea as usePagedList's pageCache),
+// so a revisited player shows its games at once and refreshes underneath.
+const FIRST_PAGE_CAP = 32;
+const firstPages = new Map<string, PlayerGameRow[]>();
+function rememberFirstPage(id: string, page: PlayerGameRow[]) {
+  firstPages.delete(id);
+  firstPages.set(id, page);
+  if (firstPages.size > FIRST_PAGE_CAP) firstPages.delete(firstPages.keys().next().value as string);
+}
+
 export function usePlayerGames(playerId: string) {
-  const [rows, setRows] = useState<PlayerGameRow[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const warmAtMount = playerId ? firstPages.get(playerId) ?? null : null;
+  const [rows, setRows] = useState<PlayerGameRow[]>(warmAtMount ?? []);
+  const [loaded, setLoaded] = useState(warmAtMount !== null);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [reachedEnd, setReachedEnd] = useState(false);
+  const [reachedEnd, setReachedEnd] = useState(warmAtMount !== null && warmAtMount.length < PAGE_SIZE);
   const inFlight = useRef(false);
 
   useEffect(() => {
     let active = true;
-    setLoaded(false);
-    setRows([]);
-    setReachedEnd(false);
-    if (!playerId) { setLoaded(true); setReachedEnd(true); return; }   // idle (the page owns the real pager)
+    if (!playerId) { setLoaded(true); setRows([]); setReachedEnd(true); return; }   // idle (the page owns the real pager)
+    const warm = firstPages.get(playerId);
+    if (warm) { setRows(warm); setLoaded(true); setReachedEnd(warm.length < PAGE_SIZE); } else { setLoaded(false); setRows([]); setReachedEnd(false); }
     inFlight.current = true;
     api.get(endpoints.playerMatches(playerId, PAGE_SIZE))
       .then((raw) => {
-        if (!active) return;
         const page = normalizePlayerGameRows(raw).sort((a, b) => rowWhen(b).localeCompare(rowWhen(a)));
+        rememberFirstPage(playerId, page);
+        if (!active) return;
         setRows(page);
         setReachedEnd(page.length < PAGE_SIZE);
       })
-      .catch(() => { if (active) { setRows([]); setReachedEnd(true); } })
+      .catch(() => { if (active && !warm) { setRows([]); setReachedEnd(true); } })
       .finally(() => { if (active) { setLoaded(true); inFlight.current = false; } });
     return () => { active = false; };
   }, [playerId]);

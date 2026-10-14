@@ -67,6 +67,12 @@ app.prepare().then(() => {
       // Unknown root URL: send people to the site's home rather than a Next 404.
       if (!p.startsWith("/_next/")) { res.writeHead(302, { Location: "/" }); res.end(); return; }
     }
+    // App pages may use the camera (Messages → Link this browser scans a QR
+    // code); say so explicitly, since a missing policy reads as "deny" to
+    // some embedders and browser extensions. Static assets need nothing.
+    if ((p === basePath || p.startsWith(basePath + "/")) && !p.startsWith(basePath + "/_next/")) {
+      res.setHeader("Permissions-Policy", "camera=(self)");
+    }
     handle(req, res);
   }).listen(port, () => {
     console.log(`> Insight web listening on http://localhost:${port} (app at ${basePath}, site at /)`);
