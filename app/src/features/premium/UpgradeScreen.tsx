@@ -23,7 +23,7 @@ export function UpgradeScreen() {
 
   return (
     <Page>
-      <NavBar title="Premium" />
+      <NavBar title="Premium" centered />
 
       <div className="flex flex-col items-center gap-6 pt-8">
         <PremiumMark />

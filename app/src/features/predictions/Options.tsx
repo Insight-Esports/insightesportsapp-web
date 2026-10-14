@@ -15,7 +15,7 @@ export function OptionsScreen() {
   const t = readTarget(sp);
 
   return (
-    <PredictScreen title="Analyze" back={flowHref.select(t.game, t.targetType, false, t.isLive ? "live" : "all")}>
+    <PredictScreen title="Analyze" back={t.isLive && t.matchId ? `/match/${encodeURIComponent(t.matchId)}` : flowHref.select(t.game, t.targetType, false, t.isLive ? "live" : "all")}>
       <div className="flex flex-col gap-5 pt-2">
         <StepHeader title={t.targetName} subtitle={`${gameLabel(t.game)} · ${t.targetType === "player" ? "Player" : "Team"}`} center live={t.isLive} />
         <div className="px-4 flex flex-col gap-3 max-w-2xl w-full mx-auto">

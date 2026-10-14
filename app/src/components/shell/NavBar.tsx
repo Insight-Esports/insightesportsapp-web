@@ -33,8 +33,10 @@ export function BackButton({ href, onClick, className }: { href?: string; onClic
   );
 }
 
-export function NavBar({ title, back, onBack, trailing, principal, leading, phoneOnly, className }: {
+export function NavBar({ title, back, onBack, trailing, principal, leading, phoneOnly, centered, className }: {
   title?: string;
+  /** Desktop too: title centered between the chevron and the trailing items (the iOS bar). */
+  centered?: boolean;
   /** Where the chevron goes; omitted = history back. */
   back?: string;
   onBack?: () => void;
@@ -62,12 +64,20 @@ export function NavBar({ title, back, onBack, trailing, principal, leading, phon
       </div>
       {/* Desktop: the web's left-aligned headline row. */}
       {phoneOnly ? null : (
+      centered ? (
+      <div className={clsx("hidden md:grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 pt-3 pb-1", className)}>
+        <div className="flex items-center justify-start min-w-0">{leading ?? chevron()}</div>
+        <div className="flex items-center justify-center min-w-0">{principal ?? <span className="t-headline-sm text-primary truncate">{title}</span>}</div>
+        <div className="flex items-center justify-end gap-1 min-w-0">{trailing}</div>
+      </div>
+      ) : (
       <div className={clsx("hidden md:flex items-center gap-2 px-3 pt-3 pb-1", className)}>
         {leading ?? chevron()}
         {principal ?? <span className="t-headline-sm text-primary truncate">{title}</span>}
         <span className="flex-1" />
         {trailing}
       </div>
+      )
       )}
     </>
   );

@@ -8,6 +8,7 @@
 //   League:   KDA · K D A +/- · CS/m · Gold · GPM · DMG · DMG% · Vis · KP%
 "use client";
 
+import { flowHref } from "@/features/predictions/flow";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Clock, Eye, Flag, MessageCircle, MoveHorizontal } from "lucide-react";
@@ -420,7 +421,9 @@ export function PredictionTeaserSection({ team1Color: c1, team2Color: c2, game, 
   const [othersOpen, setOthersOpen] = useState(false);
   const top = [team1TopPlayer, team2TopPlayer].filter((p): p is LivePlayerStat => !!p).sort((a, b) => b.kills - a.kills)[0] ?? null;
   const hint = top ? `${top.name} · ${top.kills} kills` : null;
-  const predictHref = (p: LivePlayerStat) => `/premium/predict?game=${encodeURIComponent(game)}&type=player&id=${encodeURIComponent(p.id)}&name=${encodeURIComponent(p.name)}&live=1&matchId=${encodeURIComponent(matchId)}`;
+  // Straight to Analyze (breakdown / pick a stat) for this player, remembering
+  // the match so the flow's back button returns here.
+  const predictHref = (p: LivePlayerStat) => flowHref.options({ game, targetType: "player", targetId: p.id, targetName: p.name, isLive: true, matchId });
   // "Predict another player": every other player in the match (headliners
   // excluded so nobody appears twice), from the scoreboard already in hand.
   const headliners = new Set([team1TopPlayer?.id, team2TopPlayer?.id].filter((id): id is string => !!id));
@@ -469,8 +472,8 @@ export function PredictionTeaserSection({ team1Color: c1, team2Color: c2, game, 
                 <div className="rounded-lg border border-border-subtle overflow-hidden">
                   <button type="button" onClick={() => setOthersOpen((v) => !v)} aria-expanded={othersOpen} className="flex items-center gap-2.5 w-full p-2.5 text-left hover:bg-surface/40 transition-colors">
                     <span className="t-body-md text-primary">Predict another player</span>
-                    <span className="t-label-sm text-muted">· {others.length}</span>
                     <span className="flex-1" />
+                    <span className="t-label-sm text-muted">{others.length}</span>
                     <ChevronDown size={11} className={clsx("text-muted transition-transform", othersOpen && "rotate-180")} />
                   </button>
                   {othersOpen ? (

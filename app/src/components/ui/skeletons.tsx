@@ -192,7 +192,7 @@ export function SkeletonNewsCard({ className }: { className?: string }) {
 export function SkeletonFeaturedNewsCard({ className }: { className?: string }) {
   return (
     <div className={clsx("flex flex-col rounded-2xl bg-card border border-border-subtle overflow-hidden", className)}>
-      <span className="block w-full aspect-video max-h-[200px] lg:max-h-[260px] bg-surface" />
+      <span className="block w-full aspect-[32/27] lg:aspect-[64/27] 2xl:aspect-[32/9] bg-surface" />
       <div className="flex flex-col gap-2.5 px-4 py-4 lg:px-6 lg:py-5">
         <SkeletonBar width={140} height={9} />
         <SkeletonBar height={22} width="90%" />

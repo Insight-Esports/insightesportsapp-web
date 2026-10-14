@@ -105,9 +105,9 @@ function ArticlePlaceholder({ size }: { size: number }) {
 }
 
 /** 16:9 picture block; the surface tone shows while the picture loads or when there is none. */
-function ArticleImage({ article, placeholder, className }: { article: NewsArticle; placeholder: number; className?: string }) {
+function ArticleImage({ article, placeholder, className, ratio = "aspect-video" }: { article: NewsArticle; placeholder: number; className?: string; ratio?: string }) {
   return (
-    <span className={clsx("block w-full aspect-video overflow-hidden bg-surface", className)}>
+    <span className={clsx("block w-full overflow-hidden bg-surface", ratio, className)}>
       <Img src={article.imageURL} alt="" fallback={<ArticlePlaceholder size={placeholder} />} fit="cover" className="w-full h-full" />
     </span>
   );
@@ -118,6 +118,11 @@ function articleLinkProps(url: string) {
   return { Tag: (href ? "a" : "div") as "a" | "div", props: href ? { href, target: "_blank", rel: "noopener noreferrer" } : {} };
 }
 
+// The hero picture is 1.5× the height of a grid picture: the grid is 1 / 2 / 3
+// columns (base / lg / 2xl) of 16:9 pictures, so the full-width hero's ratio
+// is 16:9 ÷ (1.5 / columns) → 32:27, 64:27, 32:9.
+const HERO_RATIO = "aspect-[32/27] lg:aspect-[64/27] 2xl:aspect-[32/9]";
+
 /** The front-page hero: the newest story, picture on top, display headline beneath. */
 function FeaturedNewsCard({ article }: { article: NewsArticle }) {
   const { Tag, props } = articleLinkProps(article.url);
@@ -125,7 +130,7 @@ function FeaturedNewsCard({ article }: { article: NewsArticle }) {
     <Tag {...props} className="group flex flex-col rounded-2xl bg-card border border-border-subtle hover:border-border-strong transition-colors overflow-hidden">
       {/* Same shape as before, just shorter: the picture caps at 260px and a
           story with no picture gets a slim placeholder strip, not a 16:9 void. */}
-      <ArticleImage article={article} placeholder={28} className={article.imageURL ? "max-h-[200px] lg:max-h-[260px]" : "!aspect-auto h-16"} />
+      <ArticleImage article={article} placeholder={28} ratio={article.imageURL ? HERO_RATIO : "h-16"} />
       <div className="flex flex-col gap-2 px-4 py-3.5 lg:px-5 lg:py-4">
         <Dateline article={article} />
         <span className="t-headline-lg text-primary line-clamp-2 group-hover:text-violet-light transition-colors">{article.title}</span>

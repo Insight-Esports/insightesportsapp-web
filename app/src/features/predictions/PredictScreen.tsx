@@ -18,5 +18,5 @@ export function PredictScreen({ title, back, children, wide }: { title: string; 
 }
 
 export function NavRow({ title, back, trailing }: { title: string; back?: string; trailing?: ReactNode }) {
-  return <NavBar title={title} back={back} trailing={trailing} />;
+  return <NavBar title={title} back={back} trailing={trailing} centered />;
 }
