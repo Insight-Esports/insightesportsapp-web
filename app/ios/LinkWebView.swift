@@ -52,7 +52,7 @@ enum LinkWeb {
     /// host, which is why this screen uses a plain URLSession rather than
     /// APIClient. The gate middleware skips /api/ paths, so only the
     /// Authorization header matters.
-    static let relayBase = "https://insightesportsapp.com/app"
+    static let relayBase = "https://app.insightesportsapp.com/app"
 
     static let qrPrefix = "INSIGHT-LINK:1:"
     static let hkdfInfo = "insight-link-v1"

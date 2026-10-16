@@ -359,7 +359,11 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
       onDM("read", ({ conversationId, userId, readAt }) => {
         if (conversationId !== id) return;
         if (userId && userId === me) return;                      // our own read, echoed
-        if (!userId && justPostedRead()) { void pollForNew(); return; }
+        // Only a read that names the other party counts as theirs. An
+        // unnamed read is never assumed: re-fetch the page and let
+        // other_last_read_at decide. A read from anyone else is ignored.
+        if (!userId) { if (!justPostedRead()) void pollForNew(); return; }
+        if (userId !== row.otherId) return;
         noteOtherRead(lastMineId(), readAt);
         if (!readAt) void pollForNew();
       }),

@@ -262,11 +262,11 @@ function ThreadView({ row }: { row: DMConversationRow }) {
           </div>
         ) : (
           <div className="px-4 pt-2.5">
-            <div className={clsx("flex items-end gap-2 rounded-[22px] bg-surface border border-border-subtle py-1.5 pr-1.5 max-w-[860px]", features.media ? "pl-2" : "pl-4")}>
+            <div className={clsx("flex items-end gap-2 rounded-[22px] bg-surface border border-border-subtle py-[5px] pr-[5px] max-w-[860px]", features.media ? "pl-[5px]" : "pl-4")}>
               {features.media ? (
                 <>
                   <input ref={fileInput} type="file" accept={features.video ? "image/*,video/mp4,video/quicktime" : "image/*"} className="hidden" onChange={(e) => void onPick(e)} />
-                  <button type="button" onClick={() => fileInput.current?.click()} aria-label="Attach a photo" title="Attach a photo" className="grid place-items-center size-[30px] shrink-0 text-violet hover:text-violet-light mb-px"><ImagePlus size={18} /></button>
+                  <button type="button" onClick={() => fileInput.current?.click()} aria-label="Attach a photo" title="Attach a photo" className="grid place-items-center size-[34px] shrink-0 text-violet hover:text-violet-light"><ImagePlus size={18} /></button>
                 </>
               ) : null}
               <textarea
@@ -276,9 +276,9 @@ function ThreadView({ row }: { row: DMConversationRow }) {
                 onKeyDown={onKey}
                 placeholder="Message…"
                 rows={1}
-                className="flex-1 min-w-0 resize-none bg-transparent outline-none t-body-md text-white placeholder:text-muted py-[5px] max-h-[120px] leading-[1.4]"
+                className="flex-1 min-w-0 resize-none bg-transparent outline-none t-body-md text-white placeholder:text-muted py-[7px] min-h-[34px] max-h-[120px] leading-[20px]"
               />
-              <button type="button" onClick={submit} aria-label="Send" title="Send" disabled={!canSend} className={clsx("grid place-items-center size-[30px] shrink-0 rounded-full bg-violet text-white transition-opacity", canSend ? "opacity-100 hover:brightness-110" : "opacity-0 pointer-events-none")}>
+              <button type="button" onClick={submit} aria-label="Send" title="Send" disabled={!canSend} className={clsx("grid place-items-center size-[34px] shrink-0 rounded-full bg-violet text-white transition-opacity duration-150", canSend ? "opacity-100 hover:brightness-110" : "opacity-0 pointer-events-none")}>
                 <ArrowUp size={15} strokeWidth={3} />
               </button>
             </div>

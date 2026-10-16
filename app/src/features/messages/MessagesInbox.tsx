@@ -118,22 +118,30 @@ function secondLine(t: InboxThread, now: Date): { text: string; bold: boolean } 
   const unread = threadUnread(t);
   if (unread > 1) return { text: `${unread} new messages`, bold: true };
   if (unread === 1) return { text: t.preview || "Sent you a message", bold: true };
-  if (t.previewIsMine) return { text: (otherHasSeen(t) ? "Seen " : "Sent ") + relativeAgo(when, now), bold: false };
+  if (t.previewIsMine) {
+    // "Seen" counts from when THEY read it (the thread receipt's clock);
+    // "Sent" from the send. A just-sent message is "Sent just now" until a
+    // read at/after it arrives.
+    const seenAt = otherSeenAt(t);
+    return { text: seenAt ? "Seen " + relativeAgo(seenAt, now) : "Sent " + relativeAgo(when, now), bold: false };
+  }
   return { text: t.preview || "Say hi", bold: false };
 }
 
-/** Their receipt for your newest message: the ledger's boundary or their server read stamp at/after it. */
-function otherHasSeen(t: InboxThread): boolean {
+/** When they read your newest message (the ledger's boundary or their server read stamp at/after it), or null. */
+function otherSeenAt(t: InboxThread): string | null {
   const newestId = t.newestId ?? t.row.lastMessage?.id ?? null;
-  const newestAt = t.row.lastMessage?.createdAt ?? t.row.lastMessageAt;
+  // The row's lastMessage lags a local send; lastMessageAt is kept current.
+  const candidates = [t.row.lastMessage?.createdAt, t.row.lastMessageAt].filter((x): x is string => !!x);
+  const newestAt = candidates.length ? candidates.reduce((a, b) => (new Date(b).getTime() > new Date(a).getTime() ? b : a)) : null;
   const seen = readLedger.otherSeenState(t.row.id);
-  if (newestId && seen?.throughId === newestId) return true;
+  if (newestId && seen?.throughId === newestId) return seen.at ?? t.row.otherLastReadAt ?? newestAt;
   if (newestAt) {
     const n = new Date(newestAt).getTime();
-    if (seen?.at && new Date(seen.at).getTime() >= n) return true;
-    if (t.row.otherLastReadAt && new Date(t.row.otherLastReadAt).getTime() >= n) return true;
+    if (seen?.at && new Date(seen.at).getTime() >= n) return seen.at;
+    if (t.row.otherLastReadAt && new Date(t.row.otherLastReadAt).getTime() >= n) return t.row.otherLastReadAt;
   }
-  return false;
+  return null;
 }
 
 function InboxRow({ thread, now, selected, onRemove, onBlock }: { thread: InboxThread; now: Date; selected: boolean; onRemove: () => void; onBlock: () => void }) {
