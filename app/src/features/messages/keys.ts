@@ -70,18 +70,28 @@ function tx<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => IDBReque
   }));
 }
 
+let memoFor: string | null = null;
 let memo: StoredKey | null | undefined;
 
 /** The linked key for this account, or null when the browser isn't linked. */
 export async function loadKey(userId: string): Promise<StoredKey | null> {
-  if (memo !== undefined && (memo === null || memo.userId === userId)) return memo;
-  try {
-    const k = (await tx<StoredKey | undefined>("readonly", (s) => s.get(CURRENT))) ?? null;
-    memo = k && k.userId === userId ? k : null;
-  } catch {
-    memo = null;
+  // Only a successful read is remembered, and only for the user it was read
+  // for: a transient IndexedDB failure (the store opening while another tab
+  // upgrades it, Safari warming up) used to pin `null` for the whole session
+  // and show "link your phone" to a browser that was linked.
+  if (memo !== undefined && memo !== null && String(memo.userId) === String(userId)) return memo;
+  if (memo === null && memoFor === String(userId)) return null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const k = (await tx<StoredKey | undefined>("readonly", (s) => s.get(CURRENT))) ?? null;
+      memo = k && String(k.userId) === String(userId) ? k : null;
+      memoFor = String(userId);
+      return memo;
+    } catch {
+      await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
+    }
   }
-  return memo;
+  return null;   // not cached: the next call tries the store again
 }
 
 /** Every version the browser can open: the current one, plus older ones kept from earlier links. */
@@ -99,11 +109,11 @@ export async function loadKeyForVersion(userId: string, version: number): Promis
 export async function saveKey(k: StoredKey): Promise<void> {
   await tx("readwrite", (s) => s.put(k, CURRENT));
   await tx("readwrite", (s) => s.put(k, `v${k.version}`));
-  memo = k;
+  memo = k; memoFor = String(k.userId);
 }
 
 export async function clearKeys(): Promise<void> {
-  memo = undefined;
+  memo = undefined; memoFor = null;
   try { await tx("readwrite", (s) => s.clear()); } catch { /* nothing to clear */ }
 }
 

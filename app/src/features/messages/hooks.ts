@@ -57,14 +57,20 @@ export function useMediaFeatures(): { media: boolean; video: boolean } {
   return { media: featureOn(status, "dm_media"), video: featureOn(status, "dm_video") };
 }
 
-/** True while the tab is visible (scenePhase == .active). */
+/** True while the tab is visible AND the window has focus (scenePhase ==
+ *  .active). A thread left open in a background window is not "being
+ *  read": messages that arrive there stay unread until the person comes
+ *  back to it. */
 export function usePageVisible(): boolean {
-  const [visible, setVisible] = useState(() => (typeof document === "undefined" ? true : document.visibilityState === "visible"));
+  const compute = () => (typeof document === "undefined" ? true : document.visibilityState === "visible" && document.hasFocus());
+  const [visible, setVisible] = useState(compute);
   useEffect(() => {
-    const on = () => setVisible(document.visibilityState === "visible");
+    const on = () => setVisible(compute());
     document.addEventListener("visibilitychange", on);
     window.addEventListener("focus", on);
-    return () => { document.removeEventListener("visibilitychange", on); window.removeEventListener("focus", on); };
+    window.addEventListener("blur", on);
+    on();
+    return () => { document.removeEventListener("visibilitychange", on); window.removeEventListener("focus", on); window.removeEventListener("blur", on); };
   }, []);
   return visible;
 }
