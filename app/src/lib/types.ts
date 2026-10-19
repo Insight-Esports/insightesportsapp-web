@@ -42,6 +42,47 @@ export function gameTint(game: string): string {
 // ── Match ─────────────────────────────────────────────────────────────────
 export type MatchStatus = "live" | "upcoming" | "completed";
 
+/** One place to watch a match (MatchStream — PandaScore's streams_list, normalized by the backend). */
+export interface MatchStream {
+  /** "twitch" · "youtube" · "kick" · "other" */
+  platform: string | null;
+  url: string | null;
+  /** Twitch player URL; the web plays it inline with parent=<our hostname>. */
+  embedURL: string | null;
+  channel: string | null;
+  language: string | null;
+  main: boolean;
+  official: boolean;
+  /** Demo stream stood in while live data is simulated (backend placeholderStreams). */
+  placeholder: boolean;
+}
+
+export function isTwitchStream(s: MatchStream): boolean {
+  return (s.platform ?? "").toLowerCase().includes("twitch") || (s.url ?? "").includes("twitch.tv");
+}
+
+/** Stable key for a stream row (MatchStream.id). */
+export function streamKey(s: MatchStream, index: number): string {
+  return s.url ?? s.embedURL ?? s.channel ?? `stream-${index}`;
+}
+
+/**
+ * The one to open ([MatchStream].preferred): official+main English first,
+ * then main, then any Twitch (inline player), then whatever's first.
+ */
+export function preferredStream(streams: MatchStream[] | null | undefined): MatchStream | null {
+  if (!streams?.length) return null;
+  const en = (s: MatchStream) => (s.language ?? "en").toLowerCase().startsWith("en");
+  return (
+    streams.find((s) => s.official && s.main && en(s)) ??
+    streams.find((s) => s.main && en(s)) ??
+    streams.find((s) => s.main) ??
+    streams.find((s) => isTwitchStream(s) && en(s)) ??
+    streams.find(isTwitchStream) ??
+    streams[0]
+  );
+}
+
 export interface Match {
   id: string;
   team1Name: string;
@@ -70,6 +111,11 @@ export interface Match {
   team2InhibitorsUp: number | null;
   team1WinProbability: number | null;
   team2WinProbability: number | null;
+  /**
+   * Where to watch. null on simulated matches (hide the button); an array
+   * on real PandaScore matches — may be empty before streams are listed.
+   */
+  streams: MatchStream[] | null;
 }
 
 /** Results show/group by completion time, upcoming by start. */
@@ -112,6 +158,29 @@ export function iso(v: Json): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+/** Wire `streams` (snake_case rows) → MatchStream[]; null when absent/not an array, rows without any URL dropped. */
+export function normalizeStreams(raw: Json): MatchStream[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: MatchStream[] = [];
+  for (const s of raw) {
+    if (!s || typeof s !== "object") continue;
+    const url = str(s.url ?? s.raw_url);
+    const embedURL = str(s.embed_url ?? s.embedURL ?? s.embedUrl);
+    if (!url && !embedURL) continue;
+    out.push({
+      platform: str(s.platform)?.toLowerCase() ?? null,
+      url,
+      embedURL,
+      channel: str(s.channel),
+      language: str(s.language),
+      main: bool(s.main),
+      official: bool(s.official),
+      placeholder: bool(s.placeholder),
+    });
+  }
+  return out;
+}
+
 export function normalizeMatch(raw: Json): Match {
   const statusRaw = String(raw?.status ?? "").toLowerCase();
   const status: MatchStatus =
@@ -142,6 +211,7 @@ export function normalizeMatch(raw: Json): Match {
     team2InhibitorsUp: int(raw.team2_inhibitors_up),
     team1WinProbability: num(raw.team1_win_probability),
     team2WinProbability: num(raw.team2_win_probability),
+    streams: normalizeStreams(raw.streams),
   };
 }
 export function normalizeMatches(raw: Json): Match[] {

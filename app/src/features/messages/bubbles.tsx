@@ -1,21 +1,27 @@
 // messages/bubbles.tsx — the thread's pieces (MessagesView.swift):
 // MessageBubble (mine right in violet, theirs left on surface, the
-// avatar at the end of their run), LinkPreviewBubble (a service card the
-// client builds from the host — the URL is never fetched), MediaBubble (a
-// photo or a video poster sized by the envelope's aspect; tap → viewer),
-// MediaViewer (full-screen photo / inline video), TypingBubble.
+// avatar at the end of their run), LinkPreviewBubble (TikTok/YouTube via
+// public oEmbed from the browser, everything else via /api/links/preview;
+// a plain host card when there's no preview), MediaBubble (a photo or a
+// video poster sized by the envelope's aspect; tap → viewer; "Uploading"
+// while this browser is still sending a video's bytes), MediaViewer
+// (full-screen photo / inline video; holds the poster with a clock while
+// the sender is still uploading, plays on dm:media_ready), TypingBubble.
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArrowUpRight, Image as ImageIcon, Link2, MessageSquareText, Music2, Play, SquarePlay, Tv, Video, X, RotateCw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowUpRight, Clock, Image as ImageIcon, Link2, MessageSquareText, Music2, Play, SquarePlay, Tv, Video, X, RotateCw } from "lucide-react";
 import { clsx } from "@/lib/format";
-import { InitialAvatar, Spinner } from "@/components/ui";
+import { imageSrc, InitialAvatar, Spinner } from "@/components/ui";
 import { DMMediaError, imageURL, videoURL } from "./media";
+import { onDM } from "./service";
+import { openURLFor, previewIsEmpty, useLinkPreview } from "./link-preview";
 import { clock, durationClock } from "./format-dm";
+import type { UploadState } from "./use-thread";
 import { isPendingId, mediaAspect, type DMMedia, type DMMessage } from "./types";
 
 // ── MessageBubble ─────────────────────────────────────────────────────────
-export function MessageBubble({ message, seenLabel, endsRun, avatarURL, initialsName, showTime, onToggleTime, onOpenMedia, onRetry }: {
+export function MessageBubble({ message, seenLabel, endsRun, avatarURL, initialsName, showTime, onToggleTime, onOpenMedia, onRetry, uploadState = null, onRetryUpload }: {
   message: DMMessage;
   seenLabel: string | null;
   endsRun: boolean;
@@ -25,6 +31,9 @@ export function MessageBubble({ message, seenLabel, endsRun, avatarURL, initials
   onToggleTime: () => void;
   onOpenMedia: (m: DMMessage) => void;
   onRetry: (id: string) => void;
+  /** Set while THIS browser is still uploading the video's bytes (or gave up). */
+  uploadState?: UploadState | null;
+  onRetryUpload?: (blobId: string) => void;
 }) {
   const mine = message.isMine;
   const failed = !!message.failed;
@@ -36,7 +45,7 @@ export function MessageBubble({ message, seenLabel, endsRun, avatarURL, initials
         ) : null}
         <div className={clsx("min-w-0", mine ? "ml-[70px]" : "mr-[70px]")}>
           {message.media ? (
-            <MediaBubble message={message} onOpen={onOpenMedia} onRetry={onRetry} />
+            <MediaBubble message={message} onOpen={onOpenMedia} onRetry={onRetry} uploadState={uploadState} onRetryUpload={onRetryUpload} />
           ) : message.linkURL ? (
             <LinkPreviewBubble url={message.linkURL} isMine={mine} />
           ) : (
@@ -67,11 +76,15 @@ export function MessageBubble({ message, seenLabel, endsRun, avatarURL, initials
   );
 }
 
-// ── Link preview (client-side; the server never sees the URL) ─────────────
+// ── Link preview ──────────────────────────────────────────────────────────
+// TikTok/YouTube resolve in the browser (public oEmbed); Instagram, X, short
+// links and anything else go through /api/links/preview. The card shows
+// thumbnail, title and author when known, otherwise a plain host card —
+// either way it opens the web page in a new tab (no native-app hop on web).
 function serviceFor(u: URL): { name: string; glyph: "music" | "reel" | "youtube" | "tv" | "bubble" | "link" } {
   const h = u.host.toLowerCase();
   if (h.includes("tiktok")) return { name: "TikTok", glyph: "music" };
-  if (h.includes("instagram")) return { name: "Instagram Reels", glyph: "reel" };
+  if (h.includes("instagram")) return { name: "Instagram", glyph: "reel" };
   if (h.includes("youtu")) return { name: "YouTube", glyph: "youtube" };
   if (h.includes("twitch")) return { name: "Twitch", glyph: "tv" };
   if (h.includes("x.com") || h.includes("twitter")) return { name: "X", glyph: "bubble" };
@@ -85,10 +98,42 @@ export function LinkPreviewBubble({ url, isMine }: { url: string; isMine: boolea
   const host = u ? u.host.replace(/^www\./, "") : "";
   const line = u ? host + u.pathname : url;
   const [faviconFailed, setFaviconFailed] = useState(false);
+  const [thumbFailed, setThumbFailed] = useState(false);
+  const preview = useLinkPreview(url);
+  const href = openURLFor(preview, url);
   const Glyph = service.glyph === "music" ? Music2 : service.glyph === "reel" ? SquarePlay : service.glyph === "youtube" ? Play : service.glyph === "tv" ? Tv : service.glyph === "bubble" ? MessageSquareText : Link2;
+
+  if (preview && !previewIsEmpty(preview)) {
+    // Thumbnail on top (16:9, the service's own frame), title, author · service.
+    const thumb = !thumbFailed ? imageSrc(preview.thumbnail) : null;
+    // author · service — but never "Instagram · Instagram" when the service reports itself as the author.
+    const author = preview.author && preview.author.toLowerCase() !== service.name.toLowerCase() ? preview.author : null;
+    const byline = [author, !thumb || !author ? service.name : null].filter(Boolean).join(" · ");
+    return (
+      <a
+        href={href} target="_blank" rel="noopener noreferrer"
+        className={clsx("flex flex-col w-[240px] max-w-full overflow-hidden rounded-[18px] text-left transition-[filter] hover:brightness-110", isMine ? "bg-violet text-white" : "bg-surface text-primary")}
+      >
+        {thumb ? (
+          <span className="relative block w-full aspect-video bg-card overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={thumb} alt="" className="absolute inset-0 w-full h-full object-cover" referrerPolicy="no-referrer" draggable={false} onError={() => setThumbFailed(true)} />
+            <span className="absolute left-2 bottom-2 flex items-center gap-1 px-[7px] py-[3px] rounded-full bg-black/55 text-white text-[10px] font-semibold">
+              <Glyph size={9} strokeWidth={3} />{service.name}
+            </span>
+          </span>
+        ) : null}
+        <span className="flex flex-col gap-[3px] px-3 py-2.5 min-w-0">
+          {preview.title ? <span className="t-label-md line-clamp-2 break-words">{preview.title}</span> : null}
+          {byline ? <span className={clsx("t-label-sm truncate", isMine ? "text-white/80" : "text-muted")}>{byline}</span> : null}
+        </span>
+      </a>
+    );
+  }
+
   return (
     <a
-      href={url} target="_blank" rel="noopener noreferrer"
+      href={href} target="_blank" rel="noopener noreferrer"
       className={clsx("flex items-center gap-2.5 px-3 py-2.5 rounded-[18px] max-w-[320px] transition-[filter] hover:brightness-110", isMine ? "bg-violet text-white" : "bg-surface text-primary")}
     >
       <span className={clsx("grid place-items-center size-[34px] rounded-[9px] shrink-0 overflow-hidden", isMine ? "bg-white/15" : "bg-card")}>
@@ -117,7 +162,29 @@ function frameFor(media: DMMedia): { width: number; height: number } {
   return { width: Math.round(w), height: Math.round(h) };
 }
 
-type MediaState = { kind: "loading" } | { kind: "ready"; src: string } | { kind: "expired" } | { kind: "unavailable" };
+/** "notReady": the sender hasn't finished uploading (rare for images, the
+ *  poster-first video's poster is in before the send). Re-fetched on
+ *  dm:media_ready for that upload id. */
+type MediaState = { kind: "loading" } | { kind: "notReady" } | { kind: "ready"; src: string } | { kind: "expired" } | { kind: "unavailable" };
+
+function stateFromError(e: unknown): MediaState {
+  if (e instanceof DMMediaError) {
+    if (e.kind === "expired") return { kind: "expired" };
+    if (e.kind === "notReady") return { kind: "notReady" };
+  }
+  return { kind: "unavailable" };
+}
+
+/** Fires when the sender finished uploading one of these ids (dm:media_ready). */
+function useMediaReady(ids: (string | null | undefined)[], onReady: () => void) {
+  const key = ids.filter(Boolean).join("|");
+  useEffect(() => {
+    if (!key) return;
+    const want = new Set(key.split("|"));
+    return onDM("mediaReady", ({ uploadId }) => { if (want.has(uploadId)) onReady(); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+}
 
 /** The decrypted picture (or a video's poster) for a message's media, loaded once per blob. */
 export function useMediaImage(message: DMMessage): MediaState {
@@ -125,22 +192,26 @@ export function useMediaImage(message: DMMessage): MediaState {
   const pending = isPendingId(message.id);
   const blobId = media?.blobId ?? null;
   const [state, setState] = useState<MediaState>(() => (message.localPreview ? { kind: "ready", src: message.localPreview } : { kind: "loading" }));
+  const [attempt, setAttempt] = useState(0);
+  const waiting = useRef(false);
+  waiting.current = state.kind === "notReady";
   useEffect(() => {
     if (!media || pending || message.localPreview) return;
     let active = true;
     imageURL(media)
       .then((src) => { if (!active) return; setState(src ? { kind: "ready", src } : { kind: "unavailable" }); })
-      .catch((e: unknown) => {
-        if (!active) return;
-        setState(e instanceof DMMediaError && e.kind === "expired" ? { kind: "expired" } : { kind: "unavailable" });
-      });
+      .catch((e: unknown) => { if (active) setState(stateFromError(e)); });
     return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [blobId, pending, message.localPreview]);
+  }, [blobId, pending, message.localPreview, attempt]);
+  useMediaReady([media?.blobId, media?.posterId], () => { if (waiting.current) setAttempt((a) => a + 1); });
   return state;
 }
 
-export function MediaBubble({ message, onOpen, onRetry }: { message: DMMessage; onOpen: (m: DMMessage) => void; onRetry: (id: string) => void }) {
+export function MediaBubble({ message, onOpen, onRetry, uploadState = null, onRetryUpload }: {
+  message: DMMessage; onOpen: (m: DMMessage) => void; onRetry: (id: string) => void;
+  uploadState?: UploadState | null; onRetryUpload?: (blobId: string) => void;
+}) {
   const media = message.media!;
   const pending = isPendingId(message.id);
   const failed = !!message.failed;
@@ -183,6 +254,24 @@ export function MediaBubble({ message, onOpen, onRetry }: { message: DMMessage; 
       ) : null}
       {pending && !failed ? (
         <span className="absolute inset-0 grid place-items-center bg-black/25"><Spinner size={22} className="border-white/40 border-t-white" /></span>
+      ) : uploadState === "uploading" ? (
+        // Sent (the poster is there for both sides); the video bytes are still on their way up.
+        <span className="absolute left-2 top-2 flex items-center gap-[5px] px-2 py-1 rounded-full bg-black/55 text-white text-[11px] font-semibold">
+          <Spinner size={11} className="border-white/40 border-t-white" />Uploading
+        </span>
+      ) : uploadState === "failed" ? (
+        <span
+          role="button"
+          onClick={(e) => { e.stopPropagation(); onRetryUpload?.(media.blobId); }}
+          className="absolute left-2 top-2 flex items-center gap-[5px] px-2 py-1 rounded-full bg-black/65 text-white text-[11px] font-semibold hover:bg-black/80"
+        >
+          <RotateCw size={11} />Upload failed · Retry
+        </span>
+      ) : state.kind === "notReady" ? (
+        // The sender is still uploading — hold the frame with a clock, never an error.
+        <span className="absolute left-2 top-2 flex items-center gap-[5px] px-2 py-1 rounded-full bg-black/55 text-white text-[11px] font-semibold">
+          <Clock size={11} />Processing
+        </span>
       ) : null}
       {failed ? (
         <span className="absolute inset-0 grid place-items-center bg-black/45 text-white t-label-md">Tap to retry</span>
@@ -197,6 +286,11 @@ export function MediaViewer({ message, onClose }: { message: DMMessage; onClose:
   const image = useMediaImage(message);
   const [video, setVideo] = useState<string | null>(() => (isPendingId(message.id) && message.localPreview ? message.localPreview : null));
   const [videoError, setVideoError] = useState<string | null>(null);
+  /** Video bytes not on the server yet (poster-first send in flight): hold the poster, play on dm:media_ready. */
+  const [waiting, setWaiting] = useState(false);
+  const waitingRef = useRef(false);
+  waitingRef.current = waiting;
+  const [attempt, setAttempt] = useState(0);
   const [zoomed, setZoomed] = useState(false);
 
   useEffect(() => {
@@ -211,10 +305,15 @@ export function MediaViewer({ message, onClose }: { message: DMMessage; onClose:
     if (!media || media.kind !== "video" || isPendingId(message.id)) return;
     let active = true;
     videoURL(media)
-      .then((u) => { if (active) setVideo(u); })
-      .catch((e: unknown) => { if (active) setVideoError(e instanceof DMMediaError && e.kind === "expired" ? "Video expired" : "Video unavailable"); });
+      .then((u) => { if (active) { setWaiting(false); setVideo(u); } })
+      .catch((e: unknown) => {
+        if (!active) return;
+        if (e instanceof DMMediaError && e.kind === "notReady") { setWaiting(true); return; }   // the sender is still uploading — hold the poster
+        setVideoError(e instanceof DMMediaError && e.kind === "expired" ? "Video expired" : "Video unavailable");
+      });
     return () => { active = false; };
-  }, [media, message.id]);
+  }, [media, message.id, attempt]);
+  useMediaReady([media?.blobId], () => { if (waitingRef.current) setAttempt((a) => a + 1); });
 
   if (!media) return null;
   return (
@@ -224,6 +323,19 @@ export function MediaViewer({ message, onClose }: { message: DMMessage; onClose:
           <video src={video} controls autoPlay playsInline className="max-w-full max-h-full" onClick={(e) => e.stopPropagation()} />
         ) : videoError ? (
           <span className="t-body-md text-muted">{videoError}</span>
+        ) : waiting ? (
+          // Poster-first: the frame they already have, a quiet clock, no error.
+          <div className="relative max-w-full max-h-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            {image.kind === "ready" ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={image.src} alt="" className="max-w-full max-h-full object-contain select-none" draggable={false} />
+            ) : null}
+            <span className="absolute inset-0 grid place-items-center">
+              <span className="flex items-center gap-2 px-3 py-2 rounded-full bg-black/60 text-white t-label-sm">
+                <Clock size={13} />Still uploading… it&apos;ll play as soon as it lands.
+              </span>
+            </span>
+          </div>
         ) : (
           <Spinner size={28} className="border-white/40 border-t-white" />
         )
@@ -235,7 +347,7 @@ export function MediaViewer({ message, onClose }: { message: DMMessage; onClose:
           className={clsx("max-w-full max-h-full object-contain transition-transform duration-200 select-none", zoomed ? "scale-[2] cursor-zoom-out" : "cursor-zoom-in")}
           draggable={false}
         />
-      ) : image.kind === "loading" ? (
+      ) : image.kind === "loading" || image.kind === "notReady" ? (
         <Spinner size={28} className="border-white/40 border-t-white" />
       ) : (
         <span className="t-body-md text-muted">{image.kind === "expired" ? "Photo expired" : "Photo unavailable"}</span>

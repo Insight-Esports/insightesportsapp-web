@@ -53,6 +53,8 @@ export interface ScoreHUDProps {
   team1Alive?: number | null;
   team2Alive?: number | null;
   isLive?: boolean;
+  /** Trailing control in the top row (LiveMatchView's Watch pill); the live screen passes it while the match is on. */
+  watch?: ReactNode;
 }
 
 function sideLabel(match: Match, isRoundBased: boolean, raw: string | null | undefined, isTeam1: boolean, team1Score: number, team2Score: number): string | null {
@@ -145,6 +147,7 @@ export function ScoreHUD(p: ScoreHUDProps) {
         )}
         <span className="flex-1" />
         {p.viewerCount !== "—" ? <span className="inline-flex items-center gap-[3px] t-label-sm text-muted"><Eye size={10} />{p.viewerCount}</span> : null}
+        {p.watch}
       </div>
       <div className="flex items-center gap-3">
         <HUDTeamColumn p={p} side={1} />

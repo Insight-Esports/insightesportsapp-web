@@ -301,4 +301,7 @@ export const endpoints = {
   dmUnblock: (userId: string) => `/dm/blocks/${p(userId)}`,
   dmUploadCreate: "/dm/uploads",
   dmUpload: (id: string) => `/dm/uploads/${p(id)}`,
+  dmUploadComplete: (id: string) => `/dm/uploads/${p(id)}/complete`,
+  // Links
+  linkPreview: (url: string) => `/links/preview?url=${q(url)}`,
 };

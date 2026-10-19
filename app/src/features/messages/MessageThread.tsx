@@ -8,17 +8,17 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUp, ChevronLeft, Ellipsis, Hand, ImagePlus, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, Ellipsis, Hand, ImagePlus, Play, Trash2, X } from "lucide-react";
 import { useHideTabBar } from "@/components/shell/tab-bar";
 import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
-import { ConfirmDialog, EmptyState, InitialAvatar, SkeletonBar, Toast } from "@/components/ui";
+import { ConfirmDialog, EmptyState, InitialAvatar, SkeletonBar, Spinner, Toast } from "@/components/ui";
 import { SkeletonBubbles, SkeletonCircle } from "@/components/ui/skeletons";
 import { blockUser, conversation as fetchConversation, removeConversation, sendTyping } from "./service";
-import { DMMediaError, prepareImage, prepareVideo } from "./media";
+import { DMMediaError, prepareImage, prepareVideo, type PreparedMedia } from "./media";
 import { emitRemovedLocal, forgetRow, knownRow, queueInboxToast, rememberRow } from "./dm-local";
 import { dmsReadOnly, useMediaFeatures, useNow, usePageVisible } from "./hooks";
-import { chapterStamp } from "./format-dm";
+import { chapterStamp, durationClock } from "./format-dm";
 import { useThread } from "./use-thread";
 import { MediaViewer, MessageBubble, TypingBubble } from "./bubbles";
 import { MenuItem } from "./MessagesInbox";
@@ -83,9 +83,13 @@ function ThreadView({ row }: { row: DMConversationRow }) {
   }, [router, row.id]);
 
   const vm = useThread(row, visible, onRemoved);
-  const { messages, loaded, canLoadMore, isLoadingMore, blockedState, sendError, clearSendError, otherIsTyping, receiptMessageId, seenLabel, loadMore, send, sendMedia, retry, unblock, startsRun, endsRun, showsTimeStamp } = vm;
+  const { messages, loaded, canLoadMore, isLoadingMore, blockedState, sendError, clearSendError, otherIsTyping, receiptMessageId, seenLabel, loadMore, send, sendMedia, retry, unblock, startsRun, endsRun, showsTimeStamp, uploadStateFor, retryUpload } = vm;
 
   const [draft, setDraft] = useState("");
+  // The picked photo/video, staged in the composer until Send (MessageThreadView.attachment).
+  const [attachment, setAttachment] = useState<PreparedMedia | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const prepareGen = useRef(0);
   const [revealedTimeId, setRevealedTimeId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<DMMessage | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -107,10 +111,22 @@ function ThreadView({ row }: { row: DMConversationRow }) {
   }, [menu]);
 
   // ── Scrolling: bottom-anchored; a single append animates, loads jump;
-  //    paging upward keeps the viewport where it was. ─────────────────────
+  //    paging upward keeps the viewport where it was. Their message while
+  //    you're reading older ones stays below the fold (Instagram) behind a
+  //    "New messages" chip; yours always pins. ──────────────────────────────
   const list = useRef<HTMLDivElement>(null);
   const prevCount = useRef(0);
   const prepend = useRef<{ height: number; top: number } | null>(null);
+  const atBottom = useRef(true);
+  const [newBelow, setNewBelow] = useState(false);
+  const measureAtBottom = (el: HTMLDivElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+  const scrollToBottom = useCallback((behavior: ScrollBehavior) => {
+    const el = list.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
+    atBottom.current = true;
+    setNewBelow(false);
+  }, []);
   useLayoutEffect(() => {
     const el = list.current;
     if (!el) return;
@@ -119,15 +135,31 @@ function ThreadView({ row }: { row: DMConversationRow }) {
       el.scrollTop = el.scrollHeight - prepend.current.height + prepend.current.top;
       prepend.current = null;
     } else if (count !== prevCount.current) {
-      const animated = count === prevCount.current + 1 && prevCount.current > 0;
-      el.scrollTo({ top: el.scrollHeight, behavior: animated ? "smooth" : "auto" });
+      const append = count > prevCount.current && prevCount.current > 0;
+      const newestIsMine = messages[count - 1]?.isMine === true;
+      if (append && !atBottom.current && !newestIsMine) setNewBelow(true);
+      else scrollToBottom(append ? "smooth" : "auto");
     }
     prevCount.current = count;
-  }, [messages]);
+  }, [messages, scrollToBottom]);
   useEffect(() => {
-    if (!otherIsTyping || !list.current) return;
-    list.current.scrollTo({ top: list.current.scrollHeight, behavior: "smooth" });
-  }, [otherIsTyping]);
+    if (!otherIsTyping || !atBottom.current) return;
+    scrollToBottom("smooth");
+  }, [otherIsTyping, scrollToBottom]);
+  // The viewport shrinking (the attachment strip, the composer growing a
+  // line) re-pins the newest message only when the bottom was in view.
+  useEffect(() => {
+    const el = list.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let lastH = el.clientHeight;
+    const ro = new ResizeObserver(() => {
+      const h = el.clientHeight;
+      if (h < lastH && atBottom.current) el.scrollTo({ top: el.scrollHeight });
+      lastH = h;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const loadEarlier = useCallback(() => {
     const el = list.current;
@@ -137,7 +169,10 @@ function ThreadView({ row }: { row: DMConversationRow }) {
   }, [canLoadMore, isLoadingMore, loadMore]);
   const onScroll = () => {
     const el = list.current;
-    if (el && el.scrollTop < 40 && canLoadMore && !isLoadingMore) loadEarlier();
+    if (!el) return;
+    atBottom.current = measureAtBottom(el);
+    if (atBottom.current && newBelow) setNewBelow(false);
+    if (el.scrollTop < 40 && canLoadMore && !isLoadingMore) loadEarlier();
   };
 
   // ── Composer ───────────────────────────────────────────────────────────
@@ -155,30 +190,43 @@ function ThreadView({ row }: { row: DMConversationRow }) {
   };
   const submit = () => {
     const text = draft.trim();
-    if (!text) return;
+    const media = attachment;
+    if (!text && !media) return;
     setDraft("");
+    setAttachment(null);
     requestAnimationFrame(grow);
-    void send(text);
+    // The picture first, the words under it — one task so they land in that order.
+    void (async () => {
+      if (media) await sendMedia(media);
+      if (text) await send(text);
+    })();
   };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
   };
+  /** A picked photo or video: prepared, then staged in the composer. Nothing leaves until Send. */
   const onPick = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
     const isVideo = file.type.startsWith("video/");
+    if (isVideo && !features.video) { setToast("Couldn't send — Videos aren't available yet."); return; }
+    const gen = ++prepareGen.current;
+    setPreparing(true);
+    setAttachment(null);
     try {
-      if (isVideo) {
-        if (!features.video) { setToast("Couldn't send — Videos aren't available yet."); return; }
-        await sendMedia(await prepareVideo(file));
-      } else {
-        await sendMedia(await prepareImage(file));
-      }
+      const prepared = isVideo ? await prepareVideo(file) : await prepareImage(file);
+      if (gen !== prepareGen.current) return;      // X'd while preparing
+      setAttachment(prepared);
+      textarea.current?.focus();
     } catch (err) {
+      if (gen !== prepareGen.current) return;
       setToast(`Couldn't send — ${err instanceof DMMediaError ? err.message : "That file couldn't be sent."}`);
+    } finally {
+      if (gen === prepareGen.current) setPreparing(false);
     }
   };
+  const discardAttachment = () => { prepareGen.current += 1; setPreparing(false); setAttachment(null); };
 
   const runMenuAction = async () => {
     const which = confirm;
@@ -190,7 +238,7 @@ function ThreadView({ row }: { row: DMConversationRow }) {
     router.replace("/messages");
   };
 
-  const canSend = draft.trim().length > 0;
+  const canSend = draft.trim().length > 0 || attachment !== null;
   const profileHref = `/profile/${encodeURIComponent(row.otherId)}`;
 
   return (
@@ -241,6 +289,8 @@ function ThreadView({ row }: { row: DMConversationRow }) {
                     onToggleTime={() => setRevealedTimeId((cur) => (cur === m.id ? null : m.id))}
                     onOpenMedia={setViewing}
                     onRetry={(id) => void retry(id)}
+                    uploadState={m.media?.kind === "video" ? uploadStateFor(m.media.blobId) : null}
+                    onRetryUpload={retryUpload}
                   />
                 </div>
               );
@@ -250,6 +300,18 @@ function ThreadView({ row }: { row: DMConversationRow }) {
           </div>
         )}
       </div>
+
+      {/* Their message landed while you were reading older ones */}
+      {newBelow ? (
+        <div className="relative h-0 shrink-0">
+          <button
+            type="button" onClick={() => scrollToBottom("smooth")}
+            className="absolute left-1/2 -translate-x-1/2 -top-11 z-10 flex items-center gap-1 px-3 py-1.5 rounded-full bg-violet text-white t-label-sm shadow-lg hover:brightness-110"
+          >
+            New messages<ArrowDown size={12} strokeWidth={2.5} />
+          </button>
+        </div>
+      ) : null}
 
       {/* Blocked state, read-only switch, or composer */}
       <div className="shrink-0 hairline-t bg-bg pb-[max(8px,env(safe-area-inset-bottom))] md:pb-2">
@@ -262,6 +324,35 @@ function ThreadView({ row }: { row: DMConversationRow }) {
           </div>
         ) : (
           <div className="px-4 pt-2.5">
+            {preparing || attachment ? (
+              // The picked photo/video in the composer: a thumbnail with an X, the video's length on it.
+              <div className="flex items-start pb-2.5 max-w-[860px]">
+                <div className="relative size-[84px] shrink-0">
+                  <div className="size-[84px] rounded-[12px] overflow-hidden border border-border-subtle bg-surface">
+                    {attachment ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={attachment.previewURL} alt="" className="w-full h-full object-cover" draggable={false} />
+                    ) : (
+                      <span className="block w-full h-full animate-pulse bg-surface" />
+                    )}
+                  </div>
+                  {preparing ? (
+                    <span className="absolute inset-0 grid place-items-center"><Spinner size={18} className="border-white/40 border-t-white" /></span>
+                  ) : attachment?.kind === "video" ? (
+                    <span className="absolute left-[5px] bottom-[5px] flex items-center gap-[3px] px-1.5 py-[3px] rounded-full bg-black/60 text-white">
+                      <Play size={8} className="fill-white" strokeWidth={3} />
+                      <span className="t-mono-sm !text-[10px] !font-semibold">{durationClock(attachment.duration ?? 0)}</span>
+                    </span>
+                  ) : null}
+                  <button
+                    type="button" onClick={discardAttachment} aria-label="Remove attachment" title="Remove"
+                    className="absolute -top-1.5 -right-1.5 grid place-items-center size-[22px] rounded-full bg-black/70 text-white border border-white/35 hover:bg-black"
+                  >
+                    <X size={10} strokeWidth={3} />
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className={clsx("flex items-end gap-2 rounded-[22px] bg-surface border border-border-subtle py-[5px] pr-[5px] max-w-[860px]", features.media ? "pl-[5px]" : "pl-4")}>
               {features.media ? (
                 <>

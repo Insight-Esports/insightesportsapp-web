@@ -60,6 +60,20 @@ function pair(game, seed) {
   return [a, b];
 }
 
+// One Twitch stream row, shaped like services/placeholderStreams.js. The
+// web adds its own `parent=` (the page host) when it embeds the player.
+const twitchStream = (channel, extra = {}) => ({
+  platform: "twitch",
+  url: `https://www.twitch.tv/${channel}`,
+  embed_url: `https://player.twitch.tv/?channel=${encodeURIComponent(channel)}&parent=insightesportsapp.com&muted=false`,
+  channel,
+  language: "en",
+  main: true,
+  official: false,
+  placeholder: true,
+  ...extra,
+});
+
 function base(id, game, seed, status) {
   const [t1, t2] = pair(game, seed);
   return {
@@ -98,6 +112,13 @@ export function allMatches() {
       team1_win_probability: null,
       team2_win_probability: null,
       ...(game === "League" ? { team1_inhibitors_up: 3, team2_inhibitors_up: Math.floor(rand(seed + 9) * 2) + 2 } : {}),
+      // Where to watch (the backend's normalized PandaScore streams_list;
+      // placeholder rows stand in for simulated matches). m-live-1: one
+      // Twitch stream → the Watch pill plays it inline; m-live-2: several →
+      // the pill opens a picker. The rest carry null, which hides the pill.
+      streams: i === 0 ? [twitchStream("valorant", { official: true })]
+        : i === 1 ? [twitchStream("valorant_br", { language: "pt", main: false }), twitchStream("valorant"), { platform: "youtube", url: "https://www.youtube.com/@valorantesports/live", embed_url: null, channel: null, language: "en", main: false, official: true }]
+        : null,
     });
     out.push(m);
   }

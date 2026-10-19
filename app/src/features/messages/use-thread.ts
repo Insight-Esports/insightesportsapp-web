@@ -12,7 +12,7 @@ import { useAppState } from "@/store/app-state";
 import {
   asURL, decrypt, markRead, messages as fetchMessages, noteLocalMessage, onDM, publicKeyFor, readLedger, sendEnvelope, sendText, unblockUser,
 } from "./service";
-import { DMMediaError, uploadMedia, type PreparedMedia } from "./media";
+import { beginMedia, DMMediaError, type PreparedMedia } from "./media";
 import type { DMEnvelope } from "./crypto";
 import { emitReadLocal, setOpenConversation } from "./dm-local";
 import { seenLabelFor } from "./format-dm";
@@ -24,6 +24,10 @@ const NO_KEY_TEXT = "This user can't receive messages yet — they haven't opene
 const PAGE = 50;
 
 type Retry = { kind: "text"; text: string } | { kind: "media"; media: PreparedMedia };
+
+/** A poster-first video whose bytes are still going up from THIS browser (or didn't make it). */
+export type UploadState = "uploading" | "failed";
+const VIDEO_UPLOAD_FAILED = "The video didn't finish uploading. Check your connection and send it again.";
 
 export function mediaFromEnvelope(e: DMEnvelope): DMMedia | null {
   if ((e.t !== "image" && e.t !== "video") || !e.id || !e.key || !e.nonce) return null;
@@ -54,6 +58,8 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
   const [blockedState, setBlockedState] = useState<BlockedState | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [otherIsTyping, setTyping] = useState(false);
+  const [uploads, setUploads] = useState<Map<string, UploadState>>(() => new Map());
+  const finishers = useRef(new Map<string, () => Promise<void>>());
   const [receipt, setReceipt] = useState<{ throughId: string | null; at: string | null; learnedAt: string | null }>({ throughId: null, at: null, learnedAt: null });
   const receiptRef = useRef(receipt);
 
@@ -61,6 +67,7 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
   const otherKey = useRef<{ pub: string | null; ver: number | null }>({ pub: row.otherPublicKey, ver: row.otherKeyVersion });
   const lastOwnReadPostAt = useRef(0);
   const typingClear = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTheirsAt = useRef(0);
   const retries = useRef(new Map<string, Retry>());
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
@@ -140,10 +147,15 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
   }, [id, noteViewedNow]);
 
   // ── Typing ─────────────────────────────────────────────────────────────
+  /** The dots show only while they're actually typing: each typing event
+   *  (sent every ~2 s while keys are pressed) keeps them for 2.5 s more, and
+   *  a typing event that was already on the wire when their message landed
+   *  doesn't bring them back for a message that's already here. */
   const noteTyping = useCallback(() => {
+    if (Date.now() - lastTheirsAt.current < 1200) return;
     setTyping(true);
     if (typingClear.current) clearTimeout(typingClear.current);
-    typingClear.current = setTimeout(() => setTyping(false), 3000);
+    typingClear.current = setTimeout(() => setTyping(false), 2500);
   }, []);
 
   // ── Load / page / receive ──────────────────────────────────────────────
@@ -162,7 +174,7 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
         return;
       }
     }
-    if (!m.isMine) { if (typingClear.current) clearTimeout(typingClear.current); setTyping(false); }
+    if (!m.isMine) { if (typingClear.current) clearTimeout(typingClear.current); setTyping(false); lastTheirsAt.current = Date.now(); }
     setMessages((prev) => [...prev, m]);
     noteLocalMessage(id, m);
     if (!m.isMine) await markReadIfVisible();
@@ -292,7 +304,39 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
     }
   }, [confirmPending, ensureKeys, handleSendError, id, me, row.otherId, setMessages]);
 
-  /** Optimistic like text: the picked photo shows at once; encrypt → upload → send. */
+  // ── Poster-first video uploads (the bytes ride after the send) ─────────
+  const setUpload = useCallback((blobId: string, state: UploadState | null) => {
+    setUploads((prev) => {
+      const next = new Map(prev);
+      if (state) next.set(blobId, state); else next.delete(blobId);
+      return next;
+    });
+  }, []);
+
+  /** Runs (or re-runs) a video's upload. Failure is the one case the receiver
+   *  can't recover from on their own, so it's surfaced here and on the bubble. */
+  const runFinish = useCallback(async (blobId: string) => {
+    const finish = finishers.current.get(blobId);
+    if (!finish) return;
+    setUpload(blobId, "uploading");
+    try {
+      await finish();
+      finishers.current.delete(blobId);
+      setUpload(blobId, null);
+    } catch {
+      setUpload(blobId, "failed");
+      setSendError(VIDEO_UPLOAD_FAILED);
+    }
+  }, [setUpload]);
+
+  /** The sender's own "Uploading" / "Upload failed" badge for a video bubble. */
+  const uploadStateFor = useCallback((blobId: string | null | undefined): UploadState | null => (blobId ? uploads.get(blobId) ?? null : null), [uploads]);
+  const retryUpload = useCallback((blobId: string) => { void runFinish(blobId); }, [runFinish]);
+
+  /** Optimistic like text: the picked photo shows at once. A photo is uploaded
+   *  first (small); a video sends the moment its POSTER is in — both sides get
+   *  the bubble with the poster within a second — and the video bytes follow
+   *  in the background (the receiver's player waits on dm:media_ready). */
   const sendMedia = useCallback(async (media: PreparedMedia) => {
     if (!(await ensureKeys())) { setBlockedState({ text: NO_KEY_TEXT, offersUnblock: false }); return; }
     setBlockedState(null);
@@ -308,13 +352,19 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
     setMessages((prev) => [...prev, pending]);
     noteLocalMessage(id, pending);
     try {
-      const envelope = await uploadMedia(media, id);
+      const staged = await beginMedia(media, id);
+      const envelope = staged.envelope;
       const r = await sendEnvelope(envelope, media.kind, id, row.otherId, pub, ver);
       confirmPending(pendingId, { id: r.id, senderId: r.senderId, text: label, isMine: true, createdAt: r.createdAt, decrypted: true, linkURL: null, media: mediaFromEnvelope(envelope), localPreview: media.previewURL });
+      if (staged.finish && envelope.id) {
+        // The video upload rides after the send, off the send path.
+        finishers.current.set(envelope.id, staged.finish);
+        void runFinish(envelope.id);
+      }
     } catch (e) {
       handleSendError(e, pendingId);
     }
-  }, [confirmPending, ensureKeys, handleSendError, id, me, row.otherId, setMessages]);
+  }, [confirmPending, ensureKeys, handleSendError, id, me, row.otherId, runFinish, setMessages]);
 
   /** Tap to retry: the failed bubble goes, the same content is sent again. */
   const retry = useCallback(async (pendingId: string) => {
@@ -394,5 +444,6 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
     messages, loaded, canLoadMore, isLoadingMore, blockedState, sendError, clearSendError: () => setSendError(null),
     otherIsTyping, receipt, receiptMessageId, seenLabel,
     load, loadMore, send, sendMedia, retry, unblock, startsRun, endsRun, showsTimeStamp,
+    uploadStateFor, retryUpload,
   };
 }

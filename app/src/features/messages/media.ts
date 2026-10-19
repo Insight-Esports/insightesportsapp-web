@@ -4,9 +4,14 @@
 //   send:    prepare (photo → ≤1600px JPEG; video → MP4 as picked, ≤60 s,
 //            poster frame from a <video>) → encrypt with a RANDOM per-file
 //            AES-256-GCM key → POST /dm/uploads → PUT bytes to upload_url →
-//            describe it inside the message envelope.
+//            POST /dm/uploads/:id/complete → describe it inside the message
+//            envelope. Videos go poster-first (DmMediaService.swift `begin`):
+//            the message is sent as soon as the poster is in; the video
+//            bytes follow and the server fans out dm:media_ready
+//            {conversationId, uploadId, kind, size}.
 //   receive: GET /dm/uploads/:id → {url} (signed, 10 min) → fetch bytes with
 //            no auth → decrypt with the envelope's key → object URL (memory).
+//            404 UPLOAD_NOT_READY = the sender is still uploading → notReady.
 //
 // Feature-gated by /status → features.dm_media (photos) and dm_video.
 "use client";
@@ -15,6 +20,8 @@ import { api, endpoints } from "@/lib/api";
 import { b64decode, b64encode, importFileKey, openBytes, randomFileKey, sealBytes, type DMEnvelope } from "./crypto";
 import type { DMMedia } from "./types";
 
+// DMMediaService's limits, verbatim. The browser can't transcode to the
+// 720p / 2 Mbps H.264 target, so a video goes as picked within these caps.
 export const MAX_IMAGE_SIDE = 1600;
 export const IMAGE_QUALITY = 0.82;
 export const MAX_VIDEO_SECONDS = 60;
@@ -22,7 +29,7 @@ export const MAX_VIDEO_BYTES = 50_000_000;
 export const MAX_IMAGE_BYTES = 6_000_000;
 
 export class DMMediaError extends Error {
-  constructor(public kind: "unreadable" | "tooLong" | "tooLarge" | "exportFailed" | "uploadFailed" | "downloadFailed" | "badKey" | "expired" | "unavailable", message: string) {
+  constructor(public kind: "notReady" | "unreadable" | "tooLong" | "tooLarge" | "exportFailed" | "uploadFailed" | "downloadFailed" | "badKey" | "expired" | "unavailable", message: string) {
     super(message); this.name = "DMMediaError";
   }
 }
@@ -112,11 +119,18 @@ export async function prepareVideo(file: File): Promise<PreparedMedia> {
 }
 
 // ── Upload ────────────────────────────────────────────────────────────────
-async function put(bytes: Uint8Array, conversationId: string, kind: "image" | "video"): Promise<string> {
+interface UploadTicket { id: string; upload_url: string }
+
+/** POST /dm/uploads {conversationId, contentType, size, kind} → {id, upload_url}. */
+async function createTicket(conversationId: string, size: number, kind: "image" | "video"): Promise<UploadTicket> {
   const ticket = await api.post<{ id?: string; upload_url?: string }>(endpoints.dmUploadCreate, {
-    conversationId, contentType: "application/octet-stream", size: bytes.length, kind,
+    conversationId, contentType: "application/octet-stream", size, kind,   // the server never learns what it holds
   });
   if (!ticket?.id || !ticket.upload_url) throw new DMMediaError("uploadFailed", "Upload failed (0).");
+  return { id: ticket.id, upload_url: ticket.upload_url };
+}
+
+async function put(bytes: Uint8Array, ticket: UploadTicket): Promise<void> {
   let r: Response;
   try {
     r = await fetch(ticket.upload_url, { method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body: bytes as BodyInit });
@@ -124,26 +138,57 @@ async function put(bytes: Uint8Array, conversationId: string, kind: "image" | "v
     throw new DMMediaError("uploadFailed", "Upload failed (network).");
   }
   if (!r.ok) throw new DMMediaError("uploadFailed", `Upload failed (${r.status}).`);
-  return ticket.id;
 }
 
-/** Encrypts and uploads one attachment (plus its poster) and returns the envelope that describes it. */
-export async function uploadMedia(media: PreparedMedia, conversationId: string): Promise<DMEnvelope> {
+/** Tells the server the bytes are in; it fans out dm:media_ready. Best
+ *  effort: the bytes are already there, a missed /complete only delays the
+ *  receiver's first fetch. */
+async function complete(id: string): Promise<void> {
+  try { await api.post(endpoints.dmUploadComplete(id), {}); } catch { /* best effort */ }
+}
+
+/** What `beginMedia` hands back: the envelope to send NOW, and the work
+ *  that still has to happen after the message is on its way. */
+export interface StagedMedia {
+  envelope: DMEnvelope;
+  /** Video only: PUT the (already encrypted) bytes and /complete the upload. null for images. */
+  finish: (() => Promise<void>) | null;
+}
+
+/** Instant media sends (DMMediaService.begin). Photo: encrypt → upload →
+ *  /complete → envelope. Video: encrypt both → create the video ticket (an
+ *  id only) → upload the poster → /complete it → envelope. The caller sends
+ *  the message right away, then runs `finish`, which uploads the video and
+ *  /completes it; the server fans out dm:media_ready and the receiver fetches. */
+export async function beginMedia(media: PreparedMedia, conversationId: string): Promise<StagedMedia> {
   const { key, base64 } = await randomFileKey();
   const sealed = await sealBytes(media.bytes, key);
-  const id = await put(sealed.bytes, conversationId, media.kind);
-  const env: DMEnvelope = { t: media.kind, w: media.width, h: media.height, id, key: base64, nonce: b64encode(sealed.nonce), mime: media.mime, size: sealed.bytes.length };
+  const ticket = await createTicket(conversationId, sealed.bytes.length, media.kind);
+  const env: DMEnvelope = { t: media.kind, w: media.width, h: media.height, id: ticket.id, key: base64, nonce: b64encode(sealed.nonce), mime: media.mime, size: sealed.bytes.length };
   if (media.duration != null) env.dur = media.duration;
-  if (media.poster) {
-    const ps = await sealBytes(media.poster, key);
-    env.poster = await put(ps.bytes, conversationId, "image");
-    env.pnonce = b64encode(ps.nonce);
+
+  // Sender-side cache first: our own bubble never downloads.
+  blobCache.set(ticket.id, sealed.bytes);
+  decryptedCache.set(ticket.id, media.kind === "image" ? media.previewURL : URL.createObjectURL(new Blob([media.bytes as BlobPart], { type: media.mime })));
+
+  if (media.kind === "video") {
+    if (media.poster) {
+      const ps = await sealBytes(media.poster, key);
+      const pt = await createTicket(conversationId, ps.bytes.length, "image");
+      await put(ps.bytes, pt);
+      await complete(pt.id);
+      env.poster = pt.id;
+      env.pnonce = b64encode(ps.nonce);
+      blobCache.set(pt.id, ps.bytes);
+      decryptedCache.set(pt.id, media.previewURL);
+    }
+    const bytes = sealed.bytes;
+    return { envelope: env, finish: async () => { await put(bytes, ticket); await complete(ticket.id); } };
   }
-  // Sender-side cache: what we just sent opens without a download.
-  blobCache.set(id, sealed.bytes);
-  decryptedCache.set(id, media.kind === "image" ? media.previewURL : URL.createObjectURL(new Blob([media.bytes as BlobPart], { type: media.mime })));
-  if (env.poster && media.poster) decryptedCache.set(env.poster, URL.createObjectURL(new Blob([media.poster as BlobPart], { type: "image/jpeg" })));
-  return env;
+
+  await put(sealed.bytes, ticket);
+  await complete(ticket.id);
+  return { envelope: env, finish: null };
 }
 
 // ── Download ──────────────────────────────────────────────────────────────
@@ -164,6 +209,8 @@ async function encryptedBlob(id: string): Promise<Uint8Array> {
       const code = (e as { code?: string | null })?.code ?? null;
       const status = (e as { status?: number })?.status ?? 0;
       if (status === 410 || code === "UPLOAD_EXPIRED") throw new DMMediaError("expired", "expired");
+      // The row exists but the bytes don't yet: the sender is still uploading (poster-first video).
+      if (code === "UPLOAD_NOT_READY") throw new DMMediaError("notReady", "Still uploading…");
       if (status === 404) throw new DMMediaError("unavailable", "unavailable");
       throw new DMMediaError("downloadFailed", `Couldn't load media (${status}).`);
     }

@@ -307,6 +307,16 @@ export function register(app, h) {
     uploads.set(id, { conversation_id: c.id, kind, bytes: null, expired: false });
     res.status(201).json({ id, upload_url: `${PUBLIC_URL}/mock-uploads/${id}`, expires_in: 7200, kind, max_bytes: cap, expires_at: new Date(Date.now() + 7200e3).toISOString() });
   });
+  // The uploader says the PUT finished → dm:media_ready {conversationId, uploadId, kind, size} to both sides
+  // (the mock has only me online). 409 UPLOAD_NOT_READY when the bytes aren't in yet.
+  app.post("/api/dm/uploads/:id/complete", protect, (req, res) => {
+    const u = uploads.get(req.params.id);
+    if (!u) return res.status(404).json({ error: "Not found", code: "UPLOAD_NOT_FOUND" });
+    if (!u.bytes) return res.status(409).json({ error: "The upload has not finished", code: "UPLOAD_NOT_READY" });
+    const payload = { conversationId: u.conversation_id, uploadId: req.params.id, kind: u.kind, size: u.bytes.length };
+    toMe("dm:media_ready", payload);
+    res.json({ ...payload, id: req.params.id, conversation_id: u.conversation_id, ready: true });
+  });
   app.get("/api/dm/uploads/:id", protect, (req, res) => {
     const u = uploads.get(req.params.id);
     if (!u) return res.status(404).json({ error: "Upload not found", code: "UPLOAD_NOT_FOUND" });
@@ -329,6 +339,20 @@ export function register(app, h) {
     res.set("Content-Type", "application/octet-stream");
     res.send(u.bytes);
   });
+
+  // ── Link previews (services/linkPreview.js shape): a canned card per host, 404 NO_PREVIEW otherwise ──
+  app.get("/api/links/preview", protect, (req, res) => {
+    const raw = req.query.url;
+    if (typeof raw !== "string" || !raw.trim()) return res.status(400).json({ error: "url is required", code: "BAD_URL" });
+    let u; try { u = new URL(raw); } catch { return res.status(400).json({ error: "That is not a valid link", code: "BAD_URL" }); }
+    const host = u.hostname.toLowerCase();
+    const base = { url: u.href, canonical: u.href, provider: "other", kind: "page", title: null, author: null, description: null, thumbnail_url: null, width: null, height: null, app_url: null, web_url: u.href, fetched_at: now() };
+    if (host.includes("tiktok.com")) return res.json({ ...base, provider: "tiktok", kind: "video", title: "when the whole lobby picks Jett", author: "tarik", thumbnail_url: `${PUBLIC_URL}/mock-link-thumb.png`, web_url: "https://www.tiktok.com/@tarik/video/7000000000000000000", app_url: "snssdk1233://aweme/detail/7000000000000000000" });
+    if (host.includes("youtu")) return res.json({ ...base, provider: "youtube", kind: "video", title: "VCT Champions — Grand Final Highlights", author: "VALORANT Esports", thumbnail_url: `${PUBLIC_URL}/mock-link-thumb.png`, app_url: "youtube://watch?v=dQw4w9WgXcQ" });
+    if (host.includes("twitch.tv")) return res.json({ ...base, provider: "twitch", kind: "stream", title: "tarik — ranked grind", author: "Twitch", thumbnail_url: `${PUBLIC_URL}/mock-link-thumb.png`, app_url: "twitch://stream/tarik" });
+    res.status(404).json({ error: "No preview is available for that link", code: "NO_PREVIEW" });
+  });
+  app.get("/mock-link-thumb.png", (_req, res) => { res.set("Content-Type", "image/png"); res.send(scoreboardPNG); });
 
   // Handed to registerSockets below.
   h.dmMock = { convs, addText, toMe, me, person };

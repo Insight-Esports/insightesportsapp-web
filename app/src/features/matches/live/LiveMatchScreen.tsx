@@ -19,6 +19,7 @@ import { LiveChatSection } from "./LiveChat";
 import { MatchCommentsSection } from "./MatchComments";
 import { MatchMainSkeleton, MatchRailSkeleton } from "./MatchSkeleton";
 import { CollapsedScoreBar, FanPollSection, LeagueObjectives, PredictionTeaserSection, RoundTracker, ScoreHUD, StatsTableSection, WinProbabilityBar } from "./sections";
+import { WatchPill } from "./StreamPlayer";
 import { isRoundBasedGame } from "./types";
 import { useLiveMatch } from "./use-live-match";
 import { SkeletonScoreboard } from "@/components/ui/skeletons";
@@ -109,6 +110,9 @@ export function LiveMatchScreen({ match }: { match: Match }) {
           team1Alive={vm.team1Alive}
           team2Alive={vm.team2Alive}
           isLive={!vm.isMatchComplete}
+          // Watch: Twitch plays inline, anything else opens its site. Hidden
+          // once the match is decided (and when streams are null/empty).
+          watch={!vm.isMatchComplete && vm.winnerSide === null && match.streams?.length ? <WatchPill streams={match.streams} title={`${match.team1Name} vs ${match.team2Name}`} /> : null}
         />
       </div>
       {revealed ? (

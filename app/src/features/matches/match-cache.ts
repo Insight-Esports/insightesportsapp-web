@@ -20,8 +20,10 @@ export function recallMatch(id: string): Match | null {
     const raw = sessionStorage.getItem(KEY + id);
     if (!raw) return null;
     const m = JSON.parse(raw) as Json;
-    // Stored camelCase; normalizeMatch wants the wire shape, so trust it as-is.
-    return m && typeof m === "object" && m.id ? (m as Match) : null;
+    // Stored camelCase; normalizeMatch wants the wire shape, so trust it as-is
+    // (a Match cached before `streams` existed just has none).
+    if (!m || typeof m !== "object" || !m.id) return null;
+    return { ...m, streams: Array.isArray(m.streams) ? m.streams : null } as Match;
   } catch {
     return null;
   }

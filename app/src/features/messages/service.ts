@@ -22,6 +22,8 @@ type Events = {
   read: { conversationId: string; userId: string; readAt: string | null };
   removed: { conversationId: string };
   typing: { conversationId: string; userId: string };
+  /** dm:media_ready — a poster-first video's bytes landed; bubbles waiting on that upload id fetch now. */
+  mediaReady: { conversationId: string; uploadId: string; kind: string; size: number };
   unread: { count: number };
   link: { state: LinkState };
 };
@@ -391,6 +393,10 @@ export async function ensureDMSocket(): Promise<Socket | null> {
       const at = payload.readAt ?? null;
       if (who && who !== linkUserId && at) readLedger.noteOtherSeen(payload.conversationId, null, at);
       emit("read", { conversationId: payload.conversationId, userId: who, readAt: at });
+    });
+    s.on("dm:media_ready", (payload: { conversationId?: string; uploadId?: string; kind?: string; size?: number }) => {
+      if (!payload?.conversationId || !payload.uploadId) return;
+      emit("mediaReady", { conversationId: payload.conversationId, uploadId: payload.uploadId, kind: payload.kind ?? "", size: Number(payload.size ?? 0) });
     });
     s.on("dm:removed", (payload: { conversationId?: string }) => {
       if (payload?.conversationId) emit("removed", { conversationId: payload.conversationId });
