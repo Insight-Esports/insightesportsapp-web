@@ -38,7 +38,10 @@
   --val-defense: rgb(33 204 184);
 
   --tabbar-h: 56px;
-  --sidebar-w: 224px;
+  --sidebar-w: 0px;
+  /* Desktop content column (Kalshi-style centered layout). */
+  --content-w: 1280px;
+  --content-w-wide: 1440px;
 }
 
 /* Phones: the tab bar is 8 + 24 + 4 + 12 + 2 = 50pt plus the home-indicator
@@ -268,4 +271,12 @@ html { -webkit-text-size-adjust: 100%; overscroll-behavior-y: none; }
 @layer base {
   button { cursor: pointer; }
   a { color: inherit; text-decoration: none; }
+}
+
+/* The desktop shell's centered column: top bar contents and page content share it. */
+@utility app-container {
+  width: 100%;
+  max-width: var(--content-w-wide);
+  margin-inline: auto;
+  padding-inline: 24px;
 }

@@ -1,8 +1,8 @@
 // AppShell — MainTabView for the web.
 //
 // Phones: the iOS bottom tab bar (Live · Schedule · Players · Teams · News ·
-// Premium). Desktop (≥ md): the same six destinations as a left sidebar,
-// with the profile door at the bottom. The global profile side panel
+// Premium). Desktop (≥ md): the same six destinations in a top bar (the
+// phone's tab bar, on top), with search · bell · profile at its right. The global profile side panel
 // (ProfilePanelContent) is hosted here once, for every screen.
 "use client";
 
@@ -52,39 +52,35 @@ export function AppShell({ children }: { children: ReactNode }) {
   const banner = typeof status?.banner === "string" ? status.banner : status?.banner?.message ?? null;
 
   return (
-    <div className="min-h-dvh flex">
-      {/* ── Sidebar (desktop) ── */}
-      <aside className="hidden md:flex flex-col fixed inset-y-0 left-0 bg-card border-r border-hairline z-30" style={{ width: "var(--sidebar-w)" }}>
-        <Link href="/" className="flex items-center gap-3 px-4 h-16 hairline-b">
-          <BrandMark size={32} />
-          <span className="text-[20px] font-bold tracking-[-0.5px] text-brand-gradient">Insight</span>
-        </Link>
-        <nav className="flex flex-col gap-0.5 p-2 pt-3">
-          {TABS.map((t) => {
-            const active = t.match(pathname);
-            return (
-              <Link key={t.href} href={t.href} className={clsx("flex items-center gap-3 px-3 py-2.5 rounded-lg t-label-lg transition-colors", active ? "text-violet bg-violet/10" : "text-secondary hover:text-primary hover:bg-surface/60")}>
-                <span className="w-5 grid place-items-center">{t.icon}</span>
-                {t.label}
-              </Link>
-            );
-          })}
-        </nav>
-        <div className="flex-1" />
-        {user ? (
-          <button type="button" onClick={() => setProfilePanelOpen(true)} className="flex items-center gap-3 px-4 py-3 hairline-t hover:bg-surface/60 text-left">
-            <InitialAvatar name={user.username} imageURL={user.avatarURL} size={32} />
-            <span className="flex flex-col min-w-0">
-              <span className="t-label-lg text-primary truncate">{user.username}</span>
-              <span className="t-label-sm text-muted truncate">{user.isPremium ? "Insight Pro" : "Free"}</span>
-            </span>
-            {unreadDMs > 0 ? <span className="ml-auto size-2 rounded-full bg-violet" /> : null}
-          </button>
-        ) : null}
-      </aside>
+    <div className="min-h-dvh flex flex-col">
+      {/* ── Top bar (desktop) — Kalshi-style: brand · tabs · tools, in a
+          centered container; the page content below shares that width, so a
+          very wide monitor just gets space on both sides. ── */}
+      <header className="hidden md:block sticky top-0 z-30 bg-card border-b border-hairline">
+        <div className="app-container flex items-center gap-6 h-16">
+          <Link href="/" className="flex items-center gap-2.5 shrink-0">
+            <BrandMark size={30} />
+            <span className="text-[19px] font-bold tracking-[-0.5px] text-brand-gradient">Insight</span>
+          </Link>
+          <nav className="flex items-center gap-1 flex-1 justify-center" aria-label="Tabs">
+            {TABS.map((t) => {
+              const active = t.match(pathname);
+              return (
+                <Link key={t.href} href={t.href} aria-current={active ? "page" : undefined} className={clsx("flex items-center gap-2 px-3.5 h-10 rounded-full t-label-lg transition-colors", active ? "text-violet bg-violet/10" : "text-secondary hover:text-primary hover:bg-surface/60")}>
+                  <span className="w-5 grid place-items-center">{t.icon}</span>
+                  {t.label}
+                </Link>
+              );
+            })}
+          </nav>
+          <div className="flex items-center gap-1 shrink-0">
+            <TopBarTools />
+          </div>
+        </div>
+      </header>
 
       {/* ── Content ── */}
-      <div className="flex-1 min-w-0 md:pl-[var(--sidebar-w)] flex flex-col max-md:pt-[env(safe-area-inset-top,0px)]">
+      <div className="flex-1 min-w-0 flex flex-col max-md:pt-[env(safe-area-inset-top,0px)]">
         {connectionTrouble ? (
           <div className="flex items-center gap-2.5 px-3.5 py-2 bg-card hairline-b">
             <WifiOff size={16} className="text-muted" />
@@ -99,7 +95,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="t-label-md text-primary">{banner}</span>
           </div>
         ) : null}
-        <main className="flex-1 min-w-0">{children}</main>
+        <main className="flex-1 min-w-0 md:app-container">{children}</main>
       </div>
 
       {/* ── Bottom tab bar (phones) — MainTabView.customTabBar: icon (24pt
@@ -131,7 +127,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 export function ProfileToolbarButton() {
   const { user, setProfilePanelOpen, unreadDMs } = useAppState();
   return (
-    <ToolButton label="Profile" onClick={() => setProfilePanelOpen(true)} badge={unreadDMs || undefined}>
+    // Phones only: on desktop the avatar lives in the top bar.
+    <ToolButton label="Profile" onClick={() => setProfilePanelOpen(true)} badge={unreadDMs || undefined} className="md:hidden">
       {user ? <InitialAvatar name={user.username} imageURL={user.avatarURL} size={28} /> : <UserCircle size={22} className="text-secondary" />}
     </ToolButton>
   );
@@ -154,11 +151,23 @@ export function HeaderTools({ extra, home }: { extra?: ReactNode; home?: boolean
           <ToolButton label="Search" onClick={() => router.push("/search")} className="md:hidden"><Search size={17} strokeWidth={2.5} /></ToolButton>
         </>
       ) : null}
-      <span className="hidden md:contents">
-        <ToolButton label="Search" onClick={() => router.push("/search")}><Search size={17} strokeWidth={2.5} /></ToolButton>
-        <NotificationsBell />
-      </span>
       <ProfileToolbarButton />
+    </>
+  );
+}
+
+/** The desktop top bar's right cluster: search · bell · avatar (the tab
+ *  headers no longer carry them on desktop). */
+function TopBarTools() {
+  const router = useRouter();
+  const { user, setProfilePanelOpen, unreadDMs } = useAppState();
+  return (
+    <>
+      <ToolButton label="Search" onClick={() => router.push("/search")}><Search size={17} strokeWidth={2.5} /></ToolButton>
+      <NotificationsBell />
+      <ToolButton label="Profile" onClick={() => setProfilePanelOpen(true)} badge={unreadDMs || undefined}>
+        {user ? <InitialAvatar name={user.username} imageURL={user.avatarURL} size={28} /> : <UserCircle size={22} className="text-secondary" />}
+      </ToolButton>
     </>
   );
 }

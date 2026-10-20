@@ -32,7 +32,7 @@ export function TabHeader({ title, tools, className }: { title: string; tools?: 
       <TabHeaderTitle text={title} />
       <div className="flex-1 min-w-2" />
       {tools ? (
-        <div className="flex items-center gap-2.5 px-2.5 py-[5px] rounded-xl border border-hairline shrink-0">{tools}</div>
+        <div className="flex items-center gap-2.5 px-2.5 py-[5px] rounded-xl border border-hairline shrink-0 md:border-0 md:p-0">{tools}</div>
       ) : null}
     </div>
   );
@@ -521,9 +521,9 @@ export function HScroll({ children, className }: { children: ReactNode; classNam
 
 /** Standard page column: full-bleed on phones, max 1100px on desktop. */
 export function Page({ children, className, wide }: { children: ReactNode; className?: string; wide?: boolean }) {
-  // Left-aligned against the sidebar (not centered): on wide monitors the
-  // content stays next to the menu instead of floating in the middle.
-  return <div className={clsx("w-full min-w-0 pb-[calc(var(--tabbar-h)+24px)] md:pb-10", wide ? "max-w-[1760px]" : "max-w-[1520px]", className)}>{children}</div>;
+  // Centered under the top bar: the shell's container (--content-w) sets
+  // the width, so a wide monitor gets equal space on both sides.
+  return <div className={clsx("w-full min-w-0 mx-auto pb-[calc(var(--tabbar-h)+24px)] md:pb-10", wide ? "max-w-[var(--content-w-wide)]" : "max-w-[var(--content-w)]", className)}>{children}</div>;
 }
 
 /** Two-column layout on desktop (main + rail), single column on phones. */

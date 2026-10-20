@@ -176,7 +176,7 @@ export function Leaderboard() {
       </div>
 
       {revealed && myRow && !me ? (
-        <div className="fixed bottom-[calc(var(--tabbar-h)+12px)] md:bottom-5 inset-x-4 md:left-[calc(var(--sidebar-w)+16px)] md:right-auto md:w-[min(720px,calc(100vw-var(--sidebar-w)-32px))] z-20">
+        <div className="fixed bottom-[calc(var(--tabbar-h)+12px)] md:bottom-5 inset-x-4 md:left-1/2 md:-translate-x-1/2 md:right-auto md:w-[min(720px,calc(100vw-32px))] z-20">
           <YourRankBar entry={myRow} />
         </div>
       ) : null}
