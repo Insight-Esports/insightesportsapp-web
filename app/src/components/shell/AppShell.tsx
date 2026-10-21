@@ -57,12 +57,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           centered container; the page content below shares that width, so a
           very wide monitor just gets space on both sides. ── */}
       <header className="hidden md:block sticky top-0 z-30 bg-card border-b border-hairline">
-        <div className="app-container flex items-center gap-6 h-16">
-          <Link href="/" className="flex items-center gap-2.5 shrink-0">
-            <BrandMark size={30} />
-            <span className="text-[19px] font-bold tracking-[-0.5px] text-brand-gradient">Insight</span>
-          </Link>
-          <nav className="flex items-center gap-1 flex-1 justify-center" aria-label="Tabs">
+        {/* Full width: brand pinned far left, tools far right, tabs centered —
+            the gaps grow with the monitor. */}
+        <div className="flex items-center gap-6 h-16 px-6">
+          <div className="flex-1 flex items-center">
+            <Link href="/" className="flex items-center gap-2.5 shrink-0">
+              <BrandMark size={30} />
+              <span className="text-[19px] font-bold tracking-[-0.5px] text-brand-gradient">Insight</span>
+            </Link>
+          </div>
+          <nav className="flex items-center gap-1 shrink-0 justify-center" aria-label="Tabs">
             {TABS.map((t) => {
               const active = t.match(pathname);
               return (
@@ -73,7 +77,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               );
             })}
           </nav>
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex-1 flex items-center justify-end gap-1">
             <TopBarTools />
           </div>
         </div>
