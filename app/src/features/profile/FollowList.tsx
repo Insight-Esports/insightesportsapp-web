@@ -96,7 +96,7 @@ export function FollowList({ mode, userId }: { mode: FollowListMode; userId: str
     <Page>
       <NavBar title={title} />
 
-      <div className="px-4 pt-4 max-w-2xl">
+      <div className="px-4 pt-4 max-w-2xl w-full mx-auto">
         {!revealed ? (
           <SkeletonLedger rows={8} avatar={44} />
         ) : users.length === 0 ? (

@@ -176,7 +176,7 @@ export function LiveBreakdownScreen() {
 
   return (
     <PredictScreen title="Live Breakdown" back={flowHref.options(t)}>
-      <div className="flex flex-col gap-4 pt-2 max-w-3xl">
+      <div className="flex flex-col gap-4 pt-2 max-w-3xl w-full mx-auto">
         <div className="flex flex-col items-center gap-1.5 px-4 text-center">
           <span className="flex items-center gap-2"><h1 className="t-headline-lg text-primary">{playerName}</h1><LiveBadge /></span>
           {state?.matchLine ? <span className="t-label-md text-violet">{state.matchLine}</span> : null}

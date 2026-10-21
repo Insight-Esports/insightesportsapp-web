@@ -29,11 +29,14 @@ export function TabHeaderTitle({ text, className }: { text: string; className?: 
 export function TabHeader({ title, tools, className }: { title: string; tools?: ReactNode; className?: string }) {
   return (
     // Desktop: the top bar already names the tab, so only the tools show.
-    <div className={clsx("flex items-center gap-3.5 px-4 pt-1.5 pb-2 md:pt-3 md:pb-0 bg-bg min-w-0", className)}>
+    // Desktop: the top bar already names the tab, so the row collapses and
+    // the tab's own tools float at the right of the first content row (the
+    // game tabs / segment picker), keeping every tab as tight as Live.
+    <div className={clsx("flex items-center gap-3.5 px-4 pt-1.5 pb-2 bg-bg min-w-0 md:relative md:h-0 md:p-0 md:overflow-visible", className)}>
       <TabHeaderTitle text={title} className="md:hidden" />
       <div className="flex-1 min-w-2" />
       {tools ? (
-        <div className="flex items-center gap-2.5 px-2.5 py-[5px] rounded-xl border border-hairline shrink-0 md:border-0 md:p-0">{tools}</div>
+        <div className="flex items-center gap-2.5 px-2.5 py-[5px] rounded-xl border border-hairline shrink-0 md:border-0 md:p-0 md:absolute md:right-4 md:top-2 md:z-10">{tools}</div>
       ) : null}
     </div>
   );

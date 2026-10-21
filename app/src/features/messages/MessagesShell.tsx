@@ -55,7 +55,7 @@ export function MessagesShell({ children }: { children: ReactNode }) {
           <BackButton />
           <TabHeaderTitle text="Messages" />
         </div>
-        <div className="pt-10 max-w-2xl">
+        <div className="pt-10 max-w-2xl w-full mx-auto">
           <EmptyState
             icon={<AssetIcon name="messages" height={30} />}
             title="Link your phone to use Messages here"

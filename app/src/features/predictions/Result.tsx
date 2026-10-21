@@ -118,7 +118,7 @@ export function ResultScreen() {
   // Wide screens: the result beside the target's full breakdown.
   return (
     <PredictScreen title="Prediction" back={`${PREDICT_BASE}/stat${qs({ ...targetParams(t), stat, baseline, direction: baseline != null ? direction : null })}`} wide>
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)] pt-2">
+      <div className={clsx("grid grid-cols-[minmax(0,1fr)] gap-6 pt-2", !t.isLive && "xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]")}>
         <div className="min-w-0">{main}</div>
         {!t.isLive ? (
           <aside className="hidden xl:block min-w-0 border-l border-border-subtle">

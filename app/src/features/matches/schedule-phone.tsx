@@ -57,7 +57,7 @@ export function CloudSegment<T extends string>({ options, value, onChange, class
 export function ScheduleSegmentPicker({ value, game }: { value: "schedule" | "results"; game: GameId }) {
   const router = useRouter();
   return (
-    <div className="px-4 pt-3 pb-2">
+    <div className="px-4 pt-3 pb-2 md:pt-2 md:pb-1">
       <CloudSegment<"schedule" | "results">
         options={[{ label: "Upcoming", value: "schedule" }, { label: "Results", value: "results" }]}
         value={value}

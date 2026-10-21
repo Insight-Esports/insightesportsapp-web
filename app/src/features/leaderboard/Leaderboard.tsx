@@ -135,7 +135,7 @@ export function Leaderboard() {
     <Page>
       <NavBar title="Leaderboard" />
 
-      <div className="px-4 pt-3 max-w-3xl flex flex-col gap-3">
+      <div className="px-4 pt-3 max-w-3xl w-full mx-auto flex flex-col gap-3">
         <FilterSegment options={PERIODS} value={period} onChange={setPeriod} />
 
         {period !== "alltime" ? (

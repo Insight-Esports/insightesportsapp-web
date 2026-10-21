@@ -108,7 +108,7 @@ export function NewMessage() {
         <span className="t-headline-sm text-primary flex-1 text-center md:text-left">New Message</span>
         <button type="button" onClick={() => router.push("/messages")} className="t-label-lg text-violet hover:underline">Cancel</button>
       </div>
-      <div className="flex flex-col gap-3 px-4 pt-3 max-w-2xl">
+      <div className="flex flex-col gap-3 px-4 pt-3 max-w-2xl w-full mx-auto">
         <SearchField value={query} onChange={setQuery} placeholder="Search people" autoFocus />
         {error ? <span className="t-label-sm text-muted">{error}</span> : null}
 

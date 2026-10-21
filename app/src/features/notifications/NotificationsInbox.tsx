@@ -118,7 +118,7 @@ export function NotificationsInbox() {
       <NavBar title="Notifications" trailing={hasUnread ? <button type="button" onClick={markAllRead} className="t-label-md text-violet hover:underline whitespace-nowrap">Mark all read</button> : null} />
 
       {!revealed && items.length === 0 ? (
-        <div className="px-4 pt-1 max-w-2xl"><SkeletonNotificationRows rows={6} /></div>
+        <div className="px-4 pt-1 max-w-2xl w-full mx-auto"><SkeletonNotificationRows rows={6} /></div>
       ) : error && items.length === 0 ? (
         <div className="pt-6"><LoadFailure error={error} connectionProblem={connectionProblem} onRetry={() => void load()} /></div>
       ) : items.length === 0 ? (
@@ -126,7 +126,7 @@ export function NotificationsInbox() {
           <EmptyState icon={<BellOff />} title="No notifications yet" subtitle="We'll let you know about your predictions, followed teams, and leaderboard rank." />
         </div>
       ) : (
-        <div className="px-4 pt-1 max-w-2xl">
+        <div className="px-4 pt-1 max-w-2xl w-full mx-auto">
           {groups.map((g) => (
             <div key={g.label}>
               <span className="block t-kicker pt-[18px] pb-1.5">{g.label}</span>

@@ -32,7 +32,7 @@ export function TeamMapProfileScreen() {
 
   return (
     <PredictScreen title="Map Profile" back={flowHref.options(t)}>
-      <div className="flex flex-col gap-5 pt-1 max-w-3xl">
+      <div className="flex flex-col gap-5 pt-1 max-w-3xl w-full mx-auto">
         <StepHeader title="Map Profile" subtitle={<span className="text-violet">{t.targetName} · {gameLabel(t.game)}</span>} />
         <div className="flex flex-col gap-2 px-4">
           <span className="t-label-sm text-muted">PICK A MAP</span>
