@@ -65,7 +65,9 @@ export async function proxy(req: NextRequest) {
     res.cookies.set(WEB_OPT_OUT, "1", { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax" });
     return res;
   }
-  if (isAppleMobile(req.headers.get("user-agent")) && req.cookies.get(WEB_OPT_OUT)?.value !== "1") {
+  // Paused while the team tests the mobile web on iPhones (set
+  // REDIRECT_IPHONE_TO_APP_STORE=1 to turn the App Store redirect back on).
+  if (process.env.REDIRECT_IPHONE_TO_APP_STORE === "1" && isAppleMobile(req.headers.get("user-agent")) && req.cookies.get(WEB_OPT_OUT)?.value !== "1") {
     return NextResponse.redirect(APP_STORE_URL);
   }
 
