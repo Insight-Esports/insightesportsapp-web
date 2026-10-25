@@ -16,7 +16,7 @@ import { SettingsFrame, SettingsSection, SettingsToggleRow } from "./components"
 
 const GROUPS: { title: string; types: NotificationTypeId[] }[] = [
   { title: "Match Alerts", types: ["followed_starting_soon", "mid_match", "followed_result"] },
-  { title: "Your Activity", types: ["prediction_resolved", "poll_resolved", "weekly_report", "streak_milestone"] },
+  { title: "Your Activity", types: ["prediction_resolved", "poll_resolved", "weekly_report", "streak_milestone", "badge_earned"] },
   { title: "Leaderboard", types: LEADERBOARD_TYPES },
   { title: "Social", types: ["new_follower", "followed_news"] },
 ];

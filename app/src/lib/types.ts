@@ -448,6 +448,10 @@ export interface PlayerComment {
   body: string;
   createdAt: string;
   canDelete: boolean;
+  /** Author flair inputs (is_premium / premium_style / title on the author). */
+  isPremium: boolean;
+  premiumStyle: PremiumStylePiece[] | null;
+  title?: string | null;
 }
 export function normalizeComment(raw: Json): PlayerComment {
   const author = raw.author && typeof raw.author === "object" ? raw.author : null;
@@ -458,6 +462,9 @@ export function normalizeComment(raw: Json): PlayerComment {
     userId: str(author?.id) ?? str(raw.user_id) ?? "",
     username: str(author?.username) ?? str(raw.username) ?? "user",
     avatarURL: str(author?.avatar_url) ?? str(raw.avatar_url),
+    isPremium: bool(author?.is_premium ?? raw.is_premium),
+    premiumStyle: normalizePremiumStyle(author?.premium_style ?? raw.premium_style),
+    title: normalizeTitle(author ? author.title : raw.title),
     createdAt: iso(raw.created_at) ?? new Date().toISOString(),
     canDelete: bool(raw.can_delete, true),
   };
@@ -477,12 +484,41 @@ export interface Prediction {
   careerAverage: number;
 }
 
+// ── Premium flair (backend/premium-style-contract.md) ─────────────────────
+/** ring · shine · mark, plus the rank colours: metal (ring) and shine_metal (name). */
+export type PremiumStylePiece = "ring" | "shine" | "mark" | "metal" | "shine_metal";
+export const PREMIUM_STYLE_PIECES: readonly PremiumStylePiece[] = ["ring", "shine", "mark", "metal", "shine_metal"];
+/** `premium_style`: null when never chosen (draws the default ["ring"]),
+ *  [] when the member turned everything off. Unknown pieces are dropped. */
+export function normalizePremiumStyle(v: Json): PremiumStylePiece[] | null {
+  if (v == null) return null;
+  const arr: unknown[] | null = Array.isArray(v) ? v : typeof v === "string" ? v.split(",") : null;
+  if (!arr) return null;
+  const out: PremiumStylePiece[] = [];
+  for (const x of arr) {
+    const s = String(x).trim().toLowerCase() as PremiumStylePiece;
+    if (PREMIUM_STYLE_PIECES.includes(s) && !out.includes(s)) out.push(s);
+  }
+  return out;
+}
+/** `title` on a username payload ('oracle' for the live monthly #1, else
+ *  null). undefined when the payload doesn't carry the key at all — the
+ *  flair then falls back to the monthly podium. */
+export function normalizeTitle(v: Json): string | null | undefined {
+  if (v === undefined) return undefined;
+  return typeof v === "string" && v.trim() ? v.trim().toLowerCase() : null;
+}
+
 // ── User ──────────────────────────────────────────────────────────────────
 export interface InsightUser {
   id: string;
   username: string;
   email: string;
   isPremium: boolean;
+  /** null = never chosen (default ring); see normalizePremiumStyle. */
+  premiumStyle: PremiumStylePiece[] | null;
+  /** 'oracle' while the user is the live monthly #1. */
+  title?: string | null;
   /** points_balance (ledger) with legacy `points` fallback */
   tokenBalance: number;
   createdAt: string;
@@ -499,6 +535,8 @@ export function normalizeUser(raw: Json): InsightUser {
     username: str(raw.username) ?? "",
     email: str(raw.email) ?? "",
     isPremium: bool(raw.is_premium ?? raw.isPremium),
+    premiumStyle: normalizePremiumStyle(raw.premium_style ?? raw.premiumStyle),
+    title: normalizeTitle(raw.title),
     tokenBalance: int(raw.points_balance) ?? int(raw.points) ?? 0,
     createdAt: iso(raw.created_at) ?? new Date().toISOString(),
     avatarURL: str(raw.avatar_url) ?? str(raw.profilePictureUrl) ?? null,

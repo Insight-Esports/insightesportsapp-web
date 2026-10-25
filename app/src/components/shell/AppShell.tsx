@@ -18,6 +18,7 @@ import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
 import { AssetIcon, BrandMark, InitialAvatar, SidePanel, Spinner, ToolButton } from "@/components/ui";
 import { withBase } from "@/lib/base-path";
+import { FlairAvatar, FlairName } from "@/components/ui/premium-flair";
 
 const TABS: { href: string; label: string; icon: ReactNode; match: (p: string) => boolean }[] = [
   { href: "/", label: "Live", icon: <Radio size={18} />, match: (p) => p === "/" || p.startsWith("/match") },
@@ -210,14 +211,10 @@ function ProfilePanel({ open, onClose }: { open: boolean; onClose: () => void })
       </div>
       {user ? (
         <div className="flex flex-col gap-3 px-3.5 pb-4">
-          <span className={clsx("inline-grid place-items-center rounded-full self-start", isPremium && "size-[60px] border-2 border-violet")}>
-            <InitialAvatar name={user.username} imageURL={user.avatarURL} size={50} />
-          </span>
+          {/* DrawerHeader: the person is the subject, so the flair moves. */}
+          <FlairAvatar user={user} size={50} moving pad className="self-start" />
           <div className="flex flex-col gap-[3px] min-w-0">
-            <span className="flex items-center gap-[5px] min-w-0">
-              <span className="text-[16px] font-bold text-primary truncate">{user.username}</span>
-              {isPremium ? <span className="text-[9px] font-bold tracking-[0.5px] text-gold shrink-0">PRO</span> : null}
-            </span>
+            <FlairName user={user} moving className="text-[16px] font-bold self-start" nameClassName="text-primary" />
             {rank ? <span className="t-label-sm text-gold">{rank}</span> : null}
             <span className="flex items-center gap-1 t-label-sm text-violet"><Star size={11} className="fill-violet" />{user.tokenBalance.toLocaleString()} pts</span>
           </div>

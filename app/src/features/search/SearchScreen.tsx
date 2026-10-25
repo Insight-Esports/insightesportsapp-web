@@ -4,13 +4,16 @@
 // as the user types (debounced), with game tabs (All / VALORANT / CS2 /
 // League) that scope results. With an empty field it is a browse surface:
 // recent searches plus the selected game's popular players and teams.
-// The query and game live in the URL (?q=&game=).
+// The query and game live in the URL (?q=&game=). "In the app" (the app's own
+// tabs, features and settings pages) is matched locally on every keystroke and
+// always sits last, under Players, Teams, Users and Tournaments.
 "use client";
 
+import { FlairUserInline } from "@/components/ui/premium-flair";
 import { prefetchPlayer, prefetchTeam, rememberPlayer, rememberTeam } from "@/features/entity-cache";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronRight, CircleHelp, Clock, Search, X } from "lucide-react";
+import { ArrowRight, ArrowUpRight, ChevronRight, CircleHelp, Clock, Search, X } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { GAMES, gameLabel, normalizePlayers, normalizeTeams, type GameId, type Player, type Team } from "@/lib/types";
 import { clsx } from "@/lib/format";
@@ -21,6 +24,8 @@ import { BackButton, NavBar } from "@/components/shell/NavBar";
 import { FollowButton } from "@/features/follow/FollowButton";
 import { useDebounced } from "@/features/players/useLoadMore";
 import { useQueryParams } from "@/features/players/useQueryParams";
+import { useAppState } from "@/store/app-state";
+import { appDestinationHref, matchAppDestinations, type AppDestination, type AppDestinationContext } from "./app-destinations";
 import { EMPTY_RESULTS, normalizeSearchResults, resultsEmpty, tournamentGame, type SearchResults, type SearchUser } from "./types";
 
 const RECENTS_KEY = "insight.recentSearches";
@@ -92,15 +97,16 @@ export function SearchScreen() {
       .finally(() => { if (id === requestId.current) setSearching(false); });
   }, [urlQuery, game]);
 
-  const recordSearch = useCallback(() => {
-    const trimmed = urlQuery.trim();
+  const recordTerm = useCallback((term: string) => {
+    const trimmed = term.trim();
     if (!trimmed) return;
     setRecents((prev) => {
       const next = [trimmed, ...prev.filter((p) => p.toLowerCase() !== trimmed.toLowerCase())].slice(0, MAX_RECENTS);
       writeRecents(next);
       return next;
     });
-  }, [urlQuery]);
+  }, []);
+  const recordSearch = useCallback(() => recordTerm(urlQuery), [recordTerm, urlQuery]);
   const removeRecent = (term: string) => setRecents((prev) => { const next = prev.filter((t) => t !== term); writeRecents(next); return next; });
   const clearRecents = () => { setRecents([]); writeRecents([]); };
 
@@ -124,8 +130,25 @@ export function SearchScreen() {
   const browseTeams = (game === "all" ? browse?.teams ?? [] : (browse?.teams ?? []).filter((t) => t.game === game)).slice(0, 6);
   const label = gameLabel(game);
 
+  // "In the app": matched on the live field (no debounce, no request).
+  const { user } = useAppState();
+  const term = query.trim();
+  const appHits = useMemo(() => matchAppDestinations(term), [term]);
+  const appCtx: AppDestinationContext = { game: game === "all" ? user?.primaryGame ?? "VALORANT" : game, meId: user?.id ?? null };
+  const appSection = appHits.length > 0 ? (
+    <div className="md:col-span-2">
+      <SearchSectionHeader title="In the app" />
+      <div className="md:grid md:grid-cols-2 md:gap-x-6">
+        {appHits.map((d) => <AppDestinationRow key={d.id} dest={d} href={appDestinationHref(d, appCtx)} onNavigate={() => recordTerm(term)} />)}
+      </div>
+    </div>
+  ) : null;
+  // Players and teams are still on their way (debounce pending or the request /
+  // picture warm-up in flight) with nothing to keep on screen.
+  const serverPending = (term !== urlQuery.trim() || !resultsRevealed) && resultsEmpty(filtered);
+
   let body;
-  if (!urlQuery.trim()) {
+  if (!term) {
     body = (
       <div className="md:grid md:grid-cols-2 md:gap-x-6">
         {recents.length > 0 ? (
@@ -165,16 +188,23 @@ export function SearchScreen() {
               <div className="md:col-span-2 flex flex-col items-center gap-3 pt-20 text-center">
                 <Search size={40} className="text-muted" />
                 <span className="t-headline-sm text-primary">Search Insight</span>
-                <span className="t-body-sm text-muted">Find players, teams, and tournaments.</span>
+                <span className="t-body-sm text-muted">Find players, teams, tournaments, and anything in the app.</span>
               </div>
             ) : null}
           </>
         )}
       </div>
     );
-  } else if (!resultsRevealed && resultsEmpty(filtered)) {
-    body = <SkeletonPeopleRows rows={6} avatar={40} />;
-  } else if (resultsEmpty(filtered)) {
+  } else if (serverPending) {
+    // With app matches, 3 silhouettes hold the players / teams slot so the
+    // "In the app" section doesn't jump down when they arrive.
+    body = appSection ? (
+      <div className="md:grid md:grid-cols-2 md:gap-x-6">
+        <div className="md:col-span-2"><SkeletonPeopleRows rows={3} avatar={40} /></div>
+        {appSection}
+      </div>
+    ) : <SkeletonPeopleRows rows={6} avatar={40} />;
+  } else if (resultsEmpty(filtered) && !appSection) {
     body = (
       <div className="flex flex-col items-center gap-3 pt-20 px-10 text-center">
         <CircleHelp size={40} className="text-muted" />
@@ -209,6 +239,7 @@ export function SearchScreen() {
             {filtered.tournaments.map((t) => <TournamentSearchRow key={t} name={t} onNavigate={recordSearch} />)}
           </div>
         ) : null}
+        {appSection}
       </div>
     );
   }
@@ -218,7 +249,7 @@ export function SearchScreen() {
       <NavBar title="Search" phoneOnly />
       <div className="hidden md:flex items-center gap-2.5 px-3 pt-1.5 pb-2"><BackButton /><TabHeaderTitle text="Search" /></div>
       <div className="px-4 pb-2 flex items-center gap-3">
-        <div className="flex-1"><SearchField value={query} onChange={setQuery} placeholder="Search players and teams" autoFocus /></div>
+        <div className="flex-1"><SearchField value={query} onChange={setQuery} placeholder="Search players, teams and features" autoFocus /></div>
         {/* The app's small spinner beside the field while a search refines rows already on screen. */}
         {!resultsRevealed && urlQuery.trim() && !resultsEmpty(filtered) ? <Spinner size={16} /> : null}
       </div>
@@ -263,8 +294,7 @@ function TeamSearchRow({ team, onNavigate }: { team: Team; onNavigate?: () => vo
 function UserSearchRow({ user }: { user: SearchUser }) {
   return (
     <Link href={`/profile/${encodeURIComponent(user.id)}`} className={clsx(rowCls, "py-2")}>
-      <InitialAvatar name={user.username} imageURL={user.avatarURL} size={36} />
-      <span className="t-body-md text-primary truncate flex-1">{user.username}</span>
+      <FlairUserInline user={user.flair} size={36} className="flex-1" />
       <FollowButton targetType="user" targetId={user.id} compact stopPropagation />
     </Link>
   );
@@ -278,4 +308,27 @@ function TournamentSearchRow({ name, onNavigate }: { name: string; onNavigate?: 
       <ChevronRight size={12} className="text-muted" />
     </Link>
   );
+}
+
+const APP_TRAILING = { tab: ArrowRight, web: ArrowUpRight, screen: ChevronRight } as const;
+
+/** AppDestinationRow: 40pt icon tile, title, one-line subtitle, and a trailing
+ *  → (tab switch), ↗ (web link, new browser tab) or › (screen). */
+function AppDestinationRow({ dest, href, onNavigate }: { dest: AppDestination; href: string; onNavigate?: () => void }) {
+  const Icon = dest.icon;
+  const Trailing = APP_TRAILING[dest.kind];
+  const inner = (
+    <>
+      <span className="grid place-items-center size-10 rounded-[10px] bg-surface text-violet shrink-0"><Icon size={18} strokeWidth={2.25} /></span>
+      <span className="flex flex-col gap-0.5 min-w-0 flex-1">
+        <span className="t-body-md text-primary truncate">{dest.title}</span>
+        <span className="t-label-sm text-muted truncate">{dest.subtitle}</span>
+      </span>
+      <Trailing size={dest.kind === "screen" ? 12 : 14} className="text-muted shrink-0" aria-hidden />
+    </>
+  );
+  if (dest.kind === "web") {
+    return <a href={href} target="_blank" rel="noopener noreferrer" onClick={onNavigate} className={rowCls} aria-label={`${dest.title} (opens in a new tab)`}>{inner}</a>;
+  }
+  return <Link href={href} onClick={onNavigate} className={rowCls}>{inner}</Link>;
 }

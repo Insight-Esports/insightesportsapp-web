@@ -35,5 +35,5 @@ export const PREMIUM_BENEFITS = [
   "Trends, outliers, and map splits",
   "Personalized weekly report",
   "Ad-free experience",
-  "Premium chat badge",
+  "Profile flair everyone sees: a ring of light, a shining name or the diamond",
 ];

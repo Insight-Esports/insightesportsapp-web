@@ -19,7 +19,7 @@ import { useNow } from "./hooks";
 import { relativeAgo, relativeShort } from "./format-dm";
 import { startConversation, startConversationMessage } from "./start-conversation";
 import { onInboxToast, takeInboxToast } from "./dm-local";
-import type { SearchUser } from "./types";
+import { isPendingId, type SearchUser } from "./types";
 
 export function MessagesInbox({ selectedId, linkState }: { selectedId: string | null; linkState: LinkState }) {
   const router = useRouter();
@@ -119,6 +119,8 @@ function secondLine(t: InboxThread, now: Date): { text: string; bold: boolean } 
   if (unread > 1) return { text: `${unread} new messages`, bold: true };
   if (unread === 1) return { text: t.preview || "Sent you a message", bold: true };
   if (t.previewIsMine) {
+    // Still going up (a photo/video isn't sent until its bytes are in).
+    if (t.newestId && isPendingId(t.newestId)) return { text: "Sending…", bold: false };
     // "Seen" counts from when THEY read it (the thread receipt's clock);
     // "Sent" from the send. A just-sent message is "Sent just now" until a
     // read at/after it arrives.

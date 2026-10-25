@@ -6,17 +6,37 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { ChevronRight, MoreHorizontal, Send } from "lucide-react";
-import { AssetIcon, ConfirmDialog, InitialAvatar, LoadFailure, SkeletonLedger, Toast } from "@/components/ui";
+import { AssetIcon, ConfirmDialog, LoadFailure, SkeletonLedger, Toast } from "@/components/ui";
 import { api, endpoints, errorMessage } from "@/lib/api";
 import { useFetch } from "@/lib/use-fetch";
 import { timeAgo } from "@/lib/format";
 import { clsx } from "@/lib/format";
 import type { Json } from "@/lib/types";
 import { useAppState } from "@/store/app-state";
+import { FlairAvatar, FlairName, flairUserFrom, type FlairUser } from "@/components/ui/premium-flair";
 import { SectionBox } from "./sections";
-import { normalizeCreatedComment, normalizeMatchComments, type MatchComment } from "./types";
+import { normalizeMatchComment, type MatchComment } from "./types";
 
-function CommentRow({ comment, onDelete, onReport }: { comment: MatchComment; onDelete: () => void; onReport: () => void }) {
+// A comment plus its author's flair inputs (author.{id, is_premium,
+// premium_style, title}) — decoded here so the shared MatchComment model
+// stays as it is.
+type FlairComment = MatchComment & { author: FlairUser };
+function decodeComment(raw: Json): FlairComment {
+  const c = normalizeMatchComment(raw);
+  // Flat rows carry the author as user_id (never the comment's own id).
+  const a = raw?.author && typeof raw.author === "object" ? raw.author : { ...raw, id: raw?.user_id ?? null };
+  return { ...c, author: { ...flairUserFrom(a), username: c.username, avatarURL: c.avatarURL } };
+}
+function decodeComments(raw: Json): FlairComment[] {
+  const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.comments) ? raw.comments : [];
+  return arr.filter((r: Json) => r?.id != null).map(decodeComment);
+}
+/** POST response: { comment: {...} } or a bare comment. */
+function decodeCreated(raw: Json): FlairComment {
+  return decodeComment(raw?.comment && typeof raw.comment === "object" ? raw.comment : raw);
+}
+
+function CommentRow({ comment, onDelete, onReport }: { comment: FlairComment; onDelete: () => void; onReport: () => void }) {
   const [menu, setMenu] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -29,10 +49,11 @@ function CommentRow({ comment, onDelete, onReport }: { comment: MatchComment; on
   }, [menu]);
   return (
     <div className="flex items-start gap-3 px-4 py-2.5">
-      <InitialAvatar name={comment.username} imageURL={comment.avatarURL} size={40} />
+      {/* Comments are a list: the flair holds still. */}
+      <FlairAvatar user={comment.author} size={40} />
       <div className="flex flex-col gap-[3px] min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <span className="t-label-md text-primary truncate">{comment.username}</span>
+          <FlairName user={comment.author} className="t-label-md" nameClassName="text-primary" />
           <span className="t-label-sm text-muted shrink-0">{timeAgo(comment.createdAt)}</span>
           <span className="flex-1" />
           <div ref={wrap} className="relative">
@@ -59,14 +80,14 @@ function CommentRow({ comment, onDelete, onReport }: { comment: MatchComment; on
 export function MatchCommentsSection({ matchId, className }: { matchId: string; className?: string }) {
   const { user } = useAppState();
   const { data, loading, error, connectionProblem, reload, setData } = useFetch(
-    (signal) => api.get<Json>(endpoints.matchComments(matchId), { signal }).then(normalizeMatchComments),
+    (signal) => api.get<Json>(endpoints.matchComments(matchId), { signal }).then(decodeComments),
     [matchId],
   );
   const comments = useMemo(() => data ?? [], [data]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [reportTarget, setReportTarget] = useState<MatchComment | null>(null);
+  const [reportTarget, setReportTarget] = useState<FlairComment | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -81,11 +102,12 @@ export function MatchCommentsSection({ matchId, className }: { matchId: string; 
     if (!trimmed || trimmed.length > 500 || sending) return;
     setSending(true);
     const tempId = `temp-${Date.now()}`;
-    const optimistic: MatchComment = { id: tempId, username: user?.username ?? "You", avatarURL: user?.avatarURL ?? null, body: trimmed, createdAt: new Date().toISOString(), canDelete: true };
+    const author: FlairUser = { id: user?.id ?? null, username: user?.username ?? "You", avatarURL: user?.avatarURL ?? null, isPremium: !!user?.isPremium, premiumStyle: user?.premiumStyle ?? null, title: user?.title };
+    const optimistic: FlairComment = { id: tempId, username: author.username, avatarURL: author.avatarURL ?? null, body: trimmed, createdAt: new Date().toISOString(), canDelete: true, author };
     setData((prev) => [optimistic, ...(prev ?? [])]);
     setDraft("");
     try {
-      const created = normalizeCreatedComment(await api.post<Json>(endpoints.matchComments(matchId), { body: trimmed }));
+      const created = decodeCreated(await api.post<Json>(endpoints.matchComments(matchId), { body: trimmed }));
       setData((prev) => (prev ?? []).map((c) => (c.id === tempId ? created : c)));
     } catch (e) {
       setData((prev) => (prev ?? []).filter((c) => c.id !== tempId));
@@ -96,13 +118,13 @@ export function MatchCommentsSection({ matchId, className }: { matchId: string; 
     }
   }, [draft, matchId, sending, setData, user]);
 
-  const remove = useCallback(async (c: MatchComment) => {
+  const remove = useCallback(async (c: FlairComment) => {
     const previous = comments;
     setData((prev) => (prev ?? []).filter((x) => x.id !== c.id));
     try { await api.delete(endpoints.deleteComment(c.id)); } catch { setData(previous); }
   }, [comments, setData]);
 
-  const report = useCallback(async (c: MatchComment) => {
+  const report = useCallback(async (c: FlairComment) => {
     try { await api.post(endpoints.reportComment(c.id), {}); } catch { /* fire-and-forget */ }
     setToast("Thanks — our team will review this comment.");
   }, []);

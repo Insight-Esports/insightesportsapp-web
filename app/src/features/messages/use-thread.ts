@@ -1,8 +1,9 @@
 // messages/use-thread.ts — MessageThreadViewModel as a hook.
 //
 // Messages oldest → newest, keyset paging upward, read-on-open, the
-// optimistic send path (pending bubble → server row, or failed with a
-// retry), their read receipt from two facts (an id boundary from
+// optimistic send path (pending bubble → server row; a failed text keeps
+// its bubble with a retry, a failed photo/video is removed with the error),
+// their read receipt from two facts (an id boundary from
 // dm:read, a server-stamped time), typing, and the blocked states.
 "use client";
 
@@ -10,9 +11,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { useAppState } from "@/store/app-state";
 import {
-  asURL, decrypt, markRead, messages as fetchMessages, noteLocalMessage, onDM, publicKeyFor, readLedger, sendEnvelope, sendText, unblockUser,
+  asURL, decrypt, forgetPendingLatest, markRead, messages as fetchMessages, noteLocalMessage, onDM, publicKeyFor, readLedger, sendEnvelope, sendText, unblockUser,
 } from "./service";
-import { beginMedia, DMMediaError, type PreparedMedia } from "./media";
+import { DMMediaError, uploadMedia, type PreparedMedia } from "./media";
 import type { DMEnvelope } from "./crypto";
 import { emitReadLocal, setOpenConversation } from "./dm-local";
 import { seenLabelFor } from "./format-dm";
@@ -23,11 +24,7 @@ export interface BlockedState { text: string; offersUnblock: boolean }
 const NO_KEY_TEXT = "This user can't receive messages yet — they haven't opened the latest Insight.";
 const PAGE = 50;
 
-type Retry = { kind: "text"; text: string } | { kind: "media"; media: PreparedMedia };
-
-/** A poster-first video whose bytes are still going up from THIS browser (or didn't make it). */
-export type UploadState = "uploading" | "failed";
-const VIDEO_UPLOAD_FAILED = "The video didn't finish uploading. Check your connection and send it again.";
+type Retry = { kind: "text"; text: string };
 
 export function mediaFromEnvelope(e: DMEnvelope): DMMedia | null {
   if ((e.t !== "image" && e.t !== "video") || !e.id || !e.key || !e.nonce) return null;
@@ -58,8 +55,6 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
   const [blockedState, setBlockedState] = useState<BlockedState | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [otherIsTyping, setTyping] = useState(false);
-  const [uploads, setUploads] = useState<Map<string, UploadState>>(() => new Map());
-  const finishers = useRef(new Map<string, () => Promise<void>>());
   const [receipt, setReceipt] = useState<{ throughId: string | null; at: string | null; learnedAt: string | null }>({ throughId: null, at: null, learnedAt: null });
   const receiptRef = useRef(receipt);
 
@@ -246,14 +241,14 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
   const markFailed = useCallback((pendingId: string) => {
     setMessages((prev) => prev.map((m) => (m.id === pendingId ? { ...m, failed: true } : m)));
     const prev = [...messagesRef.current].reverse().find((m) => !isPendingId(m.id));
-    if (prev) noteLocalMessage(id, prev);
+    if (prev) noteLocalMessage(id, prev); else forgetPendingLatest(id, pendingId);
   }, [id, setMessages]);
 
   const dropPending = useCallback((pendingId: string) => {
     retries.current.delete(pendingId);
     setMessages((prev) => prev.filter((m) => m.id !== pendingId));
     const prev = [...messagesRef.current].reverse().find((m) => !isPendingId(m.id));
-    if (prev) noteLocalMessage(id, prev);
+    if (prev) noteLocalMessage(id, prev); else forgetPendingLatest(id, pendingId);
   }, [id, setMessages]);
 
   const handleSendError = useCallback((e: unknown, pendingId: string) => {
@@ -304,39 +299,28 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
     }
   }, [confirmPending, ensureKeys, handleSendError, id, me, row.otherId, setMessages]);
 
-  // ── Poster-first video uploads (the bytes ride after the send) ─────────
-  const setUpload = useCallback((blobId: string, state: UploadState | null) => {
-    setUploads((prev) => {
-      const next = new Map(prev);
-      if (state) next.set(blobId, state); else next.delete(blobId);
-      return next;
-    });
-  }, []);
-
-  /** Runs (or re-runs) a video's upload. Failure is the one case the receiver
-   *  can't recover from on their own, so it's surfaced here and on the bubble. */
-  const runFinish = useCallback(async (blobId: string) => {
-    const finish = finishers.current.get(blobId);
-    if (!finish) return;
-    setUpload(blobId, "uploading");
-    try {
-      await finish();
-      finishers.current.delete(blobId);
-      setUpload(blobId, null);
-    } catch {
-      setUpload(blobId, "failed");
-      setSendError(VIDEO_UPLOAD_FAILED);
+  /** A photo/video send that didn't make it: the pending bubble goes and the
+   *  error shows (MessagesView.sendMedia), never a half-sent message. */
+  const handleMediaSendError = useCallback((e: unknown, pendingId: string) => {
+    dropPending(pendingId);
+    if (e instanceof ApiError) {
+      if (e.code === "CANNOT_MESSAGE_USER") { setBlockedState({ text: "You can't message this account.", offersUnblock: false }); return; }
+      if (e.code === "YOU_BLOCKED_THIS_USER") { setBlockedState({ text: "You blocked this account.", offersUnblock: true }); return; }
+      if (e.code === "FEATURE_DISABLED") { setSendError(e.message); return; }
+      if (e.isRateLimited) { setSendError("Slow down — messages are limited to 30 a minute."); return; }
+      setSendError(e.isConnectionProblem ? "Couldn't send. Check your connection." : e.message);
+      return;
     }
-  }, [setUpload]);
+    if (e instanceof DMMediaError) { setSendError(e.message); return; }
+    if (e instanceof Error && e.message === "NOT_LINKED") { setSendError("Link this browser from your phone to send messages."); return; }
+    setSendError("Couldn't send. Check your connection.");
+  }, [dropPending]);
 
-  /** The sender's own "Uploading" / "Upload failed" badge for a video bubble. */
-  const uploadStateFor = useCallback((blobId: string | null | undefined): UploadState | null => (blobId ? uploads.get(blobId) ?? null : null), [uploads]);
-  const retryUpload = useCallback((blobId: string) => { void runFinish(blobId); }, [runFinish]);
-
-  /** Optimistic like text: the picked photo shows at once. A photo is uploaded
-   *  first (small); a video sends the moment its POSTER is in — both sides get
-   *  the bubble with the poster within a second — and the video bytes follow
-   *  in the background (the receiver's player waits on dm:media_ready). */
+  /** Optimistic like text: the picked photo/video shows at once as a pending
+   *  bubble with a spinner ("Sending…" under it and in the inbox). Nothing is
+   *  sent until the bytes are fully up (a video's poster and video in
+   *  parallel, both /completed); only then does the envelope go out and the
+   *  receipt turn "Sent", so the receiver only ever gets media that plays. */
   const sendMedia = useCallback(async (media: PreparedMedia) => {
     if (!(await ensureKeys())) { setBlockedState({ text: NO_KEY_TEXT, offersUnblock: false }); return; }
     setBlockedState(null);
@@ -348,32 +332,24 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
       media: { kind: media.kind, blobId: "pending", key: "", nonce: "", mime: media.mime, width: media.width, height: media.height, duration: media.duration ?? null, posterId: null, posterNonce: null },
       localPreview: media.previewURL,
     };
-    retries.current.set(pendingId, { kind: "media", media });
     setMessages((prev) => [...prev, pending]);
     noteLocalMessage(id, pending);
     try {
-      const staged = await beginMedia(media, id);
-      const envelope = staged.envelope;
+      const envelope = await uploadMedia(media, id);
       const r = await sendEnvelope(envelope, media.kind, id, row.otherId, pub, ver);
       confirmPending(pendingId, { id: r.id, senderId: r.senderId, text: label, isMine: true, createdAt: r.createdAt, decrypted: true, linkURL: null, media: mediaFromEnvelope(envelope), localPreview: media.previewURL });
-      if (staged.finish && envelope.id) {
-        // The video upload rides after the send, off the send path.
-        finishers.current.set(envelope.id, staged.finish);
-        void runFinish(envelope.id);
-      }
     } catch (e) {
-      handleSendError(e, pendingId);
+      handleMediaSendError(e, pendingId);
     }
-  }, [confirmPending, ensureKeys, handleSendError, id, me, row.otherId, runFinish, setMessages]);
+  }, [confirmPending, ensureKeys, handleMediaSendError, id, me, row.otherId, setMessages]);
 
   /** Tap to retry: the failed bubble goes, the same content is sent again. */
   const retry = useCallback(async (pendingId: string) => {
     const r = retries.current.get(pendingId);
     retries.current.delete(pendingId);
     setMessages((prev) => prev.filter((m) => m.id !== pendingId));
-    if (!r) return;
-    if (r.kind === "text") await send(r.text); else await sendMedia(r.media);
-  }, [send, sendMedia, setMessages]);
+    if (r) await send(r.text);
+  }, [send, setMessages]);
 
   const unblock = useCallback(async () => {
     await unblockUser(row.otherId);
@@ -444,6 +420,5 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
     messages, loaded, canLoadMore, isLoadingMore, blockedState, sendError, clearSendError: () => setSendError(null),
     otherIsTyping, receipt, receiptMessageId, seenLabel,
     load, loadMore, send, sendMedia, retry, unblock, startsRun, endsRun, showsTimeStamp,
-    uploadStateFor, retryUpload,
   };
 }

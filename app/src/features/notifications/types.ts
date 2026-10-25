@@ -5,7 +5,8 @@ import { iso, str, type Json } from "@/lib/types";
 export type NotificationTypeId =
   | "prediction_resolved" | "poll_resolved" | "weekly_report" | "mid_match" | "prediction_window" | "streak_milestone"
   | "followed_live" | "followed_result" | "followed_starting_soon" | "followed_news" | "leaderboard_rank" | "leaderboard_reset"
-  | "new_follower" | "direct_message" | "featured_match" | "final_score" | "featured_news" | "pre_game" | "followed_player_highlight" | "unknown";
+  | "new_follower" | "direct_message" | "featured_match" | "final_score" | "featured_news" | "pre_game" | "followed_player_highlight"
+  | "badge_earned" | "leaderboard_result" | "unknown";
 
 export type NotificationTint = "violet" | "blue" | "gold" | "muted";
 
@@ -41,6 +42,9 @@ export const NOTIFICATION_TYPES: Record<NotificationTypeId, NotificationTypeInfo
   featured_news: T("featured_news", "Big News", "Major stories across your games", "newspaper", "muted"),
   pre_game: T("pre_game", "Upcoming Matches", "A heads-up before any match in your games", "clock", "blue"),
   followed_player_highlight: T("followed_player_highlight", "Player Highlights", "When a player you follow has a standout game", "zap", "blue"),
+  // Backend: types.badge_earned / types.leaderboard_result (both default on).
+  badge_earned: T("badge_earned", "Badges", "When you earn a new badge", "badge-rosette", "violet"),
+  leaderboard_result: T("leaderboard_result", "Monthly Results", "Where you finished when the month closes", "trophy", "gold"),
   unknown: T("unknown", "Notification", "", "bell", "muted"),
 };
 
@@ -52,11 +56,11 @@ export function notificationType(raw: string | null | undefined): NotificationTy
 export const BELL_ELIGIBLE = new Set<NotificationTypeId>([
   "followed_result", "final_score", "followed_player_highlight",
   "prediction_resolved", "poll_resolved", "streak_milestone",
-  "leaderboard_rank", "leaderboard_reset", "new_follower",
+  "leaderboard_rank", "leaderboard_reset", "leaderboard_result", "badge_earned", "new_follower",
   "weekly_report", "followed_news", "featured_news", "unknown",
 ]);
 
-export const LEADERBOARD_TYPES: NotificationTypeId[] = ["leaderboard_rank", "leaderboard_reset"];
+export const LEADERBOARD_TYPES: NotificationTypeId[] = ["leaderboard_rank", "leaderboard_reset", "leaderboard_result"];
 
 // ── Inbox row ─────────────────────────────────────────────────────────────
 export interface NotificationItem {

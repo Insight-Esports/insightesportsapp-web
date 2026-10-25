@@ -11,7 +11,8 @@ import { gameLabel, type Json } from "@/lib/types";
 import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
 import { useReveal } from "@/lib/use-reveal";
-import { ConfirmDialog, EmptyState, InitialAvatar, Page, SkeletonLedger, Spinner } from "@/components/ui";
+import { ConfirmDialog, EmptyState, Page, SkeletonLedger, Spinner } from "@/components/ui";
+import { FlairAvatar, FlairName } from "@/components/ui/premium-flair";
 import { NavBar } from "@/components/shell/NavBar";
 import { normalizeFollowRows, type FollowUser } from "./types";
 import { seedFollow, useFollowState } from "./follow-store";
@@ -159,9 +160,10 @@ function FollowUserRow({ user, isSelf, canRemove, onBlock, onReport, onRemove }:
   return (
     <div className="ledger-row hover:bg-surface/40 transition-colors">
       <Link href={`/profile/${encodeURIComponent(user.id)}`} className="flex items-center gap-3 flex-1 min-w-0">
-        <InitialAvatar name={user.username} imageURL={user.avatarURL} size={44} />
+        {/* A list: the flair holds still. */}
+        <FlairAvatar user={user} size={44} />
         <span className="flex flex-col min-w-0">
-          <span className="t-body-md text-primary truncate">{user.username}</span>
+          <FlairName user={user} className="t-body-md" nameClassName="text-primary" />
           {user.favoriteGame ? <span className="t-label-sm text-muted">{gameLabel(user.favoriteGame)}</span> : null}
         </span>
       </Link>

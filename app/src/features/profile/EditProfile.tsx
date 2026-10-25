@@ -1,20 +1,30 @@
-// EditProfile — EditProfileView.swift: username + avatar.
+// EditProfile — EditProfileView.swift: username + avatar + Premium style.
 //
 // Username: light pre-check here; the server is the authority (uniqueness,
 // slur filter, 30-day cooldown → 409/422 with user-readable text).
 // Avatar: picked file previews immediately; on save it goes through
 // /api/avatar (Supabase upload + POST /users/me/avatar) and the user is
 // re-fetched from GET /users/me, the authoritative source.
+// Premium style (#premium-style): a live preview and the ring / shine /
+// diamond toggles, plus rank colours while on the monthly podium. It saves
+// with the screen's Save: the local mirror first, then PATCH /users/me
+// {premiumStyle}, failing silently (422 until the backend stores it).
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Camera, Clock } from "lucide-react";
+import { Camera, ChevronRight, Clock } from "lucide-react";
 import { api, endpoints, errorMessage, ApiError } from "@/lib/api";
-import { normalizeUser } from "@/lib/types";
+import { normalizeUser, type InsightUser, type Json, type PremiumStylePiece } from "@/lib/types";
 import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
 import { Img, InitialAvatar, Page, Spinner } from "@/components/ui";
+import {
+  canonicalStyle, clearStyleMirror, DEFAULT_STYLE, FlairAvatar, FlairName, METAL_LABEL, METALS, RingSwatch, sameStyle, ShineSwatch,
+  usePodiumPlace, useStyleMirror, writeStyleMirror, type FlairUser, type Metal,
+} from "@/components/ui/premium-flair";
+import { SettingsToggleRow } from "@/features/settings/components";
 import { NavBar } from "@/components/shell/NavBar";
 import { withBase } from "@/lib/base-path";
 
@@ -30,6 +40,22 @@ export function EditProfile() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const originalUsername = user?.username ?? "";
+
+  // Premium style: what's worn now (own mirror > server > default ring) and
+  // the draft (null until touched, so it follows the saved value).
+  const mirror = useStyleMirror(user?.id);
+  const savedStyle = useMemo(() => canonicalStyle(mirror ?? user?.premiumStyle ?? DEFAULT_STYLE), [mirror, user?.premiumStyle]);
+  const [styleDraft, setStyleDraft] = useState<PremiumStylePiece[] | null>(null);
+  const style = styleDraft ?? savedStyle;
+  const styleDirty = !!user?.isPremium && styleDraft !== null && !sameStyle(styleDraft, savedStyle);
+
+  // Search's "Premium Style" result links to /profile/edit#premium-style.
+  const hasUser = !!user;
+  useEffect(() => {
+    if (!hasUser || typeof window === "undefined" || window.location.hash !== "#premium-style") return;
+    const id = requestAnimationFrame(() => document.getElementById("premium-style")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+    return () => cancelAnimationFrame(id);
+  }, [hasUser]);
 
   useEffect(() => { if (user && !username) setUsername(user.username); }, [user, username]);
   useEffect(() => {
@@ -47,7 +73,7 @@ export function EditProfile() {
     if (!ALLOWED.test(trimmed)) return "Only letters, numbers, and underscores allowed.";
     return null;
   }, [trimmed]);
-  const canSave = (trimmed !== originalUsername || picked !== null) && usernameError === null && trimmed.length >= 3;
+  const canSave = (trimmed !== originalUsername || picked !== null || styleDirty) && usernameError === null && trimmed.length >= 3;
 
   async function save(e?: FormEvent) {
     e?.preventDefault();
@@ -55,6 +81,7 @@ export function EditProfile() {
     setSaving(true);
     setSaveError(null);
     try {
+      if (styleDirty && user) await saveStyle(user, canonicalStyle(style), setUser);
       if (picked) {
         const fd = new FormData();
         fd.append("file", picked, picked.name || "avatar.jpg");
@@ -86,6 +113,16 @@ export function EditProfile() {
   }
 
   if (!user) return null;
+
+  const previewUser: FlairUser = {
+    id: user.id,
+    username: trimmed || user.username,
+    avatarURL: preview ?? user.avatarURL,
+    // Non-members see the default ring: what membership would give them.
+    isPremium: true,
+    premiumStyle: user.isPremium ? style : [...DEFAULT_STYLE],
+    title: user.title,
+  };
 
   return (
     <Page>
@@ -134,8 +171,93 @@ export function EditProfile() {
             )}
             {saveError ? <span className="t-label-sm text-error px-1 pt-1">{saveError}</span> : null}
           </div>
+
+          <PremiumStyleSection user={user} previewUser={previewUser} style={style} onChange={setStyleDraft} />
         </div>
       </form>
     </Page>
+  );
+}
+
+// ── Premium style ─────────────────────────────────────────────────────────
+/** Local mirror first, then PATCH; a 422 (field not stored yet) is silent —
+ *  the mirror carries the choice until the server comes back with it. */
+async function saveStyle(user: InsightUser, next: PremiumStylePiece[], setUser: (u: InsightUser) => void) {
+  writeStyleMirror(user.id, next);
+  try {
+    const updated = await api.patch<Json>(endpoints.updateProfile, { premiumStyle: next });
+    const stored = updated && typeof updated === "object" && updated.id != null ? normalizeUser(updated) : null;
+    if (stored && sameStyle(stored.premiumStyle, next)) {
+      clearStyleMirror(user.id);
+      setUser({ ...stored, email: stored.email || user.email });
+    }
+  } catch { /* fails silently */ }
+}
+
+function PremiumStyleSection({ user, previewUser, style, onChange }: { user: InsightUser; previewUser: FlairUser; style: PremiumStylePiece[]; onChange: (s: PremiumStylePiece[]) => void }) {
+  const place = usePodiumPlace(user.id);
+  const metal: Metal | null = place ? METALS[place - 1] : null;
+  const has = (p: PremiumStylePiece) => style.includes(p);
+  const set = (p: PremiumStylePiece, on: boolean) => onChange(canonicalStyle(on ? [...style, p] : style.filter((x) => x !== p)));
+  return (
+    <section id="premium-style" className="flex flex-col gap-2 scroll-mt-20">
+      <span className="t-label-md text-muted px-1">Premium style</span>
+      {user.isPremium && place ? <span className="t-label-sm text-gold px-1 -mt-1">You&apos;re #{place} this month. Wear your rank.</span> : null}
+
+      {/* Live preview: 52pt avatar, moving ring; 17pt bold name, moving shine + diamond. */}
+      <div className="flex items-center gap-3 px-4 py-3.5 rounded-xl bg-card border border-border-subtle min-w-0">
+        <FlairAvatar user={previewUser} isMe={false} size={52} moving pad />
+        <FlairName user={previewUser} isMe={false} moving className="text-[17px] font-bold" nameClassName="text-primary" />
+      </div>
+
+      {user.isPremium ? (
+        <>
+          <div className="ledger">
+            <SettingsToggleRow title="Aura ring" subtitle="A ring of light around your photo" checked={has("ring")} onChange={(v) => set("ring", v)} />
+            {metal ? (
+              <ColorRow title="Ring color" disabled={!has("ring")}>
+                <ColorChip label="Violet" selected={!has("metal")} onClick={() => set("metal", false)} swatch={<RingSwatch />} />
+                <ColorChip label={METAL_LABEL[metal]} selected={has("metal")} onClick={() => set("metal", true)} swatch={<RingSwatch metal={metal} />} />
+              </ColorRow>
+            ) : null}
+            <div className="hairline-t" />
+            <SettingsToggleRow title="Name shine" subtitle="Your name in violet, catching the light" checked={has("shine")} onChange={(v) => set("shine", v)} />
+            {metal ? (
+              <ColorRow title="Shine color" disabled={!has("shine")}>
+                <ColorChip label="Violet" selected={!has("shine_metal")} onClick={() => set("shine_metal", false)} swatch={<ShineSwatch />} />
+                <ColorChip label={METAL_LABEL[metal]} selected={has("shine_metal")} onClick={() => set("shine_metal", true)} swatch={<ShineSwatch metal={metal} />} />
+              </ColorRow>
+            ) : null}
+            <div className="hairline-t" />
+            <SettingsToggleRow title="Diamond" subtitle="The Premium diamond after your name" checked={has("mark")} onChange={(v) => set("mark", v)} />
+          </div>
+          {!metal ? <span className="t-label-sm text-secondary px-1">Finish the month in the top 3 to wear gold, silver or bronze on your ring and name.</span> : null}
+          <span className="t-label-sm text-muted px-1">Mix any of them, or turn them all off. Everyone sees this on your profile, the leaderboard, comments and chat.</span>
+        </>
+      ) : (
+        <div className="flex flex-col items-start gap-2 px-1">
+          <span className="t-body-sm text-secondary">Members choose how they stand out.</span>
+          <Link href="/premium/upgrade" className="flex items-center gap-1 t-label-lg text-violet hover:underline">Get Premium<ChevronRight size={14} /></Link>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ColorRow({ title, disabled, children }: { title: string; disabled?: boolean; children: ReactNode }) {
+  return (
+    <div className={clsx("flex items-center gap-2 px-4 pb-3 -mt-0.5", disabled && "opacity-40 pointer-events-none")} aria-disabled={disabled || undefined}>
+      <span className="t-label-md text-secondary flex-1">{title}</span>
+      {children}
+    </div>
+  );
+}
+
+function ColorChip({ label, selected, onClick, swatch }: { label: string; selected: boolean; onClick: () => void; swatch: ReactNode }) {
+  return (
+    <button type="button" onClick={onClick} aria-pressed={selected} className={clsx("flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border t-label-md transition-colors", selected ? "border-violet bg-violet/15 text-primary" : "border-hairline bg-card text-secondary hover:text-primary")}>
+      {swatch}
+      {label}
+    </button>
   );
 }

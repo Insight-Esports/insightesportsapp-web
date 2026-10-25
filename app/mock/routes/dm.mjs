@@ -327,11 +327,23 @@ export function register(app, h) {
   // The "bucket": PUT the ciphertext, GET it back (no auth, like a signed URL).
   const cors = (_req, res, next) => { res.set("Access-Control-Allow-Origin", "*"); res.set("Access-Control-Allow-Methods", "GET, PUT, OPTIONS"); res.set("Access-Control-Allow-Headers", "Content-Type"); next(); };
   app.options("/mock-uploads/:id", cors, (_req, res) => res.sendStatus(204));
+  // Test hook: POST /mock/dm/upload-behavior {delayMs, fail} slows (or fails) the bucket PUT,
+  // so the sender's spinner / "Sending…" (nothing sent until the bytes are in) can be seen.
+  const uploadBehavior = { delayMs: Number(process.env.MOCK_UPLOAD_DELAY_MS ?? 0) || 0, fail: false };
+  app.post("/mock/dm/upload-behavior", (req, res) => {
+    const b = req.body ?? {};
+    if (b.delayMs != null) uploadBehavior.delayMs = Math.max(0, Number(b.delayMs) || 0);
+    if (b.fail != null) uploadBehavior.fail = !!b.fail;
+    res.json(uploadBehavior);
+  });
   app.put("/mock-uploads/:id", cors, express.raw({ type: () => true, limit: "60mb" }), (req, res) => {
     const u = uploads.get(req.params.id);
     if (!u) return res.status(404).json({ error: "Upload not found" });
-    u.bytes = Buffer.from(req.body);
-    res.json({ ok: true, size: u.bytes.length });
+    setTimeout(() => {
+      if (uploadBehavior.fail) return res.status(500).json({ error: "mock upload failure" });
+      u.bytes = Buffer.from(req.body);
+      res.json({ ok: true, size: u.bytes.length });
+    }, uploadBehavior.delayMs);
   });
   app.get("/mock-uploads/:id", cors, (req, res) => {
     const u = uploads.get(req.params.id);

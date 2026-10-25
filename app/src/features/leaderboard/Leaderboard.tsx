@@ -1,18 +1,22 @@
 // Leaderboard — LeaderboardView.swift. Monthly / All Time windows over the
-// points ledger, the monthly prize banner with its reset countdown, the
-// top-3 podium, a striped ledger with rank · movement · player · points,
-// and a pinned "your rank" bar when you're outside the visible board.
-// Every row taps through to that user's profile.
+// points ledger, the monthly prize banner with its reset countdown (UTC:
+// the boards are calendar periods resetting on the 1st 00:00 UTC), the
+// top-3 podium with gold / silver / bronze rank rings, a striped ledger with
+// rank · movement (from previous_rank) · player · points and "N pts to #k"
+// on every row, and a pinned "your rank" bar when you're outside the
+// visible board. Names wear Premium flair (still in rows, moving on the
+// podium) and the ORACLE word. Every row taps through to that profile.
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Minus, Triangle } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
-import { bool, int, str, type Json } from "@/lib/types";
+import { bool, int, normalizePremiumStyle, normalizeTitle, str, type Json, type PremiumStylePiece } from "@/lib/types";
 import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
-import { CrownBadge, EmptyState, FilterSegment, InitialAvatar, LoadFailure, Page, Spinner } from "@/components/ui";
+import { EmptyState, FilterSegment, LoadFailure, Page, Spinner } from "@/components/ui";
+import { FlairAvatar, FlairName, METALS, setPodiumFromRows } from "@/components/ui/premium-flair";
 import { SkeletonLeaderboard } from "@/components/ui/skeletons";
 import { NavBar } from "@/components/shell/NavBar";
 import { useReveal } from "@/lib/use-reveal";
@@ -23,22 +27,36 @@ export interface LeaderboardEntry {
   username: string;
   avatarURL: string | null;
   points: number;
-  /** rank change since last snapshot (+up, -down, 0 none/new) */
+  /** rank change since yesterday's snapshot (+up, -down, 0 none/new) */
   movement: number;
   isCurrentUser: boolean;
   isPremium: boolean;
+  premiumStyle: PremiumStylePiece[] | null;
+  /** 'oracle' on the live monthly #1 */
+  title?: string | null;
 }
 
 type Period = "monthly" | "alltime";
 const PERIODS: { label: string; value: Period }[] = [{ label: "Monthly", value: "monthly" }, { label: "All Time", value: "alltime" }];
 const PAGE = 100;
 
-function monthFraming() {
-  const now = new Date();
-  const monthLabel = now.toLocaleDateString(undefined, { month: "long" });
-  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const daysLeft = Math.max(lastDay - now.getDate(), 0);
-  return { monthLabel, resetLabel: daysLeft <= 1 ? "Resets tomorrow" : `Resets in ${daysLeft} days` };
+/** Month name + reset countdown, in UTC (the board resets on the 1st at
+ *  00:00 UTC — local time was wrong from ~5pm PT on the last day). */
+export function monthFraming(now: Date = new Date()) {
+  const monthLabel = now.toLocaleDateString(undefined, { month: "long", timeZone: "UTC" });
+  const reset = Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+  const hours = (reset - now.getTime()) / 36e5;
+  const resetLabel =
+    hours >= 48 ? `Resets in ${Math.floor(hours / 24)} days`
+    : hours >= 24 ? "Resets tomorrow"
+    : hours >= 1 ? `Resets in ${Math.floor(hours)}h`
+    : "Resets within the hour";
+  return { monthLabel, resetLabel };
+}
+
+/** "1 pt" · "N pts" */
+export function ptsLabel(n: number): string {
+  return `${n} ${Math.abs(n) === 1 ? "pt" : "pts"}`;
 }
 
 export function Leaderboard() {
@@ -60,17 +78,26 @@ export function Leaderboard() {
 
   const toEntries = (raw: Json, offset: number): LeaderboardEntry[] => {
     const rows: Json[] = Array.isArray(raw) ? raw : Array.isArray(raw?.entries) ? raw.entries : [];
-    return rows.map((row, idx) => ({
-      id: str(row.user_id) ?? str(row.id) ?? `row-${offset + idx}`,
+    return rows.map((row, idx) => {
       // Positional rank: ties would all get server rank 1 — read 1,2,3…
-      rank: offset + idx + 1,
-      username: str(row.username) ?? "user",
-      avatarURL: str(row.avatar_url),
-      points: int(row.points) ?? 0,
-      movement: int(row.movement) ?? 0,
-      isCurrentUser: !!myId && str(row.user_id) === myId,
-      isPremium: bool(row.is_premium),
-    }));
+      const rank = offset + idx + 1;
+      // Movement compares like with like: the snapshot's RANK() against
+      // today's server RANK() (positional would invent moves among ties).
+      const previous = int(row.previous_rank);
+      const serverRank = int(row.rank) ?? rank;
+      return {
+        id: str(row.user_id) ?? str(row.id) ?? `row-${offset + idx}`,
+        rank,
+        username: str(row.username) ?? "user",
+        avatarURL: str(row.avatar_url),
+        points: int(row.points) ?? 0,
+        movement: previous !== null && previous > 0 ? previous - serverRank : int(row.movement) ?? 0,
+        isCurrentUser: !!myId && str(row.user_id) === myId,
+        isPremium: bool(row.is_premium),
+        premiumStyle: normalizePremiumStyle(row.premium_style),
+        title: normalizeTitle(row.title),
+      };
+    });
   };
 
   // Switching periods clears the board IMMEDIATELY; a stale response for a
@@ -82,6 +109,8 @@ export function Leaderboard() {
       try {
         const raw = await api.get<Json>(endpoints.leaderboardPeriod(period, PAGE, 0));
         if (!active) return;
+        // Every monthly load refreshes who wears gold / silver / bronze.
+        if (period === "monthly") setPodiumFromRows(raw);
         const list = toEntries(raw, 0);
         setEntries(list);
         setCanLoadMore(list.length >= PAGE);
@@ -89,7 +118,7 @@ export function Leaderboard() {
           try {
             const me = await api.get<Json>(endpoints.leaderboardMe(period));
             if (!active) return;
-            setMyRow({ id: myId, rank: int(me?.rank) ?? 0, username: user?.username ?? "You", avatarURL: user?.avatarURL ?? null, points: int(me?.points) ?? 0, movement: 0, isCurrentUser: true, isPremium: !!user?.isPremium });
+            setMyRow({ id: myId, rank: int(me?.rank) ?? 0, username: user?.username ?? "You", avatarURL: user?.avatarURL ?? null, points: int(me?.points) ?? 0, movement: 0, isCurrentUser: true, isPremium: !!user?.isPremium, premiumStyle: user?.premiumStyle ?? null, title: user?.title });
           } catch { setMyRow(null); }
         }
       } catch (e) {
@@ -123,7 +152,10 @@ export function Leaderboard() {
 
   const podium = entries.slice(0, 3);
   const rest = entries.slice(3);
-  const framing = useMemo(() => monthFraming(), []);
+  // The countdown re-reads the clock every minute.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 60_000); return () => clearInterval(t); }, []);
+  const framing = useMemo(() => monthFraming(new Date(now)), [now]);
   const pointsToNext = (e: LeaderboardEntry): number | null => {
     if (e.rank <= 1) return null;
     const above = entries.find((x) => x.rank === e.rank - 1);
@@ -198,14 +230,14 @@ function Row({ entry, pointsToNext, isEven }: { entry: LeaderboardEntry; pointsT
       <span className={clsx("w-7 text-center t-mono-sm", inPrizeZone ? "text-gold" : "text-muted")}>{entry.rank}</span>
       <span className="w-5"><Movement movement={entry.movement} /></span>
       <span className="flex items-center gap-2 flex-1 min-w-0">
-        <InitialAvatar name={entry.username} imageURL={entry.avatarURL} size={28} />
+        {/* Rows are a list: the flair holds still. */}
+        <FlairAvatar user={entry} size={28} />
         <span className="flex flex-col min-w-0">
           <span className="flex items-center gap-1.5 min-w-0">
-            <span className={clsx("t-body-sm truncate", entry.isCurrentUser ? "text-violet" : "text-primary")}>{entry.username}</span>
-            {entry.isPremium ? <CrownBadge /> : null}
-            {entry.isCurrentUser ? <span className="text-[9px] font-bold text-violet px-1.5 py-0.5 rounded-full bg-surface border border-border-subtle">YOU</span> : null}
+            <FlairName user={entry} className="t-body-sm" nameClassName={entry.isCurrentUser ? "text-violet" : "text-primary"} />
+            {entry.isCurrentUser ? <span className="shrink-0 text-[9px] font-bold text-violet px-1.5 py-0.5 rounded-full bg-surface border border-border-subtle">YOU</span> : null}
           </span>
-          {entry.isCurrentUser && pointsToNext ? <span className="t-label-sm text-muted">{pointsToNext} pts to #{entry.rank - 1}</span> : null}
+          {pointsToNext ? <span className="t-label-sm text-muted">{ptsLabel(pointsToNext)} to #{entry.rank - 1}</span> : null}
         </span>
       </span>
       <span className="w-16 text-center t-mono-sm text-primary">{entry.points}</span>
@@ -214,13 +246,19 @@ function Row({ entry, pointsToNext, isEven }: { entry: LeaderboardEntry; pointsT
 }
 
 function Podium({ entries }: { entries: LeaderboardEntry[] }) {
-  const col = (e: LeaderboardEntry, height: number, place: number) => {
+  const col = (e: LeaderboardEntry, height: number, place: 1 | 2 | 3) => {
     const accent = place === 1 ? "var(--gold)" : place === 2 ? "var(--text-secondary)" : "rgb(184 122 77)";
     return (
       <Link key={e.id} href={e.isCurrentUser ? "/profile" : `/profile/${encodeURIComponent(e.id)}`} className="flex flex-col items-center gap-1.5 flex-1 min-w-0 hover:opacity-90">
-        <span className="rounded-full" style={{ boxShadow: `0 0 0 2px ${accent}` }}><InitialAvatar name={e.username} imageURL={e.avatarURL} size={place === 1 ? 60 : 50} /></span>
-        <span className="flex items-center gap-1 max-w-full"><span className="t-label-md text-primary truncate">{e.username}</span>{e.isPremium ? <CrownBadge /> : null}</span>
+        {/* Rank, not Premium: a moving gold / silver / bronze ring whatever
+            the plan (it replaces a member's violet ring; their shine and
+            diamond still show on the name). */}
+        <FlairAvatar user={e} size={place === 1 ? 60 : 50} metal={METALS[place - 1]} pad />
+        <FlairName user={e} moving className="t-label-md" nameClassName="text-primary" />
         <span className="t-mono-sm text-primary">{e.points}</span>
+        {/* The prize badge sits on the plinth in place of the digit (48 on
+            #1, 40 on #2/#3). Karlo's trophy / crown art isn't on the web
+            yet, so the digit stands in. */}
         <span className="relative w-full rounded-lg bg-surface border border-border-subtle grid place-items-center" style={{ height }}>
           <span className="absolute top-1.5 inset-x-2.5 h-[3px] rounded-sm" style={{ background: accent }} />
           <span className="font-rounded text-[22px] font-black" style={{ color: accent }}>{place}</span>
@@ -241,9 +279,9 @@ function YourRankBar({ entry }: { entry: LeaderboardEntry }) {
   return (
     <Link href="/profile" className="flex items-center gap-3 px-4 py-3 rounded-xl bg-surface border border-violet/35 shadow-lg hover:brightness-110">
       <span className="t-mono-md text-violet min-w-10">#{entry.rank}</span>
-      <InitialAvatar name={entry.username} imageURL={entry.avatarURL} size={36} />
-      <span className="flex flex-col flex-1"><span className="t-body-md text-primary">You</span></span>
-      <span className="t-mono-md text-primary">{entry.points} pts</span>
+      <FlairAvatar user={entry} size={36} />
+      <span className="flex flex-col flex-1 min-w-0"><FlairName user={entry} label="You" className="t-body-md" nameClassName="text-primary" /></span>
+      <span className="t-mono-md text-primary">{ptsLabel(entry.points)}</span>
     </Link>
   );
 }

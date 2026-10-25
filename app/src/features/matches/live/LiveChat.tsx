@@ -9,6 +9,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { Maximize2, Send } from "lucide-react";
 import { AssetIcon, LiveBadge, Sheet, TeamMark } from "@/components/ui";
 import { clsx } from "@/lib/format";
+import { FlairChatName } from "@/components/ui/premium-flair";
 import { team1Color, team2Color, type Match } from "@/lib/types";
 import { SectionBox, abbr } from "./sections";
 import type { LiveChatMessage } from "./types";
@@ -16,8 +17,7 @@ import type { LiveChatMessage } from "./types";
 export function ChatMessageRow({ message }: { message: LiveChatMessage }) {
   return (
     <div className="flex items-start gap-1.5 py-[5px]">
-      {message.isPremium ? <AssetIcon name="premium" height={13} className="mt-0.5" /> : null}
-      <span className="t-label-md text-violet shrink-0">{message.username}</span>
+      <FlairChatName user={message.flair} className="t-label-md shrink-0" nameClassName="text-violet" />
       <span className="t-body-sm text-primary break-words min-w-0">{message.message}</span>
     </div>
   );

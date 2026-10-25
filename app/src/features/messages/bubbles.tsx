@@ -3,10 +3,11 @@
 // avatar at the end of their run), LinkPreviewBubble (TikTok/YouTube via
 // public oEmbed from the browser, everything else via /api/links/preview;
 // a plain host card when there's no preview), MediaBubble (a photo or a
-// video poster sized by the envelope's aspect; tap → viewer; "Uploading"
-// while this browser is still sending a video's bytes), MediaViewer
-// (full-screen photo / inline video; holds the poster with a clock while
-// the sender is still uploading, plays on dm:media_ready), TypingBubble.
+// video poster sized by the envelope's aspect; tap → viewer; a spinner
+// while this browser is still uploading it, before anything is sent),
+// MediaViewer (full-screen photo / inline video; an older iOS build may
+// still send a video before its bytes are up, so the receiver holds the
+// poster with a clock and plays on dm:media_ready), TypingBubble.
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -17,11 +18,10 @@ import { DMMediaError, imageURL, videoURL } from "./media";
 import { onDM } from "./service";
 import { openURLFor, previewIsEmpty, useLinkPreview } from "./link-preview";
 import { clock, durationClock } from "./format-dm";
-import type { UploadState } from "./use-thread";
 import { isPendingId, mediaAspect, type DMMedia, type DMMessage } from "./types";
 
 // ── MessageBubble ─────────────────────────────────────────────────────────
-export function MessageBubble({ message, seenLabel, endsRun, avatarURL, initialsName, showTime, onToggleTime, onOpenMedia, onRetry, uploadState = null, onRetryUpload }: {
+export function MessageBubble({ message, seenLabel, endsRun, avatarURL, initialsName, showTime, onToggleTime, onOpenMedia, onRetry }: {
   message: DMMessage;
   seenLabel: string | null;
   endsRun: boolean;
@@ -31,9 +31,6 @@ export function MessageBubble({ message, seenLabel, endsRun, avatarURL, initials
   onToggleTime: () => void;
   onOpenMedia: (m: DMMessage) => void;
   onRetry: (id: string) => void;
-  /** Set while THIS browser is still uploading the video's bytes (or gave up). */
-  uploadState?: UploadState | null;
-  onRetryUpload?: (blobId: string) => void;
 }) {
   const mine = message.isMine;
   const failed = !!message.failed;
@@ -45,7 +42,7 @@ export function MessageBubble({ message, seenLabel, endsRun, avatarURL, initials
         ) : null}
         <div className={clsx("min-w-0", mine ? "ml-[70px]" : "mr-[70px]")}>
           {message.media ? (
-            <MediaBubble message={message} onOpen={onOpenMedia} onRetry={onRetry} uploadState={uploadState} onRetryUpload={onRetryUpload} />
+            <MediaBubble message={message} onOpen={onOpenMedia} onRetry={onRetry} />
           ) : message.linkURL ? (
             <LinkPreviewBubble url={message.linkURL} isMine={mine} />
           ) : (
@@ -162,9 +159,9 @@ function frameFor(media: DMMedia): { width: number; height: number } {
   return { width: Math.round(w), height: Math.round(h) };
 }
 
-/** "notReady": the sender hasn't finished uploading (rare for images, the
- *  poster-first video's poster is in before the send). Re-fetched on
- *  dm:media_ready for that upload id. */
+/** "notReady": the sender hasn't finished uploading. Never from this web app
+ *  (it sends only after the bytes are in); kept for older iOS builds that
+ *  sent a video poster-first. Re-fetched on dm:media_ready for that id. */
 type MediaState = { kind: "loading" } | { kind: "notReady" } | { kind: "ready"; src: string } | { kind: "expired" } | { kind: "unavailable" };
 
 function stateFromError(e: unknown): MediaState {
@@ -208,9 +205,8 @@ export function useMediaImage(message: DMMessage): MediaState {
   return state;
 }
 
-export function MediaBubble({ message, onOpen, onRetry, uploadState = null, onRetryUpload }: {
+export function MediaBubble({ message, onOpen, onRetry }: {
   message: DMMessage; onOpen: (m: DMMessage) => void; onRetry: (id: string) => void;
-  uploadState?: UploadState | null; onRetryUpload?: (blobId: string) => void;
 }) {
   const media = message.media!;
   const pending = isPendingId(message.id);
@@ -244,31 +240,22 @@ export function MediaBubble({ message, onOpen, onRetry, uploadState = null, onRe
       )}
       {media.kind === "video" && !unavailable ? (
         <>
-          <span className="absolute inset-0 grid place-items-center">
-            <span className="grid place-items-center size-12 rounded-full bg-black/45 text-white"><Play size={22} className="fill-white ml-0.5" /></span>
-          </span>
+          {/* No play glyph while it's still going up: the spinner holds the centre. */}
+          {!pending ? (
+            <span className="absolute inset-0 grid place-items-center">
+              <span className="grid place-items-center size-12 rounded-full bg-black/45 text-white"><Play size={22} className="fill-white ml-0.5" /></span>
+            </span>
+          ) : null}
           {media.duration != null ? (
             <span className="absolute right-2 bottom-2 px-[7px] py-[3px] rounded-full bg-black/55 text-white t-mono-sm !text-[11px] !font-semibold">{durationClock(media.duration)}</span>
           ) : null}
         </>
       ) : null}
       {pending && !failed ? (
+        // Still uploading from this browser: nothing has been sent yet ("Sending…" under it).
         <span className="absolute inset-0 grid place-items-center bg-black/25"><Spinner size={22} className="border-white/40 border-t-white" /></span>
-      ) : uploadState === "uploading" ? (
-        // Sent (the poster is there for both sides); the video bytes are still on their way up.
-        <span className="absolute left-2 top-2 flex items-center gap-[5px] px-2 py-1 rounded-full bg-black/55 text-white text-[11px] font-semibold">
-          <Spinner size={11} className="border-white/40 border-t-white" />Uploading
-        </span>
-      ) : uploadState === "failed" ? (
-        <span
-          role="button"
-          onClick={(e) => { e.stopPropagation(); onRetryUpload?.(media.blobId); }}
-          className="absolute left-2 top-2 flex items-center gap-[5px] px-2 py-1 rounded-full bg-black/65 text-white text-[11px] font-semibold hover:bg-black/80"
-        >
-          <RotateCw size={11} />Upload failed · Retry
-        </span>
       ) : state.kind === "notReady" ? (
-        // The sender is still uploading — hold the frame with a clock, never an error.
+        // An older iOS sender is still uploading — hold the frame with a clock, never an error.
         <span className="absolute left-2 top-2 flex items-center gap-[5px] px-2 py-1 rounded-full bg-black/55 text-white text-[11px] font-semibold">
           <Clock size={11} />Processing
         </span>
@@ -286,7 +273,7 @@ export function MediaViewer({ message, onClose }: { message: DMMessage; onClose:
   const image = useMediaImage(message);
   const [video, setVideo] = useState<string | null>(() => (isPendingId(message.id) && message.localPreview ? message.localPreview : null));
   const [videoError, setVideoError] = useState<string | null>(null);
-  /** Video bytes not on the server yet (poster-first send in flight): hold the poster, play on dm:media_ready. */
+  /** Video bytes not on the server yet (an older iOS build's poster-first send): hold the poster, play on dm:media_ready. */
   const [waiting, setWaiting] = useState(false);
   const waitingRef = useRef(false);
   waitingRef.current = waiting;
@@ -324,7 +311,7 @@ export function MediaViewer({ message, onClose }: { message: DMMessage; onClose:
         ) : videoError ? (
           <span className="t-body-md text-muted">{videoError}</span>
         ) : waiting ? (
-          // Poster-first: the frame they already have, a quiet clock, no error.
+          // Older iOS poster-first send: the frame they already have, a quiet clock, no error.
           <div className="relative max-w-full max-h-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
             {image.kind === "ready" ? (
               // eslint-disable-next-line @next/next/no-img-element

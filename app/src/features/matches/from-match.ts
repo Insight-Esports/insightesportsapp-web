@@ -1,6 +1,8 @@
 // from-match.ts — a team or player opened from a match screen carries
 // `?from=match:<id>` so its back chevron returns to that match instead
 // of the Teams / Players tab (the app pops back to the match it came from).
+// The Schedule calendar opened from a team / player page carries
+// `?from=<that page's path>` the same way.
 
 /** Append `from=match:<id>` to an in-app href (keeps any existing query / hash). */
 export function withFromMatch(href: string, matchId: string | null | undefined): string {
@@ -19,4 +21,10 @@ export function backHrefFrom(from: string | null | undefined, fallback: string):
     if (id) return `/match/${encodeURIComponent(id)}`;
   }
   return fallback;
+}
+
+/** The in-app path a calendar `from` names, or null (never another origin). */
+export function pagePathFrom(from: string | null | undefined): string | null {
+  if (!from || !from.startsWith("/") || from.startsWith("//") || from.includes("\\")) return null;
+  return from;
 }

@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { BadgeCheck, BarChart3, Clock, ClockAlert, Radio, Trophy, CalendarClock, Newspaper, TrendingUp, Gift, UserPlus, Star, Flag, Zap, Bell, BellOff } from "lucide-react";
+import { Award, BadgeCheck, BarChart3, Clock, ClockAlert, Radio, Trophy, CalendarClock, Newspaper, TrendingUp, Gift, UserPlus, Star, Flag, Zap, Bell, BellOff } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { type Json } from "@/lib/types";
 import { clsx, timeAgo } from "@/lib/format";
@@ -26,8 +26,10 @@ export function notificationHref(item: NotificationItem): string | null {
   const id = item.payloadId ? encodeURIComponent(item.payloadId) : null;
   switch (item.type.id) {
     case "weekly_report": return "/weekly-report";
+    case "badge_earned": return "/profile";          // your own profile, where the badge shelf is
     case "leaderboard_rank":
-    case "leaderboard_reset": return "/leaderboard";
+    case "leaderboard_reset":
+    case "leaderboard_result": return "/leaderboard";
     case "followed_result":
     case "final_score":
     case "followed_player_highlight": return id ? `/match/${id}` : null;
@@ -170,6 +172,7 @@ function TypeGlyph({ icon, tint }: { icon: string; tint: NotificationTint }) {
   const p = { size: 13, strokeWidth: 2.4, className: TINT[tint] };
   switch (icon) {
     case "badge-check": return <BadgeCheck {...p} />;
+    case "badge-rosette": return <Award {...p} />;
     case "bar-chart": return <BarChart3 {...p} />;
     case "clock": return <Clock {...p} />;
     case "clock-alert": return <ClockAlert {...p} />;

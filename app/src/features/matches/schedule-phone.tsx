@@ -9,6 +9,9 @@
 // The calendar is a pushed screen (the violet calendar glyph in the header)
 // reached here at /schedule?view=calendar: month header with chevrons,
 // weekday row, 7-column day grid, a hairline, then the selected day.
+// A team / player page's Calendar button adds team=<id or name>&teamName=
+// (only that team's matches, with a "Show all" line) and from=<its path>
+// (the back chevron returns there).
 // Desktop keeps the merged calendar + day layout in schedule.tsx.
 "use client";
 
@@ -24,6 +27,8 @@ import { gameLabel, normalizeMatches, type GameId, type Match, SELECTABLE_GAMES 
 import { useFetch } from "@/lib/use-fetch";
 import { useReveal } from "@/lib/use-reveal";
 import { useAppState } from "@/store/app-state";
+import { isUUID } from "@/features/entity-cache";
+import { pagePathFrom } from "./from-match";
 import { dayLoadOf, useCalendarData } from "./calendar-data";
 import { CompletedMatchRow, UpcomingMatchCard } from "./cards";
 import { DateSectionHeader, addDays, addMonths, calendarDayTitle, cleanUpcoming, dayKey, filterByGame, gameQuery, groupByDay, isSameLocalDay, parseDayKey, parseGameParam, scheduleDayLabel, sortUpcomingAsc, startOfDay, startOfMonth } from "./shared";
@@ -138,6 +143,22 @@ function firstWeekday(): number {
   return 0;
 }
 
+/** Does this match involve the calendar's team? The team id first, falling
+ *  back to the name (case-insensitive) — the same rule as the Upcoming list
+ *  the button sits on, so the calendar never drops a fixture the list shows
+ *  (feeds and rosters don't always agree on ids). `team` is an id when the
+ *  name rides separately in `teamName` (or when it looks like one). */
+export function teamMatcher(team: string | null, teamName: string | null): ((m: Match) => boolean) | null {
+  if (!team) return null;
+  const id = teamName ? (team !== teamName ? team : null) : (isUUID(team) ? team : null);
+  const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
+  const name = norm(teamName ?? (id ? null : team));
+  const side = (sideId: string | null, sideName: string) => (!!id && sideId === id) || (!!name && norm(sideName) === name);
+  return (m) => side(m.team1Id, m.team1Name) || side(m.team2Id, m.team2Name);
+}
+
+const possessive = (name: string) => (/s$/i.test(name) ? `${name}'` : `${name}'s`);
+
 export function CalendarPhone({ game }: { game: GameId }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -156,13 +177,28 @@ export function CalendarPhone({ game }: { game: GameId }) {
   const [dayFilter, setDayFilter] = useState<{ forKey: string; game: string | null }>({ forKey: selectedKey, game: null });
   const dayGameFilter = dayFilter.forKey === selectedKey ? dayFilter.game : null;
 
+  // One team's matches (opened from a team or player page).
+  const teamParam = params.get("team");
+  const teamNameParam = params.get("teamName");
+  const playsHere = useMemo(() => teamMatcher(teamParam, teamNameParam), [teamParam, teamNameParam]);
+  const teamLabel = teamNameParam ?? (teamParam && !isUUID(teamParam) ? teamParam : null);
+  const showAllTeams = () => {
+    const next = new URLSearchParams(params.toString());
+    next.delete("team"); next.delete("teamName");
+    router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+  };
+
   const data = useCalendarData(displayedMonth);
   const scoped = useMemo(() => {
-    if (game === "all") return data.byDay;
+    if (game === "all" && !playsHere) return data.byDay;
     const out = new Map<string, Match[]>();
-    for (const [k, ms] of data.byDay) { const f = filterByGame(ms, game); if (f.length) out.set(k, f); }
+    for (const [k, ms] of data.byDay) {
+      let f = filterByGame(ms, game);
+      if (playsHere) f = f.filter(playsHere);
+      if (f.length) out.set(k, f);
+    }
     return out;
-  }, [data.byDay, game]);
+  }, [data.byDay, game, playsHere]);
 
   const first = useMemo(() => firstWeekday(), []);
   const symbols = useMemo(() => {
@@ -192,13 +228,22 @@ export function CalendarPhone({ game }: { game: GameId }) {
   const beyondWindow = isPast && data.pastWindowStart !== null && selectedDay < data.pastWindowStart;
   const n = dayMatchesAll.length;
   const title = game === "all" ? "Calendar" : `${gameLabel(game)} · Calendar`;
-  // Back returns to the face of the Schedule tab the calendar was opened from.
-  const backHref = params.get("from") === "results" ? `/results${gameQuery(game)}` : `/schedule${gameQuery(game)}`;
+  // Back returns to where the calendar was opened from: a team / player page,
+  // or the face of the Schedule tab.
+  const from = params.get("from");
+  const backHref = pagePathFrom(from) ?? (from === "results" ? `/results${gameQuery(game)}` : `/schedule${gameQuery(game)}`);
 
   return (
     <Page>
       <NavBar title={title} back={backHref} />
       <div className="flex flex-col gap-5 pt-2">
+        {playsHere ? (
+          <div className="flex items-center gap-2 px-4 pt-1 t-label-sm text-muted">
+            <span className="truncate">Showing {teamLabel ? possessive(teamLabel) : "one team's"} matches</span>
+            <span aria-hidden>·</span>
+            <button type="button" onClick={showAllTeams} className="shrink-0 text-violet hover:text-violet-light">Show all</button>
+          </div>
+        ) : null}
         {/* Month header: name + chevrons */}
         <div className="flex items-center px-3">
           <button type="button" onClick={() => shiftMonth(-1)} aria-label="Previous month" className="grid place-items-center size-10 text-secondary"><ChevronLeft size={16} strokeWidth={2.5} /></button>

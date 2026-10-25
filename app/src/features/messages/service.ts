@@ -22,7 +22,7 @@ type Events = {
   read: { conversationId: string; userId: string; readAt: string | null };
   removed: { conversationId: string };
   typing: { conversationId: string; userId: string };
-  /** dm:media_ready — a poster-first video's bytes landed; bubbles waiting on that upload id fetch now. */
+  /** dm:media_ready — an upload's bytes landed. Bubbles waiting on that id fetch now (only older iOS builds still send before their video is up). */
   mediaReady: { conversationId: string; uploadId: string; kind: string; size: number };
   unread: { count: number };
   link: { state: LinkState };
@@ -314,10 +314,17 @@ export function noteLatest(conversationId: string, message: DMMessage): boolean 
   latestByConversation.set(conversationId, message);
   return true;
 }
+/** A pending text that never resolved is forgotten after 20 s; a photo/video
+ *  stays "Sending…" while its bytes go up (it isn't sent until they're in). */
 export function expireStalePending() {
   for (const [id, m] of latestByConversation) {
-    if (isPendingId(m.id) && Date.now() - new Date(m.createdAt).getTime() > 20_000) latestByConversation.delete(id);
+    const ttl = m.media ? 10 * 60_000 : 20_000;
+    if (isPendingId(m.id) && Date.now() - new Date(m.createdAt).getTime() > ttl) latestByConversation.delete(id);
   }
+}
+/** A dropped send with nothing real before it: the row stops claiming "Sending…". */
+export function forgetPendingLatest(conversationId: string, pendingId: string) {
+  if (latestByConversation.get(conversationId)?.id === pendingId) latestByConversation.delete(conversationId);
 }
 export interface Newest { id: string; at: string; isMine: boolean; local: DMMessage | null }
 export function newestFor(row: DMConversationRow): Newest | null {

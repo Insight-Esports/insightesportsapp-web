@@ -13,6 +13,7 @@ import { api, endpoints } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
 import { type Player, type PlayerComment } from "@/lib/types";
 import { ConfirmDialog, EmptyState, GradientAvatar, Ledger, SectionHeader, SkeletonBar, Spinner, Toast } from "@/components/ui";
+import { FlairAvatar, FlairName, type FlairUser } from "@/components/ui/premium-flair";
 import { useLoadMore } from "./useLoadMore";
 import { normalizeCommentsPage, normalizeCreatedComment } from "./types";
 
@@ -193,6 +194,7 @@ export function PlayerComments({ player }: { player: Player }) {
 
 function CommentRow({ comment, onReport, onBlock, onDelete }: { comment: PlayerComment; onReport: () => void; onBlock: () => void; onDelete: () => void }) {
   const [menu, setMenu] = useState(false);
+  const author: FlairUser = { id: comment.userId || null, username: comment.username, avatarURL: comment.avatarURL, isPremium: comment.isPremium, premiumStyle: comment.premiumStyle, title: comment.title };
   const wrap = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!menu) return;
@@ -205,9 +207,10 @@ function CommentRow({ comment, onReport, onBlock, onDelete }: { comment: PlayerC
   return (
     <div className="ledger-row !items-start flex-col gap-2 hairline-b last:border-b-0">
       <div className="flex items-center gap-2.5 w-full">
-        <GradientAvatar name={comment.username} size={32} />
+        {/* Comments are a list: the flair holds still. */}
+        <FlairAvatar user={author} size={32}><GradientAvatar name={comment.username} size={32} /></FlairAvatar>
         <span className="flex flex-col min-w-0 flex-1">
-          <span className="t-label-md text-primary truncate">{comment.username}</span>
+          <FlairName user={author} className="t-label-md self-start" nameClassName="text-primary" />
           <span className="t-label-sm text-muted">{timeAgo(comment.createdAt)}</span>
         </span>
         <div ref={wrap} className="relative">

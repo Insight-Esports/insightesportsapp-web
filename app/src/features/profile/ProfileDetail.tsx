@@ -1,14 +1,16 @@
 // ProfileDetail — ProfileDetailView.swift: your own profile (/profile) and a
-// public one (/profile/[id]). Header (avatar, PRO, game chips, follower /
-// following counts), the RANK · POINTS · WIN % strip, the prediction record,
-// followed teams/players, the points ledger and recent activity (own only).
-// Public profiles get Follow · Message · a "•••" menu with Block / Report.
+// public one (/profile/[id]). Header (avatar + Premium flair, game chips,
+// follower / following counts), the RANK · POINTS · WIN % strip, the
+// prediction record, followed teams/players, the points ledger and recent
+// activity (own only). Public profiles get Follow · Message · a "•••" menu
+// with Block / Report; your own gets a full-width Edit Profile button in
+// the Message slot (ProfileView.swift, Oct 24).
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { SquarePen, Ellipsis, Check, X, BarChart3, Flame, ArrowUpRight, UserPlus, Flag, Hand, ShieldAlert } from "lucide-react";
+import { Pencil, Ellipsis, Check, X, BarChart3, Flame, ArrowUpRight, UserPlus, Flag, Hand, ShieldAlert } from "lucide-react";
 import { api, endpoints, errorMessage } from "@/lib/api";
 import { useFetch } from "@/lib/use-fetch";
 import { useReveal } from "@/lib/use-reveal";
@@ -16,6 +18,7 @@ import { normalizeUser, gameLabel, type Json } from "@/lib/types";
 import { clsx, formatDate } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
 import { AssetIcon, ConfirmDialog, EmptyState, GamePill, InitialAvatar, Ledger, LedgerRow, LoadFailure, Page, Spinner, Toast, ToolButton } from "@/components/ui";
+import { FlairAvatar, FlairName } from "@/components/ui/premium-flair";
 import { SkeletonProfile } from "@/components/ui/skeletons";
 import { NavBar } from "@/components/shell/NavBar";
 import { startConversation, startConversationMessage } from "@/features/messages/start-conversation";
@@ -63,7 +66,6 @@ async function loadProfile(userId: string | null, signal: AbortSignal): Promise<
 }
 
 export function ProfileDetail({ userId = null }: { userId?: string | null }) {
-  const router = useRouter();
   const { user, isPremium } = useAppState();
   // Viewing your own id through the public route behaves like /profile.
   const ownId = userId !== null && user?.id === userId ? null : userId;
@@ -84,9 +86,7 @@ export function ProfileDetail({ userId = null }: { userId?: string | null }) {
     <Page>
       <NavBar
         title={title}
-        trailing={isOwn ? (
-          <ToolButton label="Edit Profile" onClick={() => router.push("/profile/edit")}><SquarePen size={18} /></ToolButton>
-        ) : data && revealed ? (
+        trailing={!isOwn && data && revealed ? (
           <ProfileMenu profile={data.profile} onDone={say} />
         ) : null}
       />
@@ -100,7 +100,7 @@ export function ProfileDetail({ userId = null }: { userId?: string | null }) {
           <div className="min-w-0 flex flex-col gap-5">
             <ProfileHeader profile={data.profile} isOwnProfile={isOwn} />
 
-            {!isOwn ? <MessageButton userId={data.profile.id} onError={(m) => say(m, "error")} /> : null}
+            {isOwn ? <EditProfileButton /> : <MessageButton userId={data.profile.id} onError={(m) => say(m, "error")} />}
 
             <ProfileStatStrip profile={data.profile} />
             <PredictionStatsCard profile={data.profile} />
@@ -133,13 +133,9 @@ function ProfileHeader({ profile, isOwnProfile }: { profile: UserProfile; isOwnP
   const listBase = profile.isCurrentUser ? "/profile/me" : `/profile/${encodeURIComponent(profile.id)}`;
   return (
     <div className="flex flex-col items-center gap-3 pt-2">
-      <span className={clsx("inline-grid place-items-center rounded-full", profile.isPremium && "size-[104px] border-2 border-violet")}>
-        <InitialAvatar name={profile.username} imageURL={profile.avatarURL} size={92} />
-      </span>
-      <span className="flex items-center gap-1.5">
-        <span className="text-[22px] font-bold text-primary">{profile.username}</span>
-        {profile.isPremium ? <span className="text-[10px] font-bold tracking-[0.5px] text-gold">PRO</span> : null}
-      </span>
+      {/* The person is the subject here: the flair moves. */}
+      <FlairAvatar user={profile} size={92} moving pad />
+      <FlairName user={profile} moving className="text-[22px] font-bold max-w-full" nameClassName="text-primary" />
       {profile.favoriteGame || profile.favoriteTeam ? (
         <span className="flex items-center gap-2">
           {profile.favoriteGame ? <GamePill game={profile.favoriteGame} /> : null}
@@ -321,6 +317,17 @@ function ActivityFeed({ items }: { items: ProfileActivity[] }) {
   );
 }
 
+// ── Edit Profile (own profile, in the slot Message takes elsewhere) ───────
+const SLOT_BUTTON = "flex items-center justify-center gap-2 py-2.5 rounded-xl bg-card border border-border-subtle text-primary t-label-md hover:bg-surface/60 transition-colors";
+function EditProfileButton() {
+  return (
+    <Link href="/profile/edit" className={SLOT_BUTTON}>
+      <Pencil size={14} className="text-violet" />
+      Edit Profile
+    </Link>
+  );
+}
+
 // ── Message (POST /dm/conversations → the thread) ─────────────────────────
 function MessageButton({ userId, onError }: { userId: string; onError: (message: string) => void }) {
   const router = useRouter();
@@ -337,7 +344,7 @@ function MessageButton({ userId, onError }: { userId: string; onError: (message:
     }
   };
   return (
-    <button type="button" onClick={() => void go()} disabled={busy} className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-card border border-border-subtle text-primary t-label-md hover:bg-surface/60 transition-colors disabled:opacity-60">
+    <button type="button" onClick={() => void go()} disabled={busy} className={clsx(SLOT_BUTTON, "disabled:opacity-60")}>
       {busy ? <Spinner size={14} /> : <AssetIcon name="messages" height={15} />}
       Message
     </button>

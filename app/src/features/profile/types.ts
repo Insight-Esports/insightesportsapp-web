@@ -1,7 +1,7 @@
 // features/profile/types.ts — the profile wire rows (ProfileView.swift,
 // FollowListView.swift, userController.getMyTransactions), decoded the
 // same tolerant way as src/lib/types.ts.
-import { bool, int, iso, num, str, type Json, type InsightUser } from "@/lib/types";
+import { bool, int, iso, normalizePremiumStyle, normalizeTitle, num, str, type Json, type InsightUser, type PremiumStylePiece } from "@/lib/types";
 
 // ── UserProfile (ProfileView.swift) ───────────────────────────────────────
 export interface PredictionStats {
@@ -24,6 +24,10 @@ export interface UserProfile {
   username: string;
   isCurrentUser: boolean;
   isPremium: boolean;
+  /** Premium flair choice (null = default ring). */
+  premiumStyle: PremiumStylePiece[] | null;
+  /** 'oracle' while the live monthly #1. */
+  title?: string | null;
   isFollowing: boolean;
   avatarURL: string | null;
   avatarPending: boolean;
@@ -63,6 +67,8 @@ export function normalizePublicProfile(raw: Json): UserProfile {
     username: str(raw.username) ?? "",
     isCurrentUser: bool(raw.is_current_user),
     isPremium: bool(raw.is_premium),
+    premiumStyle: normalizePremiumStyle(raw.premium_style),
+    title: normalizeTitle(raw.title),
     isFollowing: bool(raw.is_following),
     avatarURL: str(raw.avatar_url),
     avatarPending: false,
@@ -86,6 +92,8 @@ export function profileFromUser(user: InsightUser): UserProfile {
     username: user.username,
     isCurrentUser: true,
     isPremium: user.isPremium,
+    premiumStyle: user.premiumStyle,
+    title: user.title,
     isFollowing: false,
     avatarURL: user.avatarURL,
     avatarPending: user.avatarPending,
@@ -115,6 +123,9 @@ export interface FollowUser {
   /** does the CURRENT viewer follow this user */
   isFollowing: boolean;
   favoriteGame: string | null;
+  isPremium: boolean;
+  premiumStyle: PremiumStylePiece[] | null;
+  title?: string | null;
 }
 export function normalizeFollowRow(raw: Json, fallbackFollowing = false): FollowUser | null {
   const id = str(raw?.target_id) ?? str(raw?.id);
@@ -125,6 +136,9 @@ export function normalizeFollowRow(raw: Json, fallbackFollowing = false): Follow
     avatarURL: str(raw.avatar_url) ?? str(raw.image_url) ?? str(raw.logo_url),
     isFollowing: typeof raw.is_following === "boolean" ? raw.is_following : fallbackFollowing,
     favoriteGame: str(raw.game),
+    isPremium: bool(raw.is_premium),
+    premiumStyle: normalizePremiumStyle(raw.premium_style),
+    title: normalizeTitle(raw.title),
   };
 }
 export function normalizeFollowRows(raw: Json, fallbackFollowing = false): FollowUser[] {

@@ -83,7 +83,7 @@ function ThreadView({ row }: { row: DMConversationRow }) {
   }, [router, row.id]);
 
   const vm = useThread(row, visible, onRemoved);
-  const { messages, loaded, canLoadMore, isLoadingMore, blockedState, sendError, clearSendError, otherIsTyping, receiptMessageId, seenLabel, loadMore, send, sendMedia, retry, unblock, startsRun, endsRun, showsTimeStamp, uploadStateFor, retryUpload } = vm;
+  const { messages, loaded, canLoadMore, isLoadingMore, blockedState, sendError, clearSendError, otherIsTyping, receiptMessageId, seenLabel, loadMore, send, sendMedia, retry, unblock, startsRun, endsRun, showsTimeStamp } = vm;
 
   const [draft, setDraft] = useState("");
   // The picked photo/video, staged in the composer until Send (MessageThreadView.attachment).
@@ -289,8 +289,6 @@ function ThreadView({ row }: { row: DMConversationRow }) {
                     onToggleTime={() => setRevealedTimeId((cur) => (cur === m.id ? null : m.id))}
                     onOpenMedia={setViewing}
                     onRetry={(id) => void retry(id)}
-                    uploadState={m.media?.kind === "video" ? uploadStateFor(m.media.blobId) : null}
-                    onRetryUpload={retryUpload}
                   />
                 </div>
               );

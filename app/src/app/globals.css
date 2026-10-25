@@ -225,6 +225,55 @@ body {
 @keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 .live-dot { animation: live-pulse 1.8s ease-in-out infinite; }
 
+/* ── Premium flair (components/ui/premium-flair.tsx, PremiumFlair.swift) ──
+   Colours arrive as --fb (base) and --fl (light). [data-moving] = animated;
+   prefers-reduced-motion always draws the still form. */
+/* Ring: a disc outside the avatar, masked down to its outer `width` px.
+   Still: base → light → base starting at the top (SwiftUI's -90° start
+   angle is CSS's 0deg). Moving: base 0 / base 55% / light 80% / base 100%,
+   one full lap every 2.4s. */
+.flair-ring {
+  position: absolute;
+  border-radius: 9999px;
+  pointer-events: none;
+  background: conic-gradient(from 0deg, var(--fb), var(--fl), var(--fb));
+}
+.flair-ring[data-moving] {
+  background: conic-gradient(from 0deg, var(--fb) 0%, var(--fb) 55%, var(--fl) 80%, var(--fb) 100%);
+  animation: flair-spin 2.4s linear infinite;
+}
+@keyframes flair-spin { to { transform: rotate(1turn); } }
+
+/* Shine: a gradient 3× the name's width clipped to the text, stops base 0,
+   base .44, light .50, base .56, base 1. With background-size 300%, a band
+   centre at p name-widths sits at background-position (1.5 − p) / 2:
+   still p = .42 → 54%; moving p −.25 → 1.25 (87.5% → 12.5%) over 1.4s,
+   then rests, in a 3.0s period. The block padding keeps descenders inside
+   the clip box. */
+.flair-shine {
+  display: inline-block;
+  padding-block: 0.12em;
+  margin-block: -0.12em;
+  background-image: linear-gradient(90deg, var(--fb) 0%, var(--fb) 44%, var(--fl) 50%, var(--fb) 56%, var(--fb) 100%);
+  background-size: 300% 100%;
+  background-repeat: no-repeat;
+  background-position: 54% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+.flair-shine[data-moving] { animation: flair-sweep 3s linear infinite; }
+@keyframes flair-sweep {
+  0% { background-position: 87.5% 0; animation-timing-function: ease-in-out; }
+  46.667% { background-position: 12.5% 0; }
+  100% { background-position: 12.5% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .flair-ring[data-moving] { animation: none; background: conic-gradient(from 0deg, var(--fb), var(--fl), var(--fb)); }
+  .flair-shine[data-moving] { animation: none; background-position: 54% 0; }
+}
+
 /* Thin, quiet scrollbars for horizontal chip strips */
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }

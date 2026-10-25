@@ -1,4 +1,5 @@
 // features/search/types.ts — SearchView.swift result shapes.
+import { flairUserFrom, type FlairUser } from "@/components/ui/premium-flair";
 import { normalizePlayers, normalizeTeams, str, type Json, type Player, type Team } from "@/lib/types";
 
 /** Minimal user row from search — id + username required only. */
@@ -6,6 +7,7 @@ export interface SearchUser {
   id: string;
   username: string;
   avatarURL: string | null;
+  flair: FlairUser;
 }
 
 export interface SearchResults {
@@ -32,7 +34,7 @@ export function normalizeSearchResults(raw: Json): SearchResults {
   const usersRaw: Json[] = Array.isArray(raw?.users) ? raw.users : [];
   const users: SearchUser[] = usersRaw
     .filter((u) => u?.id != null && u?.username != null)
-    .map((u) => ({ id: String(u.id), username: String(u.username), avatarURL: str(u.avatar_url) ?? str(u.avatarURL) }));
+    .map((u) => ({ id: String(u.id), username: String(u.username), avatarURL: str(u.avatar_url) ?? str(u.avatarURL), flair: flairUserFrom(u) }));
   return {
     players: normalizePlayers(raw?.players ?? []),
     teams: normalizeTeams(raw?.teams ?? []),

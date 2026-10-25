@@ -2,10 +2,13 @@
 //
 // A team's next fixtures (from the rolling /matches/upcoming feed, scoped
 // to this team and game) — the same table on the team page and on its
-// players' pages. The calendar button links to the team's month view.
+// players' pages. The calendar button opens the Schedule calendar scoped to
+// this team (a player's page passes their current team), on the day of the
+// next fixture, with `from` so its back chevron returns to this page.
 "use client";
 
 import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Calendar } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { useFetch } from "@/lib/use-fetch";
@@ -13,6 +16,7 @@ import { formatDate, formatTime } from "@/lib/format";
 import { normalizeMatches, type Match } from "@/lib/types";
 import { SectionHeader, SkeletonLedger, TeamMark } from "@/components/ui";
 import { StripedTable } from "@/features/players/StatTable";
+import { dayKey, matchDayAnchor } from "@/features/matches/shared";
 
 export function UpcomingGamesList({ teamId, teamName, game, limit = 5 }: { teamId: string | null; teamName: string; game: string | null; limit?: number }) {
   const { data, loading } = useFetch<Match[]>(async (signal) => {
@@ -26,8 +30,18 @@ export function UpcomingGamesList({ teamId, teamName, game, limit = 5 }: { teamI
       .slice(0, limit);
   }, [teamId, teamName, game, limit], { cacheKey: `upcoming:${teamId ?? teamName}|${game ?? ""}|${limit}` });
 
-  const calendarHref = `/schedule?${new URLSearchParams({ ...(game ? { game } : {}), team: teamId ?? teamName }).toString()}`;
   const rows = data ?? [];
+  const pathname = usePathname();
+  const search = useSearchParams().toString();
+  const calendarHref = `/schedule?${new URLSearchParams({
+    view: "calendar",
+    ...(game ? { game } : {}),
+    // `team` is the id when we have one (name as fallback); the name rides along for matching and the header.
+    team: teamId ?? teamName,
+    teamName,
+    ...(rows[0] ? { date: dayKey(matchDayAnchor(rows[0])) } : {}),
+    from: search ? `${pathname}?${search}` : pathname,
+  }).toString()}`;
 
   return (
     <section className="flex flex-col gap-3">

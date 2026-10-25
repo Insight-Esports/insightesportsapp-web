@@ -7,13 +7,15 @@
 //
 // One stream → the pill plays it; several → a small menu (platform +
 // language) picks one. The pill is hidden by the caller when streams are
-// null/empty or the match is decided.
+// null/empty or the match is decided. Opening a LIVE stream in the sheet
+// sends `stream_open {id: matchId}` (Events.swift; feeds the Ringside badge).
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, Play, Radio } from "lucide-react";
 import { Sheet, Spinner } from "@/components/ui";
 import { clsx } from "@/lib/format";
+import { track } from "@/lib/events";
 import { isTwitchStream, preferredStream, streamKey, type MatchStream } from "@/lib/types";
 
 /** Twitch's player URL with our host added as a `parent` (theirs kept), autoplay on. */
@@ -68,7 +70,14 @@ function StreamMenuItem({ s, onPick }: { s: MatchStream; onPick: (s: MatchStream
  * The violet "▶ Watch" capsule from the HUD's top row. Renders nothing
  * without a playable stream; the caller also hides it once the match ends.
  */
-export function WatchPill({ streams, title, className }: { streams: MatchStream[] | null | undefined; title: string; className?: string }) {
+export function WatchPill({ streams, title, matchId, live = false, className }: {
+  streams: MatchStream[] | null | undefined;
+  title: string;
+  /** With `live`, opening the in-app player reports stream_open for this match. */
+  matchId?: string | null;
+  live?: boolean;
+  className?: string;
+}) {
   const [menu, setMenu] = useState(false);
   const [watching, setWatching] = useState<MatchStream | null>(null);
   const wrap = useRef<HTMLSpanElement>(null);
@@ -114,13 +123,13 @@ export function WatchPill({ streams, title, className }: { streams: MatchStream[
           {list.map((s, i) => <StreamMenuItem key={streamKey(s, i)} s={s} onPick={pick} />)}
         </div>
       ) : null}
-      <StreamPlayerSheet stream={watching} title={title} onClose={() => setWatching(null)} />
+      <StreamPlayerSheet stream={watching} title={title} matchId={matchId} live={live} onClose={() => setWatching(null)} />
     </span>
   );
 }
 
 /** Twitch's own player in a sheet (ads untouched); "open on Twitch" in the corner. */
-export function StreamPlayerSheet({ stream, title, onClose }: { stream: MatchStream | null; title: string; onClose: () => void }) {
+export function StreamPlayerSheet({ stream, title, matchId = null, live = false, onClose }: { stream: MatchStream | null; title: string; matchId?: string | null; live?: boolean; onClose: () => void }) {
   const [loading, setLoading] = useState(true);
   // Twitch rejects any parent that isn't the page's exact host; read it at
   // open time on the client, never from a constant.
@@ -129,6 +138,10 @@ export function StreamPlayerSheet({ stream, title, onClose }: { stream: MatchStr
   useEffect(() => { setLoading(true); }, [src]);
 
   const open = !!stream;
+  // Once per open, only for a live match (a watch-back never counts).
+  useEffect(() => {
+    if (open && live && matchId) track("stream_open", { id: matchId });
+  }, [open, live, matchId]);
   const trailing = stream?.url ? (
     <a href={stream.url} target="_blank" rel="noopener noreferrer" aria-label="Open on Twitch" className="text-violet hover:text-violet-light">
       <ExternalLink size={18} />

@@ -5,13 +5,14 @@
 //            poster frame from a <video>) → encrypt with a RANDOM per-file
 //            AES-256-GCM key → POST /dm/uploads → PUT bytes to upload_url →
 //            POST /dm/uploads/:id/complete → describe it inside the message
-//            envelope. Videos go poster-first (DmMediaService.swift `begin`):
-//            the message is sent as soon as the poster is in; the video
-//            bytes follow and the server fans out dm:media_ready
-//            {conversationId, uploadId, kind, size}.
+//            envelope. Nothing is sent until every byte is up
+//            (DMMediaService.swift `upload`): a video's poster and video go up
+//            side by side and both are /completed before the envelope exists,
+//            so the receiver only ever gets a video that plays.
 //   receive: GET /dm/uploads/:id → {url} (signed, 10 min) → fetch bytes with
 //            no auth → decrypt with the envelope's key → object URL (memory).
-//            404 UPLOAD_NOT_READY = the sender is still uploading → notReady.
+//            404 UPLOAD_NOT_READY = the sender is still uploading → notReady
+//            (only older iOS builds still send poster-first; harmless here).
 //
 // Feature-gated by /status → features.dm_media (photos) and dm_video.
 "use client";
@@ -140,55 +141,57 @@ async function put(bytes: Uint8Array, ticket: UploadTicket): Promise<void> {
   if (!r.ok) throw new DMMediaError("uploadFailed", `Upload failed (${r.status}).`);
 }
 
-/** Tells the server the bytes are in; it fans out dm:media_ready. Best
- *  effort: the bytes are already there, a missed /complete only delays the
- *  receiver's first fetch. */
+/** Tells the server the bytes are in; it verifies the object and fans out
+ *  dm:media_ready. A 4xx (the object isn't there, or is over the cap and was
+ *  deleted) fails the send. A network blip or 5xx doesn't: the PUT already
+ *  succeeded and the server re-checks the real object on first fetch. */
 async function complete(id: string): Promise<void> {
-  try { await api.post(endpoints.dmUploadComplete(id), {}); } catch { /* best effort */ }
+  try {
+    await api.post(endpoints.dmUploadComplete(id), {});
+  } catch (e) {
+    const status = (e as { status?: number })?.status ?? 0;
+    if (status >= 400 && status < 500) throw new DMMediaError("uploadFailed", `Upload failed (${status}).`);
+  }
 }
 
-/** What `beginMedia` hands back: the envelope to send NOW, and the work
- *  that still has to happen after the message is on its way. */
-export interface StagedMedia {
-  envelope: DMEnvelope;
-  /** Video only: PUT the (already encrypted) bytes and /complete the upload. null for images. */
-  finish: (() => Promise<void>) | null;
+/** One blob, start to finish: ticket → PUT → /complete. Returns the upload id.
+ *  (iOS reserves the ticket at an upper-bound size while it still encodes;
+ *  the browser already holds the sealed bytes, so it declares the real size.) */
+async function uploadOne(conversationId: string, bytes: Uint8Array, kind: "image" | "video"): Promise<string> {
+  const ticket = await createTicket(conversationId, bytes.length, kind);
+  await put(bytes, ticket);
+  await complete(ticket.id);
+  return ticket.id;
 }
 
-/** Instant media sends (DMMediaService.begin). Photo: encrypt → upload →
- *  /complete → envelope. Video: encrypt both → create the video ticket (an
- *  id only) → upload the poster → /complete it → envelope. The caller sends
- *  the message right away, then runs `finish`, which uploads the video and
- *  /completes it; the server fans out dm:media_ready and the receiver fetches. */
-export async function beginMedia(media: PreparedMedia, conversationId: string): Promise<StagedMedia> {
+/** Uploads everything a media message needs, then hands back its envelope
+ *  (DMMediaService.upload). Photo: encrypt → upload → /complete. Video: the
+ *  poster and the video are encrypted with the same file key and go up in
+ *  parallel; both must be in and /completed. Only then may the caller send,
+ *  so "Sent" means the receiver can play it. Throws DMMediaError / ApiError. */
+export async function uploadMedia(media: PreparedMedia, conversationId: string): Promise<DMEnvelope> {
   const { key, base64 } = await randomFileKey();
   const sealed = await sealBytes(media.bytes, key);
-  const ticket = await createTicket(conversationId, sealed.bytes.length, media.kind);
-  const env: DMEnvelope = { t: media.kind, w: media.width, h: media.height, id: ticket.id, key: base64, nonce: b64encode(sealed.nonce), mime: media.mime, size: sealed.bytes.length };
+  const sealedPoster = media.kind === "video" && media.poster ? await sealBytes(media.poster, key) : null;
+
+  const [id, posterId] = await Promise.all([
+    uploadOne(conversationId, sealed.bytes, media.kind),
+    sealedPoster ? uploadOne(conversationId, sealedPoster.bytes, "image") : Promise.resolve(null),
+  ]);
+
+  const env: DMEnvelope = { t: media.kind, w: media.width, h: media.height, id, key: base64, nonce: b64encode(sealed.nonce), mime: media.mime, size: sealed.bytes.length };
   if (media.duration != null) env.dur = media.duration;
 
-  // Sender-side cache first: our own bubble never downloads.
-  blobCache.set(ticket.id, sealed.bytes);
-  decryptedCache.set(ticket.id, media.kind === "image" ? media.previewURL : URL.createObjectURL(new Blob([media.bytes as BlobPart], { type: media.mime })));
-
-  if (media.kind === "video") {
-    if (media.poster) {
-      const ps = await sealBytes(media.poster, key);
-      const pt = await createTicket(conversationId, ps.bytes.length, "image");
-      await put(ps.bytes, pt);
-      await complete(pt.id);
-      env.poster = pt.id;
-      env.pnonce = b64encode(ps.nonce);
-      blobCache.set(pt.id, ps.bytes);
-      decryptedCache.set(pt.id, media.previewURL);
-    }
-    const bytes = sealed.bytes;
-    return { envelope: env, finish: async () => { await put(bytes, ticket); await complete(ticket.id); } };
+  // Sender-side cache: our own bubble never downloads.
+  blobCache.set(id, sealed.bytes);
+  decryptedCache.set(id, media.kind === "image" ? media.previewURL : URL.createObjectURL(new Blob([media.bytes as BlobPart], { type: media.mime })));
+  if (sealedPoster && posterId) {
+    env.poster = posterId;
+    env.pnonce = b64encode(sealedPoster.nonce);
+    blobCache.set(posterId, sealedPoster.bytes);
+    decryptedCache.set(posterId, media.previewURL);
   }
-
-  await put(sealed.bytes, ticket);
-  await complete(ticket.id);
-  return { envelope: env, finish: null };
+  return env;
 }
 
 // ── Download ──────────────────────────────────────────────────────────────
@@ -209,7 +212,7 @@ async function encryptedBlob(id: string): Promise<Uint8Array> {
       const code = (e as { code?: string | null })?.code ?? null;
       const status = (e as { status?: number })?.status ?? 0;
       if (status === 410 || code === "UPLOAD_EXPIRED") throw new DMMediaError("expired", "expired");
-      // The row exists but the bytes don't yet: the sender is still uploading (poster-first video).
+      // The row exists but the bytes don't yet: an older iOS build that still sends poster-first.
       if (code === "UPLOAD_NOT_READY") throw new DMMediaError("notReady", "Still uploading…");
       if (status === 404) throw new DMMediaError("unavailable", "unavailable");
       throw new DMMediaError("downloadFailed", `Couldn't load media (${status}).`);

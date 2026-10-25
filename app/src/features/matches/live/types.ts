@@ -8,6 +8,7 @@
 // field goes through num/int (number OR string OR null). One mistyped
 // column can never blank the scoreboard.
 
+import { flairUserFrom, type FlairUser } from "@/components/ui/premium-flair";
 import { bool, int, iso, num, str, type Json, type Player } from "@/lib/types";
 
 // ── /matches/:id/stats row ─────────────────────────────────────────────────
@@ -290,6 +291,8 @@ export interface LiveChatMessage {
   username: string;
   message: string;
   isPremium: boolean;
+  /** Premium flair (chat rule: ring → diamond, shine always violet). */
+  flair: FlairUser;
 }
 let fallbackId = 0;
 export function normalizeChatMessage(raw: Json): LiveChatMessage {
@@ -299,6 +302,8 @@ export function normalizeChatMessage(raw: Json): LiveChatMessage {
     username: str(raw?.username) ?? "user",
     message: str(raw?.text) ?? str(raw?.message) ?? "",
     isPremium: bool(raw?.is_premium ?? raw?.isPremium),
+    // Chat payloads carry no user id, so the flair never resolves to metal.
+    flair: { ...flairUserFrom(raw), id: null },
   };
 }
 export function normalizeChatHistory(raw: Json): LiveChatMessage[] {

@@ -13,6 +13,7 @@ import { clearScreenCaches } from "@/lib/use-fetch";
 import { clearEntityCaches } from "@/features/entity-cache";
 import { clearPagedCache } from "@/features/players/usePagedList";
 import { resetFollows } from "@/features/profile/follow-store";
+import { loadPodium, resetPodium } from "@/lib/premium-style";
 
 export type ProfileRoute = "profile" | "messages" | "leaderboard" | "weeklyReport" | "settings" | "premium";
 
@@ -92,6 +93,7 @@ export function AppStateProvider({ children, initialUser = null }: { children: R
     clearEntityCaches();
     clearPagedCache();
     resetFollows();
+    resetPodium();
     try {
       for (const store of [localStorage, sessionStorage]) {
         for (const k of Object.keys(store)) {
@@ -141,6 +143,7 @@ export function AppStateProvider({ children, initialUser = null }: { children: R
     if (!user) return;
     void startDM(user.id);
     void warmLists();   // ListWarmStore: Players/Teams first pages for every game
+    void loadPodium();  // Premium flair: who wears gold / silver / bronze this month
     return subscribeDMUnread((n) => setUnreadDMs(n));
   }, [user?.id]);  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -231,6 +234,12 @@ export function AppStateProvider({ children, initialUser = null }: { children: R
   }), [user, isCheckingAuth, refreshUser, setUser, logout, profilePanelOpen, status, gate, connectionTrouble, checkStatus, unreadNotifications, unreadDMs, refreshUnread, pendingScheduleGame, predictionsUsedToday]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+/** The app state when inside the provider, null otherwise (shared UI that
+ *  must also render outside it, e.g. premium flair). */
+export function useOptionalAppState(): AppStateValue | null {
+  return useContext(Ctx);
 }
 
 export function useAppState(): AppStateValue {

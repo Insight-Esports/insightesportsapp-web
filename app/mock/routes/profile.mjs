@@ -30,6 +30,12 @@ export function register(app, h) {
   }));
   const person = (id) => (id === "me" || id === me.id ? me : people.find((p) => p.id === id));
 
+  // Premium flair (backend/premium-style-contract.md): a spread of choices.
+  // null = never chosen (default ring), [] = all off. The server doesn't
+  // store the signed-in user's choice yet (PATCH → 422), so `me` has none.
+  const STYLES = [null, ["ring", "shine", "mark"], ["shine"], ["mark"], [], ["ring", "shine"], ["ring", "mark"]];
+  people.forEach((p, i) => { p.premium_style = p.is_premium ? STYLES[i % STYLES.length] : null; });
+
   let followed = new Set(people.filter((_, i) => i % 3 === 0).map((p) => p.id));   // whom I follow
   let followers = people.filter((_, i) => i % 2 === 0);                               // who follows me
   const followedTeams = [
@@ -45,7 +51,7 @@ export function register(app, h) {
   ];
   let blocked = [people[5], people[11]];
 
-  const followRow = (p) => ({ id: p.id, username: p.username, avatar_url: p.avatar_url, game: p.game, is_following: followed.has(p.id) });
+  const followRow = (p) => ({ id: p.id, username: p.username, avatar_url: p.avatar_url, game: p.game, is_following: followed.has(p.id), is_premium: p.is_premium, premium_style: p.premium_style ?? null, title: titleOf(p.id) });
 
   // ── Public profile ──────────────────────────────────────────────────────
   app.get("/api/users/:id/profile", protect, (req, res) => {
@@ -61,6 +67,8 @@ export function register(app, h) {
       avatar_url: p.avatar_url,
       is_current_user: isSelf,
       is_premium: isSelf ? me.is_premium : p.is_premium,
+      ...(isSelf ? {} : { premium_style: p.premium_style ?? null }),
+      title: titleOf(p.id),
       is_following: isSelf ? false : followed.has(p.id),
       favorite_game: isSelf ? me.primary_game : p.game,
       favorite_team: isSelf ? "Sentinels" : null,
@@ -76,7 +84,9 @@ export function register(app, h) {
 
   // ── PATCH /users/me (username / games) ─────────────────────────────────
   app.patch("/api/users/me", protect, (req, res) => {
-    const { username, primaryGame, favoriteGames } = req.body ?? {};
+    const { username, primaryGame, favoriteGames, premiumStyle } = req.body ?? {};
+    // Like the backend today: premium_style isn't a column yet.
+    if (premiumStyle !== undefined) return res.status(422).json({ error: "Unknown field: premiumStyle" });
     if (username !== undefined) {
       if (!/^[A-Za-z0-9_]{3,20}$/.test(username)) return res.status(422).json({ error: "Username must be 3–20 characters: letters, numbers, underscores." });
       if (username.toLowerCase() === "taken") return res.status(409).json({ error: "That username is already taken." });
@@ -180,7 +190,7 @@ export function register(app, h) {
   // ── Notification preferences ───────────────────────────────────────────
   const prefs = {
     enabled: true, scope: "followed",
-    types: { prediction_resolved: true, poll_resolved: true, weekly_report: true, mid_match: false, prediction_window: false, streak_milestone: true, followed_live: true, followed_result: true, followed_starting_soon: true, followed_news: true, leaderboard_rank: true, leaderboard_reset: true, new_follower: false, direct_message: true },
+    types: { prediction_resolved: true, poll_resolved: true, weekly_report: true, mid_match: false, prediction_window: false, streak_milestone: true, followed_live: true, followed_result: true, followed_starting_soon: true, followed_news: true, leaderboard_rank: true, leaderboard_reset: true, new_follower: false, direct_message: true, badge_earned: true, leaderboard_result: true },
     quiet_hours_enabled: true, quiet_start: "22:00:00", quiet_end: "08:00:00", timezone: "America/Los_Angeles", morning_digest: true,
   };
   app.get("/api/users/me/notification-preferences", protect, (_req, res) => res.json(prefs));
@@ -201,6 +211,8 @@ export function register(app, h) {
 
   // ── Notifications inbox ────────────────────────────────────────────────
   const notifications = [
+    // Badges / leaderboard close (backend: badgeService, leaderboardService; ref_type 'user' = the recipient).
+    { id: "n-13", type: "badge_earned", title: "Badge earned: On Fire", body: "Five correct predictions in a row.", ref_type: "user", ref_id: "user-1", is_read: false, created_at: isoAgo(12 * 6e4) },
     { id: "n-1", type: "prediction_resolved", title: "Prediction correct", body: "TenZ went over 22.5 kills vs NRG. +180 pts", ref_type: "match", ref_id: "match-1", is_read: false, created_at: isoAgo(25 * 6e4) },
     { id: "n-2", type: "followed_result", title: "Sentinels won", body: "Sentinels beat NRG 2–1 at VCT Americas.", ref_type: "match", ref_id: "match-1", is_read: false, created_at: isoAgo(2 * 36e5) },
     { id: "n-3", type: "new_follower", title: "New follower", body: "aspas started following you.", ref_type: "user", ref_id: "user-5", is_read: false, created_at: isoAgo(5 * 36e5) },
@@ -212,6 +224,7 @@ export function register(app, h) {
     { id: "n-9", type: "featured_news", title: "Roster move", body: "Sentinels sign a new IGL ahead of Champions.", ref_type: "article", ref_id: "article-1", is_read: true, created_at: isoAgo(9 * 864e5) },
     { id: "n-10", type: "leaderboard_reset", title: "Monthly reset in 3 days", body: "Lock in your rank — the September board closes soon.", ref_type: null, ref_id: null, is_read: true, created_at: isoAgo(12 * 864e5) },
     { id: "n-11", type: "direct_message", title: "New message", body: "tarik: gg last night", ref_type: "conversation", ref_id: "conv-1", is_read: false, created_at: isoAgo(40 * 6e4) },
+    { id: "n-14", type: "leaderboard_result", title: "You finished 3rd in September", body: "A week of Premium is on your account.", ref_type: "user", ref_id: "user-1", is_read: true, created_at: isoAgo(23 * 864e5) },
     { id: "n-12", type: "final_score", title: "T1 2–0 Gen.G", body: "LCK Finals — T1 take the title.", ref_type: "match", ref_id: "match-3", is_read: false, created_at: isoAgo(15 * 864e5) },
   ];
   const unreadBell = () => notifications.filter((n) => !n.is_read && n.type !== "direct_message").length;
@@ -242,21 +255,44 @@ export function register(app, h) {
   ]));
 
   // ── Leaderboard ────────────────────────────────────────────────────────
+  // Monthly: the signed-in user sits at MOCK_ME_MONTHLY_RANK (default 2,
+  // 0 = off the board) so the podium flair shows; All Time leaves them off
+  // the first page so the pinned "your rank" bar shows. Rows carry
+  // previous_rank (monthly), title ('oracle' on the monthly #1) and flair.
+  const ME_MONTHLY = Number(process.env.MOCK_ME_MONTHLY_RANK ?? 2);
   const board = (period) => {
     const seed = period === "alltime" ? 100 : 200;
     const rows = people.map((p, i) => ({
       rank: 0, user_id: p.id, username: p.username, avatar_url: p.avatar_url,
-      points: Math.floor(rand(seed + i) * (period === "alltime" ? 20000 : 4000)) + 100, is_premium: p.is_premium,
+      points: Math.floor(rand(seed + i) * (period === "alltime" ? 20000 : 4000)) + 100, is_premium: p.is_premium, premium_style: p.premium_style ?? null,
     }));
-    if (period === "alltime") rows.push({ rank: 0, user_id: me.id, username: me.username, avatar_url: me.avatar_url, points: me.points_balance, is_premium: me.is_premium });
     rows.sort((a, b) => b.points - a.points);
-    return rows.map((r, i) => ({ ...r, rank: i + 1 }));
+    if (period === "monthly" && ME_MONTHLY > 0) {
+      const at = Math.min(ME_MONTHLY, rows.length + 1) - 1;
+      rows.splice(at, 0, { rank: 0, user_id: me.id, username: me.username, avatar_url: me.avatar_url, points: (rows[at]?.points ?? 0) + 1, is_premium: me.is_premium });
+    }
+    return rows.map((r, i) => ({
+      ...r, rank: i + 1,
+      previous_rank: period !== "monthly" ? null : r.user_id === me.id ? i + 3 : rand(300 + i) < 0.15 ? null : Math.max(1, i + 1 + Math.round((rand(400 + i) - 0.5) * 6)),
+    }));
   };
+  const oracleId = () => { const top = board("monthly")[0]; return top && top.points > 0 ? top.user_id : null; };
+  const titleOf = (id) => (id === oracleId() ? "oracle" : null);
+  // The demo podium: #1 a member wearing everything (gold), #3 not a member
+  // (the rank ring shows regardless of plan).
+  {
+    const top = board("monthly");
+    const first = people.find((p) => p.id === top[0]?.user_id);
+    if (first) { first.is_premium = true; first.premium_style = ["ring", "metal", "shine", "shine_metal", "mark"]; }
+    const third = people.find((p) => p.id === top[2]?.user_id);
+    if (third) { third.is_premium = false; third.premium_style = null; }
+    me.title = titleOf(me.id);
+  }
   app.get("/api/leaderboard/period", protect, (req, res) => {
     const period = req.query.period ?? "monthly";
     const limit = parseInt(req.query.limit ?? "100", 10) || 100;
     const offset = parseInt(req.query.offset ?? "0", 10) || 0;
-    res.json(board(period).slice(offset, offset + limit));
+    res.json(board(period).slice(offset, offset + limit).map((r) => ({ ...r, title: titleOf(r.user_id) })));
   });
   app.get("/api/leaderboard/me", protect, (req, res) => {
     const period = req.query.period ?? "monthly";

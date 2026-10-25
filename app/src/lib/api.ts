@@ -304,4 +304,6 @@ export const endpoints = {
   dmUploadComplete: (id: string) => `/dm/uploads/${p(id)}/complete`,
   // Links
   linkPreview: (url: string) => `/links/preview?url=${q(url)}`,
+  // Analytics (Events.swift): batched, fire-and-forget, always 202
+  events: "/events",
 };
