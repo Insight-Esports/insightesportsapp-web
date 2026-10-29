@@ -163,6 +163,12 @@ export function LiveMatchScreen({ match }: { match: Match }) {
         team1Name={match.team1Name}
         team2Name={match.team2Name}
         isPremium={isPremium}
+        team1Id={match.team1Id}
+        team2Id={match.team2Id}
+        team1LogoURL={match.team1LogoURL}
+        team2LogoURL={match.team2LogoURL}
+        team1Score={vm.team1Rounds}
+        team2Score={vm.team2Rounds}
       />
       )}
       </>

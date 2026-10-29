@@ -14,8 +14,10 @@ import type { Socket } from "socket.io-client";
 import { api, endpoints, ApiError } from "@/lib/api";
 import { getSocket, rooms } from "@/lib/socket";
 import { normalizePlayers, type Match, type Json } from "@/lib/types";
+import { noteBan } from "@/features/moderation/ban";
+import { applyChatChange, onChatLocal } from "@/features/moderation/chat-actions";
 import {
-  formatGameTime, mapTeamRows, normalizeChatHistory, normalizeChatMessage,
+  chatDeletedPayload, chatEditedPayload, formatGameTime, mapTeamRows, normalizeChatHistory, normalizeChatMessage,
   normalizeMatchDetail, normalizePoll, normalizeProgress, normalizeStatRows, placeholderStat,
   resolvedLockedPayout, splitStatRows, viewerLabel, voteCountMap,
   type FanPoll, type GoldTimelinePoint, type LeagueObjective, type LiveChatMessage, type LivePlayerStat, type LiveRound,
@@ -443,6 +445,24 @@ export function useLiveMatch(match: Match) {
         return { chatMessages: list.length > 100 ? list.slice(list.length - 100) : list };
       });
     };
+    // chat:edited — the full message with editedAt (bare or {roomId, message});
+    // chat:deleted {roomId, messageId}. Pending on the backend; harmless until then.
+    const onChatEdited = (d: Json) => {
+      const p = chatEditedPayload(d);
+      if (!p || (p.roomId && p.roomId !== match.id)) return;
+      patch((prev) => {
+        const next = applyChatChange(prev.chatMessages, { type: "edit", roomId: match.id, message: p.message });
+        return next === prev.chatMessages ? {} : { chatMessages: next };
+      });
+    };
+    const onChatDeleted = (d: Json) => {
+      const p = chatDeletedPayload(d);
+      if (!p || (p.roomId && p.roomId !== match.id)) return;
+      patch((prev) => {
+        const next = applyChatChange(prev.chatMessages, { type: "delete", roomId: match.id, messageId: p.messageId });
+        return next === prev.chatMessages ? {} : { chatMessages: next };
+      });
+    };
     const onPollUpdate = (d: Json) => {
       if (!d || typeof d !== "object" || !d.pollId) return;
       const counts = voteCountMap(d.voteCounts);
@@ -469,6 +489,8 @@ export function useLiveMatch(match: Match) {
         sock.on("gold_update", onGold);
         sock.on("match_update", onMatchUpdate);
         sock.on("new_message", onChat);
+        sock.on("chat:edited", onChatEdited);
+        sock.on("chat:deleted", onChatDeleted);
         sock.on("poll_update", onPollUpdate);
         sock.on("match_completed", onMatchCompleted);
         if (sock.connected) onConnect();
@@ -490,12 +512,24 @@ export function useLiveMatch(match: Match) {
         socket.off("gold_update", onGold);
         socket.off("match_update", onMatchUpdate);
         socket.off("new_message", onChat);
+        socket.off("chat:edited", onChatEdited);
+        socket.off("chat:deleted", onChatDeleted);
         socket.off("poll_update", onPollUpdate);
         socket.off("match_completed", onMatchCompleted);
       }
       r.socket = null;
     };
   }, [match.id, applyRoundScore, loadWinProbability, patch, rebuildRounds, refreshFromServer, syncGameClock, updateSeriesInfo]);
+
+  // Your own edits and deletes show up at once (moderation/chat-actions.ts),
+  // and come back as they were if the server refuses.
+  useEffect(() => onChatLocal((e) => {
+    if (e.roomId !== match.id) return;
+    patch((prev) => {
+      const next = applyChatChange(prev.chatMessages, e);
+      return next === prev.chatMessages ? {} : { chatMessages: next };
+    });
+  }), [match.id, patch]);
 
   // ── Initial loads + polling + clock ─────────────────────────────────────
   useEffect(() => {
@@ -580,7 +614,9 @@ export function useLiveMatch(match: Match) {
       const sent = normalizeChatMessage(await api.post<Json>(endpoints.chatMessages(match.id), { text: trimmed }));
       patch((prev) => (prev.chatMessages.some((m) => m.id === sent.id) ? {} : { chatMessages: [...prev.chatMessages, sent] }));
       return true;
-    } catch {
+    } catch (e) {
+      // 403 COMMENT_BANNED {ends_at}: the ban line shows above the composer.
+      noteBan(e);
       return false;
     }
   }, [match.id, patch]);

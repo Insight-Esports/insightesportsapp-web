@@ -6,7 +6,7 @@ export type NotificationTypeId =
   | "prediction_resolved" | "poll_resolved" | "weekly_report" | "mid_match" | "prediction_window" | "streak_milestone"
   | "followed_live" | "followed_result" | "followed_starting_soon" | "followed_news" | "leaderboard_rank" | "leaderboard_reset"
   | "new_follower" | "direct_message" | "featured_match" | "final_score" | "featured_news" | "pre_game" | "followed_player_highlight"
-  | "badge_earned" | "leaderboard_result" | "unknown";
+  | "badge_earned" | "leaderboard_result" | "stat_alert_live" | "stat_alert_result" | "unknown";
 
 export type NotificationTint = "violet" | "blue" | "gold" | "muted";
 
@@ -45,6 +45,9 @@ export const NOTIFICATION_TYPES: Record<NotificationTypeId, NotificationTypeInfo
   // Backend: types.badge_earned / types.leaderboard_result (both default on).
   badge_earned: T("badge_earned", "Badges", "When you earn a new badge", "badge-rosette", "violet"),
   leaderboard_result: T("leaderboard_result", "Monthly Results", "Where you finished when the month closes", "trophy", "gold"),
+  // Stat Alerts (backend: types.stat_alert_live / stat_alert_result, both default on). Both open the list.
+  stat_alert_live: T("stat_alert_live", "Stat Alerts: Live", "The moment an alert's target is reached (Premium)", "bell-dot", "violet"),
+  stat_alert_result: T("stat_alert_result", "Stat Alerts: Results", "Hit or miss, when the match ends", "bell-dot", "violet"),
   unknown: T("unknown", "Notification", "", "bell", "muted"),
 };
 
@@ -57,7 +60,7 @@ export const BELL_ELIGIBLE = new Set<NotificationTypeId>([
   "followed_result", "final_score", "followed_player_highlight",
   "prediction_resolved", "poll_resolved", "streak_milestone",
   "leaderboard_rank", "leaderboard_reset", "leaderboard_result", "badge_earned", "new_follower",
-  "weekly_report", "followed_news", "featured_news", "unknown",
+  "weekly_report", "followed_news", "featured_news", "stat_alert_live", "stat_alert_result", "unknown",
 ]);
 
 export const LEADERBOARD_TYPES: NotificationTypeId[] = ["leaderboard_rank", "leaderboard_reset", "leaderboard_result"];

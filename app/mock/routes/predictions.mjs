@@ -104,6 +104,11 @@ function series(h, seedKey, game, stat, n, team = false) {
       agent: AGENTS[game].length ? AGENTS[game][Math.floor(h.rand(base + i * 7) * AGENTS[game].length)] : null,
       matchup: `vs ${opponents[Math.floor(h.rand(base + i * 3) * opponents.length)]}`,
       result: h.rand(base + i * 11) > 0.42 ? "W" : "L",
+      // Oct 28 link fields (premium-link-payloads): the row → the match, the opponent → the team.
+      matchId: `m-done-${((base + i * 7) % 60) + 1}`,
+      opponentId: `team-${opponents[Math.floor(h.rand(base + i * 3) * opponents.length)].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}`,
+      opponentName: opponents[Math.floor(h.rand(base + i * 3) * opponents.length)],
+      opponentLogoUrl: null,
     };
   });
 }
@@ -214,8 +219,23 @@ function makeReport(h, n, generatedAt) {
     headline: n % 2 ? "Sentinels sweep the week — and your bracket noticed" : "A quiet week for your teams, a loud one for ZywOo",
     report_text: "",
     sections: [
-      { type: "teams", title: "Sentinels keep rolling", body: "Sentinels went 3-0 this week, closing out Leviatán on Lotus and Sunset without dropping a map. TenZ averaged 21.4 kills across the six maps, his best stretch of the season. Fnatic stumbled against Paper Rex, splitting a pair of Bo3s that came down to overtime on Ascent." },
-      { type: "players", title: "ZywOo is back on the AWP", body: "ZywOo posted 1.41 rating over 14 maps for Vitality, including a 34-bomb on Nuke against FaZe. Faker's T1 took both series this week; his Azir pick went 4-0 with a 9.2 CS/min average." },
+      { type: "teams", title: "Sentinels keep rolling", body: "Sentinels went 3-0 this week, closing out Leviatán on Lotus and Sunset without dropping a map. TenZ averaged 21.4 kills across the six maps, his best stretch of the season. Fnatic stumbled against Paper Rex, splitting a pair of Bo3s that came down to overtime on Ascent.",
+        // Oct 28: section.entities ({type, id, name, game, image_url}), in order of appearance.
+        entities: [
+          { type: "team", id: "team-sentinels", name: "Sentinels", game: "VALORANT", image_url: null },
+          { type: "team", id: "team-leviatan", name: "Leviatán", game: "VALORANT", image_url: null },
+          { type: "player", id: "p-tenz", name: "TenZ", game: "VALORANT", image_url: null },
+          { type: "team", id: "team-fnatic", name: "Fnatic", game: "VALORANT", image_url: null },
+          { type: "team", id: "team-paper-rex", name: "Paper Rex", game: "VALORANT", image_url: null },
+        ] },
+      { type: "players", title: "ZywOo is back on the AWP", body: "ZywOo posted 1.41 rating over 14 maps for Vitality, including a 34-bomb on Nuke against FaZe. Faker's T1 took both series this week; his Azir pick went 4-0 with a 9.2 CS/min average.",
+        entities: [
+          { type: "player", id: "p-zywoo", name: "ZywOo", game: "CS2", image_url: null },
+          { type: "team", id: "team-team-vitality", name: "Team Vitality", game: "CS2", image_url: null },
+          { type: "team", id: "team-faze-clan", name: "FaZe Clan", game: "CS2", image_url: null },
+          { type: "player", id: "p-faker", name: "Faker", game: "League", image_url: null },
+          { type: "team", id: "team-t1", name: "T1", game: "League", image_url: null },
+        ] },
       { type: "your_week", title: "Your predictions", body: "You ran 6 predictions and hit 4 — the Sentinels over 13.5 map kills for TenZ and the Vitality head-to-head were the clean ones. The two misses were both unders on hot players; the form trend flagged both as rising." },
       { type: "news", title: "Around the scene", body: "Roster moves ahead of the next split: NRG confirmed a sixth man, and Paper Rex's coach shuffle is official. Champions ticket windows open next week." },
     ],
@@ -308,7 +328,7 @@ export function register(app, h) {
     if (!matchId) return res.status(400).json({ error: "matchId is required" });
     const out = analyze(h, { game: p.game, targetType: "player", targetId: p.id, name: p.name, stat, baseline, direction, window: 10 });
     const low = h.rand(hash(p.id)) > 0.7;
-    res.json({ ...out, last10Games: games, lowHistory: low, historyWarning: low ? `${p.name} has only 4 completed games on record — this is a live-pace read, not a history-backed one.` : null, liveCurrentValue: current, projection: { kind: "average", value: round1(out.last10Average * 1.05) }, opponentName: opponent, vsOpponentGames: vs, vsOpponentAverage: round1(avg(vs.map((g) => g.statValue))) });
+    res.json({ ...out, last10Games: games, lowHistory: low, historyWarning: low ? `${p.name} has only 4 completed games on record — this is a live-pace read, not a history-backed one.` : null, liveCurrentValue: current, projection: { kind: "average", value: round1(out.last10Average * 1.05) }, opponentName: opponent, opponentId: `team-${opponent.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, opponentLogoUrl: null, vsOpponentGames: vs.map((g) => ({ ...g, opponentName: opponent, opponentId: `team-${opponent.toLowerCase().replace(/[^a-z0-9]+/g, "-")}` })), vsOpponentAverage: round1(avg(vs.map((g) => g.statValue))) });
   });
   app.post("/api/predictions/live-stat", h.protect, premium, (req, res) => {
     const { p, matchId, stat, games, current, opponent, vs } = liveCommon(req);

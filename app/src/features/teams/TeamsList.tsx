@@ -10,7 +10,7 @@ import Link from "next/link";
 import { SlidersHorizontal, Users, X } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { normalizeTeams, SELECTABLE_GAMES, teamRecord, type GameId, type Team } from "@/lib/types";
-import { clsx, fmt2 } from "@/lib/format";
+import { clsx, formatRating } from "@/lib/format";
 import { useReveal } from "@/lib/use-reveal";
 import { EmptyState, GameTabBar, Ledger, LedgerHeader, LoadFailure, Page, SearchField, SkeletonLedger, Spinner, TabHeader, TeamMark, TierBadge, ToolButton } from "@/components/ui";
 import { HeaderTools } from "@/components/shell/AppShell";
@@ -199,7 +199,7 @@ function TeamRow({ team, rank }: { team: Team; rank: number | null }) {
         {team.rating != null ? (
           <>
             <span className="t-label-sm text-muted md:hidden">Rating</span>
-            <span className="t-mono-md text-violet">{fmt2(team.rating)}</span>
+            <span className="t-mono-md text-violet">{formatRating(team.rating, "team")}</span>
             <span className="t-label-sm text-muted md:hidden">{teamRecord(team)} • {pct}</span>
           </>
         ) : (

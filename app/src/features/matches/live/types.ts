@@ -286,34 +286,71 @@ export function resolvedLockedPayout(res: Json): number | null {
 }
 
 // ── Chat ───────────────────────────────────────────────────────────────────
+// A chat message: { id, userId, username, title, avatar_url, is_premium,
+// premium_style, text, timestamp, editedAt? }. userId drives Report / Block
+// and the sender's look (ring, shine, diamond, podium metals, ORACLE), the
+// same as everywhere else (parity Oct 28 §3).
 export interface LiveChatMessage {
   id: string;
+  /** The sender (null only on a malformed row). */
+  userId: string | null;
   username: string;
   message: string;
+  /** ISO send time; edits are allowed for 15 minutes after it. */
+  timestamp: string | null;
+  /** Set once edited (` (edited)` after the text). */
+  editedAt: string | null;
   isPremium: boolean;
-  /** Premium flair (chat rule: ring → diamond, shine always violet). */
   flair: FlairUser;
 }
+
+// The server stores chat text HTML-escaped (chatController.sanitizeText):
+// show what was typed.
+const ENTITIES: Record<string, string> = { "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&#x27;": "'", "&#39;": "'", "&#x2F;": "/", "&#47;": "/" };
+export function decodeChatText(s: string): string {
+  return s.replace(/&(?:lt|gt|quot|#x27|#39|#x2F|#47);/g, (m) => ENTITIES[m] ?? m);
+}
+
 let fallbackId = 0;
 export function normalizeChatMessage(raw: Json): LiveChatMessage {
   const id = raw?.id != null ? String(raw.id) : `local-${Date.now()}-${fallbackId++}`;
+  const userId = str(raw?.userId) ?? str(raw?.user_id);
   return {
     id,
+    userId,
     username: str(raw?.username) ?? "user",
-    message: str(raw?.text) ?? str(raw?.message) ?? "",
+    message: decodeChatText(str(raw?.text) ?? str(raw?.message) ?? ""),
+    timestamp: iso(raw?.timestamp ?? raw?.created_at),
+    editedAt: iso(raw?.editedAt ?? raw?.edited_at),
     isPremium: bool(raw?.is_premium ?? raw?.isPremium),
-    // Chat payloads carry no user id, so the flair never resolves to metal.
-    flair: { ...flairUserFrom(raw), id: null },
+    flair: { ...flairUserFrom(raw), id: userId },
   };
 }
 export function normalizeChatHistory(raw: Json): LiveChatMessage[] {
   const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.messages) ? raw.messages : [];
   return arr.filter((r: Json) => r && typeof r === "object").map(normalizeChatMessage);
 }
+/** chat:edited — the full message, bare or as {roomId, message}. */
+export function chatEditedPayload(raw: Json): { roomId: string | null; message: LiveChatMessage } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const inner = raw.message && typeof raw.message === "object" ? raw.message : raw;
+  if (inner?.id == null) return null;
+  const m = normalizeChatMessage(inner);
+  return { roomId: str(raw.roomId) ?? str(raw.room_id), message: m.editedAt ? m : { ...m, editedAt: new Date().toISOString() } };
+}
+/** chat:deleted {roomId, messageId}. */
+export function chatDeletedPayload(raw: Json): { roomId: string | null; messageId: string } | null {
+  const messageId = str(raw?.messageId) ?? str(raw?.message_id) ?? str(raw?.id);
+  return messageId ? { roomId: str(raw?.roomId) ?? str(raw?.room_id), messageId } : null;
+}
+/** Edit and Delete are for your own messages, within 15 minutes of sending. */
+export const CHAT_EDIT_WINDOW_MS = 15 * 60_000;
 
 // ── Match comments (persistent discussion) ─────────────────────────────────
 export interface MatchComment {
   id: string;
+  /** The author (Report / Block, hiding blocked people). */
+  userId: string | null;
   username: string;
   avatarURL: string | null;
   body: string;
@@ -324,6 +361,7 @@ export function normalizeMatchComment(raw: Json): MatchComment {
   const author = raw?.author && typeof raw.author === "object" ? raw.author : null;
   return {
     id: String(raw.id),
+    userId: str(author?.id) ?? str(raw.user_id),
     username: str(author?.username) ?? str(raw.username) ?? "user",
     avatarURL: str(author?.avatar_url) ?? str(raw.avatar_url),
     body: str(raw.body) ?? "",

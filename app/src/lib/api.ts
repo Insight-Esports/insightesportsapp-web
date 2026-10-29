@@ -14,6 +14,8 @@ export class ApiError extends Error {
   code: string | null;
   feature?: string;
   mode?: string;
+  /** The error's JSON body when it carries extra fields (e.g. 403 PREMIUM_REQUIRED {free_days}). */
+  body?: Record<string, unknown> | null;
   constructor(status: number, message: string, code: string | null = null) {
     super(message);
     this.name = "ApiError";
@@ -89,7 +91,7 @@ export async function request<T = unknown>(path: string, method: HttpMethod = "G
       throw new ApiError(401, "Please log in again.", code);
     case 403:
       if (code === "DOMAIN_NOT_ALLOWED") { emit("session-ended"); throw new ApiError(403, msg ?? "This account can't use the web version.", code); }
-      if (code) throw new ApiError(403, codedMessage(code, msg), code);
+      if (code) { const err = new ApiError(403, codedMessage(code, msg), code); err.body = json; throw err; }
       throw new ApiError(403, cachedIsPremium ? "Couldn't verify your Pro access just now — refresh or try again." : "This feature requires Insight Pro.", null);
     case 404:
       if (code === "NO_KEY" || code === "USER_NOT_FOUND") throw new ApiError(404, codedMessage(code, msg), code);
@@ -140,6 +142,11 @@ export const api = {
   delete: <T = unknown>(path: string) => request<T>(path, "DELETE"),
 };
 
+/** The app-wide block: POST /dm/blocks {userId} (Moderation.swift). */
+export function blockUser(userId: string) { return api.post(endpoints.blockUser, { userId }); }
+/** DELETE /dm/blocks/:userId. */
+export function unblockUser(userId: string) { return api.delete(endpoints.unblockUser(userId)); }
+
 export function errorMessage(e: unknown, fallback = "Something went wrong."): string {
   if (e instanceof ApiError) return e.message;
   if (e instanceof Error && e.message) return e.message;
@@ -148,6 +155,13 @@ export function errorMessage(e: unknown, fallback = "Something went wrong."): st
 
 const q = (v: string) => encodeURIComponent(v);
 const p = (v: string) => encodeURIComponent(v);
+
+/** GET /archive/* filters: game, team, opponent, player, date | from & to (YYYY-MM-DD, UTC), tournament, q, order, limit, cursor. */
+export type ArchiveQuery = Partial<Record<"game" | "team" | "opponent" | "player" | "date" | "from" | "to" | "tournament" | "q" | "order" | "limit" | "cursor" | "year", string | number | null | undefined>>;
+function archiveQs(f: ArchiveQuery): string {
+  const parts = Object.entries(f).filter(([, v]) => v !== null && v !== undefined && v !== "").map(([k, v]) => `${k}=${q(String(v))}`);
+  return parts.length ? `?${parts.join("&")}` : "";
+}
 
 /** APIEndpoint, one path builder per case. */
 export const endpoints = {
@@ -185,6 +199,9 @@ export const endpoints = {
   matchComments: (id: string) => `/matches/${p(id)}/comments`,
   // Live chat + polls
   chatMessages: (roomId: string) => `/chat/${p(roomId)}/messages`,
+  /** PATCH {text} / DELETE one message (pending on the backend, gated by chat_edit). */
+  chatMessage: (roomId: string, messageId: string) => `/chat/${p(roomId)}/messages/${p(messageId)}`,
+  reportChatMessage: (roomId: string, messageId: string) => `/chat/${p(roomId)}/messages/${p(messageId)}/report`,
   pollsForMatch: (matchId: string) => `/polls/match/${p(matchId)}`,
   votePoll: (pollId: string) => `/polls/${p(pollId)}/vote`,
   // Players
@@ -208,8 +225,10 @@ export const endpoints = {
   // Comments + moderation
   deleteComment: (id: string) => `/comments/${p(id)}`,
   reportComment: (id: string) => `/comments/${p(id)}/report`,
-  blockUser: (id: string) => `/users/${p(id)}/block`,
-  unblockUser: (id: string) => `/users/${p(id)}/block`,
+  /** The app-wide block (also drops the DM thread): POST {userId}. */
+  blockUser: "/dm/blocks",
+  unblockUser: (id: string) => `/dm/blocks/${p(id)}`,
+  /** POST {reason, report_type: user | avatar | username}. */
   reportUser: (id: string) => `/users/${p(id)}/report`,
   // Follows
   follow: "/follow",
@@ -271,6 +290,8 @@ export const endpoints = {
   livePlayerPrediction: "/predictions/live-player",
   liveStatPrediction: "/predictions/live-stat",
   liveBreakdown: "/predictions/live-breakdown",
+  liveTeamPrediction: "/predictions/live-team",
+  liveTeamBreakdown: "/predictions/live-team-breakdown",
   // User
   userProfile: "/users/me",
   publicProfile: (id: string) => `/users/${p(id)}/profile`,
@@ -295,6 +316,8 @@ export const endpoints = {
     return s;
   },
   dmSend: (conversationId: string) => `/dm/conversations/${p(conversationId)}/messages`,
+  /** DELETE {uploadIds?} (unsend) · PATCH {ciphertext, nonce, …} (edit, pending, gated by dm_edit). */
+  dmMessage: (conversationId: string, messageId: string) => `/dm/conversations/${p(conversationId)}/messages/${p(messageId)}`,
   dmRead: (conversationId: string) => `/dm/conversations/${p(conversationId)}/read`,
   dmRemove: (conversationId: string) => `/dm/conversations/${p(conversationId)}`,
   dmBlock: "/dm/blocks",
@@ -304,6 +327,15 @@ export const endpoints = {
   dmUploadComplete: (id: string) => `/dm/uploads/${p(id)}/complete`,
   // Links
   linkPreview: (url: string) => `/links/preview?url=${q(url)}`,
+  // Match archive (backend/match-archive-contract.md). Always paged with `cursor`, never offset.
+  archiveMatches: (f: ArchiveQuery) => `/archive/matches${archiveQs(f)}`,
+  archiveYears: (f: ArchiveQuery = {}) => `/archive/years${archiveQs(f)}`,
+  archiveCalendar: (year: number, f: ArchiveQuery = {}) => `/archive/calendar${archiveQs({ year, ...f })}`,
+  // Stat alerts (backend/stat-alerts-contract.md; gated by the stat_alerts switch)
+  alerts: "/alerts",
+  alert: (id: string) => `/alerts/${p(id)}`,
+  alertsContext: (targetType: string, targetId: string, matchId?: string | null) =>
+    `/alerts/context?targetType=${q(targetType)}&targetId=${q(targetId)}${matchId ? `&matchId=${q(matchId)}` : ""}`,
   // Analytics (Events.swift): batched, fire-and-forget, always 202
   events: "/events",
 };

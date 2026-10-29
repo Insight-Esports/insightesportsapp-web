@@ -15,9 +15,11 @@ import { gameLabel } from "@/lib/types";
 import { useFetch } from "@/lib/use-fetch";
 import { FilterSegment, LoadFailure, SkeletonBar } from "@/components/ui";
 import { SkeletonBreakdown } from "@/components/ui/skeletons";
+import { EntityHeader } from "@/components/ui/entity-header";
 import { PredictScreen } from "./PredictScreen";
 import { flowHref, readTarget, type FlowTarget } from "./flow";
 import { Disclaimer, FormPips, Section, StatRow, StepHeader, StripedTable, Track } from "./shared";
+import { GameRows } from "./links";
 import { BREAKDOWN_PERIODS, normalizePlayerOverview, normalizeTeamOverview, overviewLabel, pctDisplay, PredictionFormat, type BreakdownPeriodKey, type NamedHighlight, type OverviewPeriod, type PlayerOverview, type SideStats, type TeamOverview } from "./types";
 
 export function BreakdownScreen() {
@@ -44,17 +46,32 @@ export function BreakdownPanel({ target: t, compact }: { target: FlowTarget; com
   const { data, loading, error, connectionProblem, reload } = useOverview(t);
   const [period, setPeriod] = useState<BreakdownPeriodKey>("last10");
 
+  // The entity header (full screen only) stands while the overview loads.
+  const headerPo = data?.player ?? null;
+  const headerSeason = headerPo?.currentSeason ?? data?.team?.currentSeason ?? null;
+  const header = compact ? null : (
+    <div className="px-4 pt-3 w-full max-w-2xl mx-auto">
+      <EntityHeader
+        type={t.targetType} id={t.targetId} name={t.targetName} game={t.game}
+        teamName={headerPo?.team ?? null}
+        subtitle={data ? [t.targetType === "player" ? headerPo?.team : "Team", gameLabel(t.game), headerSeason].filter(Boolean).join(" · ") : null}
+      />
+    </div>
+  );
   if (loading) {
     // PredictionBreakdownView's wait, as the breakdown's own silhouette:
     // header lines, the period row, the record strip, form pips, averages.
     return (
-      <div className="flex flex-col gap-5 px-4 pt-3">
-        <div className={clsx("flex flex-col gap-2", !compact && "items-center")}><SkeletonBar width={180} height={18} /><SkeletonBar width={120} height={10} /></div>
-        <SkeletonBreakdown />
+      <div className="flex flex-col gap-5">
+        {header}
+        <div className="flex flex-col gap-5 px-4 pt-3">
+          {compact ? <div className="flex flex-col gap-2"><SkeletonBar width={180} height={18} /><SkeletonBar width={120} height={10} /></div> : null}
+          <SkeletonBreakdown />
+        </div>
       </div>
     );
   }
-  if (error || !data) return <LoadFailure error={error ?? "Something went wrong."} connectionProblem={connectionProblem} onRetry={reload} />;
+  if (error || !data) return <>{header}<LoadFailure error={error ?? "Something went wrong."} connectionProblem={connectionProblem} onRetry={reload} /></>;
 
   const po = data.player, to = data.team;
   const currentSeason = po?.currentSeason ?? to?.currentSeason ?? null;
@@ -126,6 +143,11 @@ export function BreakdownPanel({ target: t, compact }: { target: FlowTarget; com
             </Section>
           ) : null}
           <BestGameCard period={p} order={po?.statColumns ?? null} fallbackLabel={periodLabel} />
+          {t.targetType === "team" && p.games.length ? (
+            <Section title={`GAMES · ${periodLabel} · KILLS`}>
+              <GameRows games={p.games} />
+            </Section>
+          ) : null}
         </>
       )}
     </>
@@ -164,7 +186,7 @@ export function BreakdownPanel({ target: t, compact }: { target: FlowTarget; com
 
   return (
     <div className="flex flex-col gap-5 pt-2">
-      <StepHeader title={t.targetName} subtitle={subtitle} center={!compact} />
+      {compact ? <StepHeader title={t.targetName} subtitle={subtitle} /> : header}
       <div className={clsx("px-4 grid grid-cols-[minmax(0,1fr)] gap-5", !compact && "lg:grid-cols-2 lg:gap-x-8")}>
         <div className="flex flex-col gap-4">{periodBlock}</div>
         <div className="flex flex-col gap-5">{extras}</div>

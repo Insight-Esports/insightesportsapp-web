@@ -3,23 +3,28 @@
 // given), verdict, trend, recent-games chart, career vs recent, standout
 // splits. The Last 10 / 15 / 25 switcher lives here and re-runs the analysis.
 // On wide screens the full breakdown sits beside the result.
+//
+// Oct 28 parity: the entity header on top (with the live match link), every
+// game row and opponent links (§7), "Set alert for this" (§1), and live
+// TEAMS (§11): POST /predictions/live-team answers in the live player shape.
 "use client";
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ArrowDownRight, ArrowRight, ArrowUpRight, Hourglass, UserX } from "lucide-react";
 import { api, ApiError, endpoints, errorMessage } from "@/lib/api";
 import { clsx } from "@/lib/format";
-import { gameLabel } from "@/lib/types";
 import { useAppState } from "@/store/app-state";
 import { FilterSegment } from "@/components/ui";
+import { EntityHeader } from "@/components/ui/entity-header";
 import { SkeletonPredictionResult } from "@/components/ui/skeletons";
 import { PredictScreen } from "./PredictScreen";
 import { flowHref, qs, readDirection, readNumber, readTarget, targetParams, PREDICT_BASE } from "./flow";
 import { BreakdownPanel } from "./Breakdown";
 import { GamesBars, GamesCard, GamesLegend, ProbabilityDial } from "./charts";
-import { AccentRead, Caps, Disclaimer, FlowError, NoteCard, Section, StatRow, StepHeader, WarningCard, type Cell } from "./shared";
+import { AccentRead, Caps, Disclaimer, FlowError, NoteCard, Section, StatRow, WarningCard, type Cell } from "./shared";
+import { GameRows, OpponentLink, SetAlertForThis } from "./links";
 import { normalizePrediction, PredictionFormat, PredictionStatCatalog, projectionLabel, type OutlierItem, type PredictionGame, type PredictionResponse } from "./types";
 
 const WINDOW_OPTIONS = [10, 15, 25]; // must match backend VALID_WINDOWS
@@ -56,7 +61,12 @@ export function ResultScreen() {
     (async () => {
       try {
         let raw: unknown;
-        if (t.isLive) {
+        if (t.isLive && t.targetType === "team") {
+          // Live team: a line is required (no line → the live team breakdown).
+          if (!t.matchId) { setError("This team's live match couldn't be identified. Reopen them from the Live list."); setLoading(false); return; }
+          if (baseline == null) { router.replace(flowHref.liveTeam(t)); return; }
+          raw = await api.post(endpoints.liveTeamPrediction, { matchId: t.matchId, teamId: t.targetId, stat, baseline, direction }, { signal: ctrl.signal });
+        } else if (t.isLive) {
           // Live predictor requires the match the player is currently in.
           if (!t.matchId) { setError("This player's live match couldn't be identified. Reopen them from the Live list."); setLoading(false); return; }
           const body: Record<string, unknown> = { matchId: t.matchId, playerId: t.targetId, stat };
@@ -87,17 +97,26 @@ export function ResultScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t.game, t.targetType, t.targetId, t.isLive, t.matchId, stat, baseline, direction, win, contextMap, contextAgent, contextOpponent, contextSide]);
 
-  const subtitle = `${gameLabel(t.game)} · ${stat ? PredictionStatCatalog.label(stat) : "Overview"}`;
+  const statLabel = stat ? PredictionStatCatalog.label(stat) : "Overview";
   const limitReached = !isPremium && hasReachedPredictionLimit && !result;
+  // The call as it stands: the response's line when there is one, else the URL's.
+  const alertLine = result?.baseline ?? baseline;
+  const alertDirection = (result?.direction ?? (baseline != null ? direction : "over")) === "under" ? "under" as const : "over" as const;
+  const alertLink = (
+    <SetAlertForThis targetType={t.targetType} targetId={t.targetId} targetName={t.targetName} game={t.game} stat={result?.stat ?? stat} line={alertLine} direction={alertDirection} matchId={t.isLive ? t.matchId : null} hintWithoutLine={false} />
+  );
 
   const main = (
     <div className="flex flex-col gap-5">
-      <StepHeader title={t.targetName} subtitle={subtitle} center />
-      {!t.isLive ? (
-        <div className="px-4 flex justify-center">
-          <FilterSegment options={WINDOW_OPTIONS.map((w) => ({ label: `Last ${w}`, value: w }))} value={win} onChange={(w) => { if (!loading) setWindow(w); }} />
+      <div className="px-4 pt-3 flex flex-col gap-3">
+        <EntityHeader type={t.targetType} id={t.targetId} name={t.targetName} game={t.game} matchId={t.isLive ? t.matchId : null} live={t.isLive} />
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <span className="t-headline-sm text-violet">{statLabel}{t.isLive ? <span className="t-label-md text-muted"> · this {t.targetType === "team" ? "series" : "game"}</span> : null}</span>
+          {!t.isLive ? (
+            <FilterSegment options={WINDOW_OPTIONS.map((w) => ({ label: `Last ${w}`, value: w }))} value={win} onChange={(w) => { if (!loading) setWindow(w); }} />
+          ) : null}
         </div>
-      ) : null}
+      </div>
       <div className="px-4 flex flex-col gap-5">
         {limitReached ? (
           <FlowError title="You've used today's free predictions." detail="Insight Pro removes the daily limit." icon={<Hourglass />} />
@@ -108,7 +127,7 @@ export function ResultScreen() {
         ) : error ? (
           <ResultError message={error} targetName={t.targetName} isLive={t.isLive} />
         ) : result ? (
-          t.isLive ? <LiveResult r={result} hint={liveCurrentValueHint} game={t.game} targetName={t.targetName} /> : <HistoricalResult r={result} game={t.game} targetName={t.targetName} />
+          t.isLive ? <LiveResult r={result} hint={liveCurrentValueHint} game={t.game} targetName={t.targetName} alert={alertLink} /> : <HistoricalResult r={result} game={t.game} targetName={t.targetName} alert={alertLink} />
         ) : null}
         {limitReached ? <Link href="/premium/upgrade" className="btn-pill self-center">Upgrade to Pro</Link> : null}
       </div>
@@ -149,12 +168,18 @@ function ResultError({ message, targetName, isLive }: { message: string; targetN
 }
 
 // ── Historical result ─────────────────────────────────────────────────────
-function HistoricalResult({ r, game, targetName }: { r: PredictionResponse; game: string; targetName: string }) {
+function HistoricalResult({ r, game, targetName, alert }: { r: PredictionResponse; game: string; targetName: string; alert: ReactNode }) {
   return (
     <>
       <PredictionBlock r={r} isLive={false} hint={null} />
+      {alert}
       <StatComparison r={r} />
       {r.last10Games?.length ? <RecentGames games={r.last10Games} baseline={r.baseline} direction={r.direction} /> : null}
+      {r.vsOpponentGames?.length ? (
+        <GamesCard title={<VsOpponentTitle r={r} count={r.vsOpponentGames.length} />} games={r.vsOpponentGames} baseline={r.baseline} direction={r.direction} average={r.vsOpponentAverage} />
+      ) : r.opponentName ? (
+        <NoteCard icon={<UserX />}>{r.vsOpponentSummary ?? <>No prior meetings with <OpponentLink id={r.opponentId} name={r.opponentName} logoURL={r.opponentLogoUrl} size={16} textClassName="t-label-md text-primary" /> on record</>}</NoteCard>
+      ) : null}
       {r.winRate ? (
         <Section title="WIN RATE">
           <StatRow cells={[{ label: "Last 10", value: r.winRate.last10WinRate ?? "—" }, { label: "Recent", value: r.winRate.recentWinRate ?? "—" }, { label: "Overall", value: r.winRate.overallWinRate ?? "—" }]} />
@@ -181,12 +206,13 @@ function HistoricalResult({ r, game, targetName }: { r: PredictionResponse; game
 
 // Live result order (per product spec): dial · read · last 10 · last 5 vs
 // this opponent · career average · anything else the backend calculated.
-function LiveResult({ r, hint, game, targetName }: { r: PredictionResponse; hint: number | null; game: string; targetName: string }) {
+function LiveResult({ r, hint, game, targetName, alert }: { r: PredictionResponse; hint: number | null; game: string; targetName: string; alert: ReactNode }) {
   const current = r.liveCurrentValue ?? hint;
   const label = r.stat ? PredictionStatCatalog.label(r.stat) : "this stat";
   return (
     <>
       <PredictionBlock r={r} isLive hint={hint} />
+      {alert}
       {r.baseline == null && current != null ? (
         <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-card border border-border-subtle">
           <span className="size-[7px] rounded-full bg-live" />
@@ -197,11 +223,11 @@ function LiveResult({ r, hint, game, targetName }: { r: PredictionResponse; hint
       ) : null}
       {r.last10Games?.length ? <GamesCard title={`LAST ${r.last10Games.length} GAMES`} games={r.last10Games} baseline={r.baseline} direction={r.direction} average={r.last10Average} /> : null}
       {r.vsOpponentGames?.length ? (
-        <GamesCard title={`LAST ${r.vsOpponentGames.length} VS ${(r.opponentName ?? "OPPONENT").toUpperCase()}`} games={r.vsOpponentGames} baseline={r.baseline} direction={r.direction} average={r.vsOpponentAverage} />
+        <GamesCard title={<VsOpponentTitle r={r} count={r.vsOpponentGames.length} />} games={r.vsOpponentGames} baseline={r.baseline} direction={r.direction} average={r.vsOpponentAverage} />
       ) : r.vsOpponentSummary ? (
-        <NoteCard icon={<UserX />}>{r.vsOpponentSummary}</NoteCard>
+        <NoteCard icon={<UserX />}>{r.vsOpponentSummary}{r.opponentId ? <> · <OpponentLink id={r.opponentId} name={r.opponentName} logoURL={r.opponentLogoUrl} size={16} textClassName="t-label-md text-primary" /></> : null}</NoteCard>
       ) : r.opponentName ? (
-        <NoteCard icon={<UserX />}>No prior meetings with {r.opponentName} on record</NoteCard>
+        <NoteCard icon={<UserX />}>No prior meetings with <OpponentLink id={r.opponentId} name={r.opponentName} logoURL={r.opponentLogoUrl} size={16} textClassName="t-label-md text-primary" /> on record</NoteCard>
       ) : null}
       {r.careerAverage != null ? (
         <div className="flex items-center gap-3 p-4 rounded-xl bg-card border border-border-subtle">
@@ -262,7 +288,18 @@ function RecentGames({ games, baseline, direction }: { games: PredictionGame[]; 
       <div className="p-3.5 rounded-xl bg-card border border-border-subtle"><GamesBars games={games} baseline={baseline} direction={direction} /></div>
       <div className="flex justify-between px-1 t-label-sm text-muted"><span>Oldest</span><span>Latest</span></div>
       <GamesLegend baseline={baseline} direction={direction} />
+      <GameRows games={games} baseline={baseline} direction={direction} />
     </Section>
+  );
+}
+
+/** "LAST 5 VS [crest] SENTINELS" — the opponent links to their page. */
+function VsOpponentTitle({ r, count }: { r: PredictionResponse; count: number }) {
+  return (
+    <>
+      <span className="shrink-0">LAST {count} VS</span>
+      <OpponentLink id={r.opponentId} name={(r.opponentName ?? "Opponent").toUpperCase()} logoURL={r.opponentLogoUrl} size={16} textClassName="t-label-sm text-primary uppercase" />
+    </>
   );
 }
 

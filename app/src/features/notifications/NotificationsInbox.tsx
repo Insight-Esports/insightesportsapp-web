@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Award, BadgeCheck, BarChart3, Clock, ClockAlert, Radio, Trophy, CalendarClock, Newspaper, TrendingUp, Gift, UserPlus, Star, Flag, Zap, Bell, BellOff } from "lucide-react";
+import { Award, BadgeCheck, BarChart3, Clock, ClockAlert, Radio, Trophy, CalendarClock, Newspaper, TrendingUp, Gift, UserPlus, Star, Flag, Zap, Bell, BellDot, BellOff } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { type Json } from "@/lib/types";
 import { clsx, timeAgo } from "@/lib/format";
@@ -17,6 +17,7 @@ import { AssetIcon, EmptyState, LoadFailure, Page } from "@/components/ui";
 import { SkeletonNotificationRows } from "@/components/ui/skeletons";
 import { NavBar } from "@/components/shell/NavBar";
 import { useReveal } from "@/lib/use-reveal";
+import { alertsListHref } from "@/features/alerts/entry";
 import { normalizeNotifications, type NotificationItem, type NotificationTint } from "./types";
 
 const PAGE_SIZE = 40;
@@ -34,6 +35,8 @@ export function notificationHref(item: NotificationItem): string | null {
     case "final_score":
     case "followed_player_highlight": return id ? `/match/${id}` : null;
     case "new_follower": return id ? `/profile/${id}` : null;
+    case "stat_alert_live":
+    case "stat_alert_result": return alertsListHref();
     default: break;
   }
   switch (item.refType) {
@@ -186,6 +189,7 @@ function TypeGlyph({ icon, tint }: { icon: string; tint: NotificationTint }) {
     case "star": return <Star {...p} />;
     case "flag": return <Flag {...p} />;
     case "zap": return <Zap {...p} />;
+    case "bell-dot": return <BellDot {...p} />;
     default: return <Bell {...p} />;
   }
 }

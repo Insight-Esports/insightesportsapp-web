@@ -58,7 +58,8 @@ app.get("/status", (_req, res) => res.json({
   banner: process.env.MOCK_BANNER ?? null,
   // DM attachments are flag-gated (dm_media photos, dm_video videos); both on
   // here so the composer's attach button shows. MOCK_DM_VIDEO=off to test the gate.
-  features: { dm_media: { mode: "on" }, dm_video: { mode: process.env.MOCK_DM_VIDEO ?? "on" } },
+  // Route modules may add switches through globalThis.__mockFeatures (e.g. chat_edit / dm_edit).
+  features: { dm_media: { mode: "on" }, dm_video: { mode: process.env.MOCK_DM_VIDEO ?? "on" }, ...(globalThis.__mockFeatures ?? {}) },
 }));
 app.get("/health", (_req, res) => res.json({ ok: true }));
 

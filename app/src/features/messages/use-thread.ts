@@ -5,13 +5,19 @@
 // its bubble with a retry, a failed photo/video is removed with the error),
 // their read receipt from two facts (an id boundary from
 // dm:read, a server-stamped time), typing, and the blocked states.
+//
+// Oct 28 (MessagesView.swift / DirectMessages.swift): unsend (delete) and
+// edit your own messages — both show at once and come back as they were if
+// the server refuses — dm:deleted / dm:edited from any device, and the poll
+// reconciling both for the span its newest page covers.
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { useAppState } from "@/store/app-state";
 import {
-  asURL, decrypt, forgetPendingLatest, markRead, messages as fetchMessages, noteLocalMessage, onDM, publicKeyFor, readLedger, sendEnvelope, sendText, unblockUser,
+  asURL, decrypt, deleteMessage, editText, forgetLatestIf, forgetPendingLatest, markRead, messages as fetchMessages, noteLocalMessage, onDM, publicKeyFor, readLedger,
+  replaceLatestIf, sendEnvelope, sendText, unblockUser,
 } from "./service";
 import { DMMediaError, uploadMedia, type PreparedMedia } from "./media";
 import type { DMEnvelope } from "./crypto";
@@ -23,6 +29,8 @@ export interface BlockedState { text: string; offersUnblock: boolean }
 
 const NO_KEY_TEXT = "This user can't receive messages yet — they haven't opened the latest Insight.";
 const PAGE = 50;
+/** Edit is offered for 15 minutes after the send. */
+export const DM_EDIT_WINDOW_MS = 15 * 60_000;
 
 type Retry = { kind: "text"; text: string };
 
@@ -175,14 +183,60 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
     if (!m.isMine) await markReadIfVisible();
   }, [dec, id, markReadIfVisible, setMessages]);
 
+  /** A message left the thread (unsent here, on another device, or by them). */
+  const dropMessage = useCallback((messageId: string) => {
+    const list = messagesRef.current;
+    const i = list.findIndex((m) => m.id === messageId);
+    if (i < 0) return;
+    const next = list.filter((_, j) => j !== i);
+    setMessages(next);
+    // The inbox preview falls back to the previous message.
+    const prev = [...next].reverse().find((m) => !isPendingId(m.id)) ?? null;
+    forgetLatestIf(id, messageId, prev);
+  }, [id, setMessages]);
+
+  /** An edited row (socket or poll): decrypt it and swap it in place. */
+  const swapEdited = useCallback(async (r: DMMessageRow) => {
+    if (!messagesRef.current.some((m) => m.id === r.id)) return;
+    const m = await dec(r);
+    const cur = messagesRef.current.find((x) => x.id === r.id);
+    if (!cur) return;
+    const next: DMMessage = { ...cur, text: m.text, linkURL: m.linkURL, decrypted: m.decrypted, editedAt: r.editedAt ?? cur.editedAt ?? new Date().toISOString() };
+    setMessages((prev) => prev.map((x) => (x.id === r.id ? next : x)));
+    replaceLatestIf(id, next);
+  }, [dec, id, setMessages]);
+
   const pollForNew = useCallback(async () => {
     let page;
     try { page = await fetchMessages(id); } catch { return; }
+    const rows = page.messages;                     // newest first
+    // The newest page is the truth for the span it covers: a message of
+    // mine inside it that it no longer lists was deleted, a row with a newer
+    // edited_at was edited. Anything newer than its newest row is never
+    // judged (it may have landed while the page loaded).
+    if (rows.length > 0) {
+      const newestAt = new Date(rows[0].createdAt).getTime();
+      const oldestAt = new Date(rows[rows.length - 1].createdAt).getTime();
+      const wholeThread = rows.length < PAGE;
+      const listed = new Map(rows.map((r) => [r.id, r]));
+      for (const m of messagesRef.current) {
+        if (!m.isMine || isPendingId(m.id) || listed.has(m.id)) continue;
+        const t = new Date(m.createdAt).getTime();
+        if (t > newestAt) continue;
+        if (!wholeThread && t <= oldestAt) continue;
+        dropMessage(m.id);
+      }
+      for (const r of rows) {
+        if (!r.editedAt) continue;
+        const cur = messagesRef.current.find((m) => m.id === r.id);
+        if (cur && (!cur.editedAt || new Date(r.editedAt) > new Date(cur.editedAt))) await swapEdited(r);
+      }
+    }
     const known = new Set(messagesRef.current.map((m) => m.id));
-    const fresh = page.messages.filter((r) => !known.has(r.id)).reverse();
+    const fresh = rows.filter((r) => !known.has(r.id)).reverse();
     if (page.otherLastReadAt) noteOtherRead(null, page.otherLastReadAt);
     for (const r of fresh) await receive(r);
-  }, [id, noteOtherRead, receive]);
+  }, [dropMessage, id, noteOtherRead, receive, swapEdited]);
 
   const ensureKeys = useCallback(async () => {
     if (otherKey.current.pub && otherKey.current.ver != null) return true;
@@ -351,6 +405,52 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
     if (r) await send(r.text);
   }, [send, setMessages]);
 
+  /**
+   * Unsend one of yours: gone at once; if the server refuses it goes back
+   * where it was and the error comes back (the thread shows "Couldn't
+   * delete"). 404 MESSAGE_NOT_FOUND counts as done.
+   */
+  const remove = useCallback(async (m: DMMessage): Promise<string | null> => {
+    if (!m.isMine || isPendingId(m.id)) return null;
+    const before = messagesRef.current;
+    const at = before.findIndex((x) => x.id === m.id);
+    if (at < 0) return null;
+    dropMessage(m.id);
+    try {
+      await deleteMessage(id, m);
+      return null;
+    } catch (e) {
+      setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev.slice(0, at), m, ...prev.slice(at)]));
+      const last = [...messagesRef.current].reverse().find((x) => !isPendingId(x.id));
+      if (last) noteLocalMessage(id, last);
+      return e instanceof ApiError ? (e.isConnectionProblem ? "Check your connection and try again." : e.message) : "Check your connection and try again.";
+    }
+  }, [dropMessage, id, setMessages]);
+
+  /**
+   * Edit one of yours (pending, gated by dm_edit): sealed like a send,
+   * shown at once with "Edited", put back if the server refuses.
+   */
+  const edit = useCallback(async (m: DMMessage, text: string): Promise<string | null> => {
+    const next = text.trim();
+    if (!next || next === m.text || !m.isMine || isPendingId(m.id) || m.media) return null;
+    if (!(await ensureKeys())) return NO_KEY_TEXT;
+    const pub = otherKey.current.pub!, ver = otherKey.current.ver!;
+    const edited: DMMessage = { ...m, text: next, linkURL: asURL(next) ? next : null, editedAt: new Date().toISOString() };
+    setMessages((prev) => prev.map((x) => (x.id === m.id ? edited : x)));
+    replaceLatestIf(id, edited);
+    try {
+      const saved = await editText(next, id, m.id, row.otherId, pub, ver);
+      if (saved?.editedAt) setMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, editedAt: saved.editedAt } : x)));
+      return null;
+    } catch (e) {
+      setMessages((prev) => prev.map((x) => (x.id === m.id ? m : x)));
+      replaceLatestIf(id, m);
+      if (e instanceof Error && e.message === "NOT_LINKED") return "Link this browser from your phone to send messages.";
+      return e instanceof ApiError ? (e.isConnectionProblem ? "Check your connection and try again." : e.message) : "Check your connection and try again.";
+    }
+  }, [ensureKeys, id, row.otherId, setMessages]);
+
   const unblock = useCallback(async () => {
     await unblockUser(row.otherId);
     setBlockedState(null);
@@ -395,9 +495,12 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
       }),
       onDM("typing", ({ conversationId, userId }) => { if (conversationId === id && userId !== me) noteTyping(); }),
       onDM("removed", ({ conversationId }) => { if (conversationId === id) onRemovedRef.current(); }),
+      onDM("deleted", ({ conversationId, messageId }) => { if (conversationId === id) dropMessage(messageId); }),
+      onDM("edited", ({ conversationId, message }) => { if (conversationId === id) void swapEdited(message); }),
     ];
-    // Belt-and-braces arrival: the socket keeps it instant, the poll guarantees it's never stale.
-    const poll = setInterval(() => { if (visibleRef.current) void pollForNew(); }, 5000);
+    // Belt-and-braces arrival: the socket keeps it instant, the 3 s poll
+    // guarantees it's never stale (and catches unsends / edits it missed).
+    const poll = setInterval(() => { if (visibleRef.current) void pollForNew(); }, 3000);
     return () => {
       offs.forEach((off) => off());
       clearInterval(poll);
@@ -419,6 +522,6 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
   return {
     messages, loaded, canLoadMore, isLoadingMore, blockedState, sendError, clearSendError: () => setSendError(null),
     otherIsTyping, receipt, receiptMessageId, seenLabel,
-    load, loadMore, send, sendMedia, retry, unblock, startsRun, endsRun, showsTimeStamp,
+    load, loadMore, send, sendMedia, retry, unblock, remove, edit, startsRun, endsRun, showsTimeStamp,
   };
 }

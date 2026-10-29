@@ -17,12 +17,15 @@ import { backHrefFrom } from "@/features/matches/from-match";
 import { ChevronLeft, Medal, Trophy, UserX } from "lucide-react";
 import { api, ApiError, endpoints } from "@/lib/api";
 import { useFetch } from "@/lib/use-fetch";
-import { clsx, fmt1, fmt2 } from "@/lib/format";
+import { clsx, fmt1, fmt2, formatRating } from "@/lib/format";
 import { matchResultTime, normalizePlayers, normalizeTeam, normalizeTeams, teamStub, type Match, type Player, type Team } from "@/lib/types";
 import { EmptyState, GamePill, InitialAvatar, LoadFailure, Page, SectionHeader, SkeletonLedger, SkeletonStatRow, StatCard, TeamMark, TierBadge } from "@/components/ui";
 import { SkeletonSection, SkeletonStripedTable, SkeletonTeamDetail } from "@/components/ui/skeletons";
 import { isUUID, prefetchPlayer, recallTeam, rememberPlayer, teamCacheKey, type ResolvedTeam } from "@/features/entity-cache";
 import { FollowButton } from "@/features/follow/FollowButton";
+import { SetAlertButton } from "@/features/alerts/SetAlertButton";
+import { useArchiveSwitch } from "@/features/archive/data";
+import { teamArchiveHref } from "@/features/archive/shared";
 import { StripedTable } from "@/features/players/StatTable";
 import { TeamMapPool, useTeamMapPool } from "./TeamMapPool";
 import { TeamRecentGamesList, useTeamRecentGames } from "./RecentGamesList";
@@ -155,7 +158,8 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
   const inactive = players.filter((p) => p.rosterStatus === "inactive");
   const [showFormer, setShowFormer] = useState(false);
   useEffect(() => setShowFormer(false), [team.id]);
-  const ratingHeader = game === "VALORANT" ? "ACS" : game === "League" ? "KDA" : "RTG";
+  // RatingFormat: one column, "RTG", the number read from its own scale.
+  const ratingHeader = "RTG";
 
   const header = (
     <div className="flex flex-col items-center gap-3 px-4 pt-4 text-center">
@@ -194,7 +198,7 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
   const rosterLedger = (list: Player[], dim?: boolean) => (
     <StripedTable className={dim ? "opacity-60" : undefined}
       header={<><span className="flex-1">Player</span><span className="w-[78px] shrink-0">Role</span><span className="w-12 shrink-0 text-right">{ratingHeader}</span></>}>
-      {list.map((p) => <RosterRow key={p.id} player={p} game={game} />)}
+      {list.map((p) => <RosterRow key={p.id} player={p} />)}
     </StripedTable>
   );
 
@@ -230,9 +234,10 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
     </section>
   );
 
+  const archive = useArchiveSwitch();
   const upcoming = <UpcomingGamesList teamId={hasRealId ? team.id : null} teamName={team.name} game={game || null} />;
   const recentSection = (
-    <TeamRecentGamesList teamId={team.id} game={game || null} perspective={{ teamId: hasRealId ? team.id : null, teamName: team.name }} pager={recent} />
+    <TeamRecentGamesList teamId={team.id} game={game || null} perspective={{ teamId: hasRealId ? team.id : null, teamName: team.name }} pager={recent} archiveHref={hasRealId && !archive.off ? teamArchiveHref(team.id) : null} />
   );
 
   // ── Extras the backend serves (unplugged in the app; shown here only when non-empty) ──
@@ -306,7 +311,15 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
 
   return (
     <Page>
-      <TitleBar title={team.name} trailing={hasRealId ? <FollowButton targetType="team" targetId={team.id} compact /> : null} />
+      <TitleBar
+        title={team.name}
+        trailing={hasRealId ? (
+          <div className="flex items-center gap-2 shrink-0">
+            {game ? <SetAlertButton targetType="team" targetId={team.id} targetName={team.name} game={game} /> : null}
+            <FollowButton targetType="team" targetId={team.id} compact />
+          </div>
+        ) : null}
+      />
       {header}
       {/* Phones: the iOS order. Desktop: Upcoming + the extra sections form a rail beside Season / Map Pool / Roster / Recent Games. */}
       <div className="pt-5 grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:pr-4">
@@ -350,9 +363,9 @@ function deriveRecord(team: Team, matches: Match[]): { wins: number; losses: num
 }
 
 // ── Rows & cards ──────────────────────────────────────────────────────────
-function RosterRow({ player, game }: { player: Player; game: string }) {
+function RosterRow({ player }: { player: Player }) {
   const role = !player.role || player.role.toLowerCase() === "unknown" ? "—" : player.role;
-  const rating = player.rating == null ? "—" : game === "VALORANT" ? String(Math.round(player.rating)) : game === "League" ? fmt1(player.rating) : fmt2(player.rating);
+  const rating = formatRating(player.rating, "player");
   return (
     <Link href={`/players/${encodeURIComponent(player.id)}`} onClick={() => rememberPlayer(player)} onMouseEnter={() => prefetchPlayer(player.id)} className="flex items-center gap-1 px-3 py-2.5 hover:bg-surface/70 transition-colors">
       <span className="flex-1 min-w-0 flex items-center gap-2">

@@ -212,6 +212,9 @@ export function register(app, h) {
   // ── Notifications inbox ────────────────────────────────────────────────
   const notifications = [
     // Badges / leaderboard close (backend: badgeService, leaderboardService; ref_type 'user' = the recipient).
+    // Stat alerts (statAlertService.sendAlertNotification: ref_type 'match', link insight://alerts).
+    { id: "n-sa-1", type: "stat_alert_live", title: "Stat alert", body: "valyn just hit 15 kills vs Team Liquid", ref_type: "match", ref_id: "m-live-1", is_read: false, created_at: isoAgo(4 * 6e4) },
+    { id: "n-sa-2", type: "stat_alert_result", title: "Stat alert", body: "Alert hit: Derke 22 kills vs Team Heretics (target 18)", ref_type: "match", ref_id: "m-done-3", is_read: true, created_at: isoAgo(20 * 36e5) },
     { id: "n-13", type: "badge_earned", title: "Badge earned: On Fire", body: "Five correct predictions in a row.", ref_type: "user", ref_id: "user-1", is_read: false, created_at: isoAgo(12 * 6e4) },
     { id: "n-1", type: "prediction_resolved", title: "Prediction correct", body: "TenZ went over 22.5 kills vs NRG. +180 pts", ref_type: "match", ref_id: "match-1", is_read: false, created_at: isoAgo(25 * 6e4) },
     { id: "n-2", type: "followed_result", title: "Sentinels won", body: "Sentinels beat NRG 2–1 at VCT Americas.", ref_type: "match", ref_id: "match-1", is_read: false, created_at: isoAgo(2 * 36e5) },

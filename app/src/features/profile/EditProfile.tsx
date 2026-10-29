@@ -5,6 +5,9 @@
 // Avatar: picked file previews immediately; on save it goes through
 // /api/avatar (Supabase upload + POST /users/me/avatar) and the user is
 // re-fetched from GET /users/me, the authoritative source.
+// A panel sanction (403 AVATAR_BANNED {ends_at}) shows "You can't change
+// your profile picture until Nov 3." under the photo and holds the photo
+// back while it shows (parity Oct 28 §2).
 // Premium style (#premium-style): a live preview and the ring / shine /
 // diamond toggles, plus rank colours while on the monthly podium. It saves
 // with the screen's Save: the local mirror first, then PATCH /users/me
@@ -27,6 +30,7 @@ import {
 import { SettingsToggleRow } from "@/features/settings/components";
 import { NavBar } from "@/components/shell/NavBar";
 import { withBase } from "@/lib/base-path";
+import { noteBan, useBanLine } from "@/features/moderation/ban";
 
 const ALLOWED = /^[A-Za-z0-9_]+$/;
 
@@ -40,6 +44,9 @@ export function EditProfile() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const originalUsername = user?.username ?? "";
+  const avatarBan = useBanLine("avatar");
+  // A banned avatar change never goes out; the rest of the screen still saves.
+  const photo = avatarBan ? null : picked;
 
   // Premium style: what's worn now (own mirror > server > default ring) and
   // the draft (null until touched, so it follows the saved value).
@@ -73,7 +80,7 @@ export function EditProfile() {
     if (!ALLOWED.test(trimmed)) return "Only letters, numbers, and underscores allowed.";
     return null;
   }, [trimmed]);
-  const canSave = (trimmed !== originalUsername || picked !== null || styleDirty) && usernameError === null && trimmed.length >= 3;
+  const canSave = (trimmed !== originalUsername || photo !== null || styleDirty) && usernameError === null && trimmed.length >= 3;
 
   async function save(e?: FormEvent) {
     e?.preventDefault();
@@ -82,13 +89,15 @@ export function EditProfile() {
     setSaveError(null);
     try {
       if (styleDirty && user) await saveStyle(user, canonicalStyle(style), setUser);
-      if (picked) {
+      if (photo) {
         const fd = new FormData();
-        fd.append("file", picked, picked.name || "avatar.jpg");
+        fd.append("file", photo, photo.name || "avatar.jpg");
         const r = await fetch(withBase("/api/avatar"), { method: "POST", body: fd, credentials: "same-origin" });
         if (!r.ok) {
           const j = await r.json().catch(() => ({}));
-          throw new ApiError(r.status, j?.message ?? j?.error ?? "Couldn't upload the image. Please try again.", j?.code ?? null);
+          const err = new ApiError(r.status, j?.message ?? j?.error ?? "Couldn't upload the image. Please try again.", j?.code ?? null);
+          err.body = j && typeof j === "object" ? j : null;
+          throw err;
         }
         await refreshUser();
       }
@@ -106,7 +115,9 @@ export function EditProfile() {
       }
       router.push("/profile");
     } catch (err) {
-      setSaveError(errorMessage(err, "Couldn't save changes."));
+      // 403 AVATAR_BANNED: the ban line under the photo says it; the photo is dropped.
+      if (noteBan(err) === "avatar") setPicked(null);
+      else setSaveError(errorMessage(err, "Couldn't save changes."));
     } finally {
       setSaving(false);
     }
@@ -144,16 +155,18 @@ export function EditProfile() {
                   <InitialAvatar name={user.username} imageURL={user.avatarURL} size={110} className="!border-0" />
                 )}
               </span>
-              <button type="button" aria-label="Change Photo" onClick={() => fileRef.current?.click()} className="absolute bottom-0 right-0 grid place-items-center size-[34px] rounded-full bg-violet text-white border-[3px] border-bg hover:brightness-110">
+              <button type="button" aria-label="Change Photo" onClick={() => fileRef.current?.click()} disabled={!!avatarBan} className="disabled:opacity-50 absolute bottom-0 right-0 grid place-items-center size-[34px] rounded-full bg-violet text-white border-[3px] border-bg hover:brightness-110">
                 <Camera size={14} />
               </button>
             </span>
-            {picked ? (
+            {avatarBan ? (
+              <span role="alert" className="t-label-sm text-error text-center">{avatarBan}</span>
+            ) : picked ? (
               <span className="flex items-center gap-1.5 text-gold t-label-sm text-center"><Clock size={10} />New photo will be reviewed before others see it</span>
             ) : user.avatarPending ? (
               <span className="flex items-center gap-1.5 text-gold t-label-sm"><Clock size={10} />Photo in review</span>
             ) : null}
-            <button type="button" onClick={() => fileRef.current?.click()} className="t-label-lg text-violet hover:underline">Change Photo</button>
+            <button type="button" onClick={() => fileRef.current?.click()} disabled={!!avatarBan} className="t-label-lg text-violet hover:underline disabled:text-muted disabled:no-underline disabled:cursor-not-allowed">Change Photo</button>
             <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => setPicked(e.target.files?.[0] ?? null)} />
           </div>
 

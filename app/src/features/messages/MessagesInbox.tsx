@@ -1,7 +1,9 @@
 // MessagesInbox — MessagesInboxView.swift: a ledger of threads (avatar,
 // name, decrypted preview, time, unread dot), the swipe actions as a row
 // menu (Remove chat · Block), people you follow when the list is short,
-// and the link banner when the phone holds a newer key.
+// and the link banner when the phone holds a newer key. People wear their
+// flair (ring, shine, diamond, ORACLE); blocked people's threads are
+// hidden (parity Oct 28 §2, §3, §5).
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -10,7 +12,9 @@ import { useRouter } from "next/navigation";
 import { SquarePen, Ellipsis, Hand, Trash2, TriangleAlert } from "lucide-react";
 import { clsx } from "@/lib/format";
 import { useReveal } from "@/lib/use-reveal";
-import { AssetIcon, ConfirmDialog, EmptyState, InitialAvatar, LoadFailure, TabHeaderTitle, Toast } from "@/components/ui";
+import { AssetIcon, ConfirmDialog, EmptyState, LoadFailure, TabHeaderTitle, Toast } from "@/components/ui";
+import { FlairAvatar, FlairName } from "@/components/ui/premium-flair";
+import { useBlockedIds } from "@/features/moderation/use-blocked";
 import { SkeletonThreadRows } from "@/components/ui/skeletons";
 import { BackButton } from "@/components/shell/NavBar";
 import { readLedger, type LinkState } from "./service";
@@ -19,12 +23,17 @@ import { useNow } from "./hooks";
 import { relativeAgo, relativeShort } from "./format-dm";
 import { startConversation, startConversationMessage } from "./start-conversation";
 import { onInboxToast, takeInboxToast } from "./dm-local";
-import { isPendingId, type SearchUser } from "./types";
+import { isPendingId, otherFlair, searchUserFlair, type SearchUser } from "./types";
 
 export function MessagesInbox({ selectedId, linkState }: { selectedId: string | null; linkState: LinkState }) {
   const router = useRouter();
   const enabled = linkState.kind === "linked" || linkState.kind === "stale";
-  const { threads, suggested, isLoading, error, connectionProblem, load, remove, block } = useInbox(enabled);
+  const inbox = useInbox(enabled);
+  const { isLoading, error, connectionProblem, load, remove, block } = inbox;
+  // Blocked people's threads (and suggestions) are hidden.
+  const blockedIds = useBlockedIds();
+  const threads = inbox.threads.filter((t) => !blockedIds.has(t.row.otherId));
+  const suggested = inbox.suggested.filter((u) => !blockedIds.has(u.id));
   const now = useNow(60_000);
   const [toast, setToast] = useState<string | null>(() => takeInboxToast());
   const say = useCallback((m: string) => setToast(m), []);
@@ -88,9 +97,9 @@ export function MessagesInbox({ selectedId, linkState }: { selectedId: string | 
                 <span className={clsx("px-4 t-kicker", threads.length === 0 ? "pt-2 pb-1.5" : "pt-4 pb-1.5")}>{threads.length === 0 ? "Start a conversation" : "People you follow"}</span>
                 {suggested.map((u) => (
                   <button key={u.id} type="button" onClick={() => void open(u)} className="flex items-center gap-3 px-4 py-2.5 hairline-b hover:bg-surface/60 text-left transition-colors">
-                    <InitialAvatar name={u.username} imageURL={u.avatarURL} size={44} />
+                    <FlairAvatar user={searchUserFlair(u)} size={44} />
                     <span className="flex flex-col gap-0.5 min-w-0 flex-1">
-                      <span className="t-body-md text-primary truncate">{u.username}</span>
+                      <FlairName user={searchUserFlair(u)} className="t-body-md self-start" />
                       <span className="t-label-sm text-muted">You follow</span>
                     </span>
                     <AssetIcon name="messages" height={18} />
@@ -164,9 +173,9 @@ function InboxRow({ thread, now, selected, onRemove, onBlock }: { thread: InboxT
   return (
     <div className={clsx("relative group hairline-b", selected ? "bg-surface/60" : "hover:bg-surface/40", "transition-colors")}>
       <Link href={`/messages/${encodeURIComponent(thread.row.id)}`} className="flex items-center gap-3.5 pl-4 pr-14 py-2.5">
-        <InitialAvatar name={thread.row.otherUsername} imageURL={thread.row.otherAvatarURL} size={48} />
+        <FlairAvatar user={otherFlair(thread.row)} size={48} />
         <span className="flex flex-col gap-1 min-w-0 flex-1">
-          <span className={clsx("truncate text-primary", unread > 0 ? "t-label-lg" : "t-body-md")}>{thread.row.otherUsername}</span>
+          <FlairName user={otherFlair(thread.row)} className={clsx("self-start", unread > 0 ? "t-label-lg" : "t-body-md")} />
           <span className={clsx("truncate", line.bold ? "t-label-md text-primary" : "t-body-sm text-muted")}>{line.text}</span>
         </span>
         <span className="flex flex-col items-end gap-1.5 shrink-0">
@@ -197,7 +206,7 @@ function InboxRow({ thread, now, selected, onRemove, onBlock }: { thread: InboxT
       />
       <ConfirmDialog
         open={confirm === "block"} title={`Block @${thread.row.otherUsername}?`}
-        message="They won't be able to message you, and this conversation leaves your inbox."
+        message="They won't see your profile, comments or messages, and you won't see theirs. You can unblock them in Settings."
         confirmTitle="Block" destructive onConfirm={() => { setConfirm(null); onBlock(); }} onCancel={() => setConfirm(null)}
       />
     </div>

@@ -1,11 +1,17 @@
 // MatchComments.tsx — MatchCommentsView: the persistent comment thread for
 // a match (live or completed). Unlike the live chat (ephemeral) these are
-// SAVED and become the past game's discussion. Report, soft-delete own,
-// 500-char limit; the server re-verifies ownership on delete.
+// SAVED and become the past game's discussion. 500-char limit; the server
+// re-verifies ownership on delete.
+//
+// Moderation (parity Oct 28 §2): the "⋯" (or a right-click) on a comment
+// offers Delete on your own, Report and Block @user on anyone else's.
+// Report opens the Report sheet; blocked people's comments disappear. A
+// comment ban (403 COMMENT_BANNED) shows its line above the composer and
+// keeps Send disabled.
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { ChevronRight, MoreHorizontal, Send } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { ChevronRight, Send, Trash2 } from "lucide-react";
 import { AssetIcon, ConfirmDialog, LoadFailure, SkeletonLedger, Toast } from "@/components/ui";
 import { api, endpoints, errorMessage } from "@/lib/api";
 import { useFetch } from "@/lib/use-fetch";
@@ -14,6 +20,11 @@ import { clsx } from "@/lib/format";
 import type { Json } from "@/lib/types";
 import { useAppState } from "@/store/app-state";
 import { FlairAvatar, FlairName, flairUserFrom, type FlairUser } from "@/components/ui/premium-flair";
+import { ActionMenu, MoreButton, Portal, useActionMenu, type MenuAction, type RowMenuProps } from "@/features/moderation/ActionMenu";
+import { BlockConfirm, personActions, unblockQuietly, type ModerationUser } from "@/features/moderation/dialogs";
+import { ReportSheet, type ReportTarget } from "@/features/moderation/ReportSheet";
+import { useBlockedIds } from "@/features/moderation/use-blocked";
+import { noteBan, useBanLine } from "@/features/moderation/ban";
 import { SectionBox } from "./sections";
 import { normalizeMatchComment, type MatchComment } from "./types";
 
@@ -25,7 +36,7 @@ function decodeComment(raw: Json): FlairComment {
   const c = normalizeMatchComment(raw);
   // Flat rows carry the author as user_id (never the comment's own id).
   const a = raw?.author && typeof raw.author === "object" ? raw.author : { ...raw, id: raw?.user_id ?? null };
-  return { ...c, author: { ...flairUserFrom(a), username: c.username, avatarURL: c.avatarURL } };
+  return { ...c, author: { ...flairUserFrom(a), id: c.userId, username: c.username, avatarURL: c.avatarURL } };
 }
 function decodeComments(raw: Json): FlairComment[] {
   const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.comments) ? raw.comments : [];
@@ -36,40 +47,17 @@ function decodeCreated(raw: Json): FlairComment {
   return decodeComment(raw?.comment && typeof raw.comment === "object" ? raw.comment : raw);
 }
 
-function CommentRow({ comment, onDelete, onReport }: { comment: FlairComment; onDelete: () => void; onReport: () => void }) {
-  const [menu, setMenu] = useState(false);
-  const wrap = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!menu) return;
-    const onDoc = (e: MouseEvent) => { if (wrap.current && !wrap.current.contains(e.target as Node)) setMenu(false); };
-    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") setMenu(false); };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
-  }, [menu]);
+function CommentRow({ comment, rowProps, more }: { comment: FlairComment; rowProps: RowMenuProps; more: ReactNode }) {
   return (
-    <div className="flex items-start gap-3 px-4 py-2.5">
-      {/* Comments are a list: the flair holds still. */}
-      <FlairAvatar user={comment.author} size={40} />
+    <div {...rowProps} tabIndex={-1} className="flex items-start gap-3 px-4 py-2.5 outline-none [-webkit-touch-callout:none]">
+      {/* Comments are a list: the flair holds still. Photo and name open the profile. */}
+      <FlairAvatar user={comment.author} size={40} link />
       <div className="flex flex-col gap-[3px] min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <FlairName user={comment.author} className="t-label-md" nameClassName="text-primary" />
+          <FlairName user={comment.author} link className="t-label-md" />
           <span className="t-label-sm text-muted shrink-0">{timeAgo(comment.createdAt)}</span>
           <span className="flex-1" />
-          <div ref={wrap} className="relative">
-            <button type="button" aria-label="More" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((v) => !v)} className="grid place-items-center w-7 h-6 rounded text-muted hover:text-primary hover:bg-surface/60">
-              <MoreHorizontal size={13} />
-            </button>
-            {menu ? (
-              <div role="menu" className="absolute right-0 top-7 z-10 min-w-28 rounded-lg bg-card border border-hairline py-1 shadow-xl">
-                {comment.canDelete ? (
-                  <button type="button" role="menuitem" onClick={() => { setMenu(false); onDelete(); }} className="w-full text-left px-3 py-2 t-label-md text-error hover:bg-surface/60">Delete</button>
-                ) : (
-                  <button type="button" role="menuitem" onClick={() => { setMenu(false); onReport(); }} className="w-full text-left px-3 py-2 t-label-md text-error hover:bg-surface/60">Report</button>
-                )}
-              </div>
-            ) : null}
-          </div>
+          {more}
         </div>
         <span className="t-body-sm text-secondary whitespace-pre-wrap break-words">{comment.body}</span>
       </div>
@@ -83,13 +71,18 @@ export function MatchCommentsSection({ matchId, className }: { matchId: string; 
     (signal) => api.get<Json>(endpoints.matchComments(matchId), { signal }).then(decodeComments),
     [matchId],
   );
-  const comments = useMemo(() => data ?? [], [data]);
+  const blocked = useBlockedIds();
+  const comments = useMemo(() => (data ?? []).filter((c) => !c.userId || !blocked.has(c.userId)), [data, blocked]);
+  const banLine = useBanLine("comment");
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
-  const [reportTarget, setReportTarget] = useState<FlairComment | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const menu = useActionMenu<FlairComment>();
+  const [toDelete, setToDelete] = useState<FlairComment | null>(null);
+  const [report, setReport] = useState<ReportTarget | null>(null);
+  const [toBlock, setToBlock] = useState<ModerationUser | null>(null);
 
   useEffect(() => {
     if (!sendError && !toast) return;
@@ -99,11 +92,11 @@ export function MatchCommentsSection({ matchId, className }: { matchId: string; 
 
   const send = useCallback(async () => {
     const trimmed = draft.trim();
-    if (!trimmed || trimmed.length > 500 || sending) return;
+    if (!trimmed || trimmed.length > 500 || sending || banLine) return;
     setSending(true);
     const tempId = `temp-${Date.now()}`;
     const author: FlairUser = { id: user?.id ?? null, username: user?.username ?? "You", avatarURL: user?.avatarURL ?? null, isPremium: !!user?.isPremium, premiumStyle: user?.premiumStyle ?? null, title: user?.title };
-    const optimistic: FlairComment = { id: tempId, username: author.username, avatarURL: author.avatarURL ?? null, body: trimmed, createdAt: new Date().toISOString(), canDelete: true, author };
+    const optimistic: FlairComment = { id: tempId, userId: user?.id ?? null, username: author.username, avatarURL: author.avatarURL ?? null, body: trimmed, createdAt: new Date().toISOString(), canDelete: true, author };
     setData((prev) => [optimistic, ...(prev ?? [])]);
     setDraft("");
     try {
@@ -112,22 +105,30 @@ export function MatchCommentsSection({ matchId, className }: { matchId: string; 
     } catch (e) {
       setData((prev) => (prev ?? []).filter((c) => c.id !== tempId));
       setDraft(trimmed);
-      setSendError(errorMessage(e, "Couldn't post your comment. Please try again."));
+      if (!noteBan(e)) setSendError(errorMessage(e, "Couldn't post your comment. Please try again."));
     } finally {
       setSending(false);
     }
-  }, [draft, matchId, sending, setData, user]);
+  }, [banLine, draft, matchId, sending, setData, user]);
 
   const remove = useCallback(async (c: FlairComment) => {
-    const previous = comments;
+    const previous = data;
     setData((prev) => (prev ?? []).filter((x) => x.id !== c.id));
-    try { await api.delete(endpoints.deleteComment(c.id)); } catch { setData(previous); }
-  }, [comments, setData]);
+    try { await api.delete(endpoints.deleteComment(c.id)); } catch { setData(previous); setSendError("Couldn't delete your comment. Please try again."); }
+  }, [data, setData]);
 
-  const report = useCallback(async (c: FlairComment) => {
-    try { await api.post(endpoints.reportComment(c.id), {}); } catch { /* fire-and-forget */ }
-    setToast("Thanks — our team will review this comment.");
-  }, []);
+  const actionsFor = (c: FlairComment): MenuAction[] => {
+    const own = c.canDelete || (!!user && c.userId === user.id);
+    if (own) return [{ key: "delete", label: "Delete", icon: <Trash2 size={15} />, destructive: true, onSelect: () => setToDelete(c) }];
+    if (!c.userId) return [];
+    const who = { id: c.userId, username: c.username };
+    return personActions({
+      user: who, blocked: blocked.has(c.userId), isOwn: false,
+      onReport: () => setReport({ kind: "comment", commentId: c.id, text: c.body, user: { ...c.author, id: c.userId! } }),
+      onBlock: () => setToBlock(who),
+      onUnblock: () => { void unblockQuietly(who.id); },
+    });
+  };
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(); } };
   const onSubmit = (e: FormEvent) => { e.preventDefault(); void send(); };
@@ -142,9 +143,10 @@ export function MatchCommentsSection({ matchId, className }: { matchId: string; 
           <span className="t-label-sm text-muted">{comments.length > 0 ? `${comments.length} comments` : "Be the first to comment"}</span>
         </span>
       </div>
+      {banLine ? <span role="alert" className="block px-3.5 pb-2 t-label-md text-secondary">{banLine}</span> : null}
       <form onSubmit={onSubmit} className="flex items-end gap-2.5 px-3.5 pb-3">
-        <textarea value={draft} onChange={(e) => setDraft(e.target.value.slice(0, 500))} onKeyDown={onKey} placeholder="Add a comment..." rows={1} aria-label="Add a comment" className="flex-1 min-w-0 resize-none px-2.5 py-2.5 rounded-[10px] bg-surface border border-border-subtle text-white t-body-md outline-none focus:border-border-strong placeholder:text-muted max-h-28" />
-        <button type="submit" aria-label="Post comment" disabled={!draft.trim() || sending} className="grid place-items-center size-10 rounded-[10px] bg-violet text-white hover:brightness-110 disabled:opacity-45 disabled:cursor-not-allowed">
+        <textarea value={draft} onChange={(e) => setDraft(e.target.value.slice(0, 500))} onKeyDown={onKey} placeholder="Add a comment..." rows={1} aria-label="Add a comment" disabled={!!banLine} className="flex-1 min-w-0 resize-none px-2.5 py-2.5 rounded-[10px] bg-surface border border-border-subtle text-white t-body-md outline-none focus:border-border-strong placeholder:text-muted max-h-28 disabled:opacity-50" />
+        <button type="submit" aria-label="Post comment" disabled={!draft.trim() || sending || !!banLine} className="grid place-items-center size-10 rounded-[10px] bg-violet text-white hover:brightness-110 disabled:opacity-45 disabled:cursor-not-allowed">
           <Send size={16} />
         </button>
       </form>
@@ -163,7 +165,11 @@ export function MatchCommentsSection({ matchId, className }: { matchId: string; 
           <div className="flex flex-col">
             {visible.map((c, i) => (
               <div key={c.id} className={clsx(i > 0 && "relative before:absolute before:top-0 before:left-16 before:right-0 before:h-px before:bg-border-subtle")}>
-                <CommentRow comment={c} onDelete={() => void remove(c)} onReport={() => setReportTarget(c)} />
+                <CommentRow
+                  comment={c}
+                  rowProps={menu.rowProps(c)}
+                  more={actionsFor(c).length ? <MoreButton size={13} className="w-7 h-6" {...menu.triggerProps(c)} aria-expanded={menu.target?.id === c.id} /> : null}
+                />
               </div>
             ))}
             {comments.length > 5 ? (
@@ -174,8 +180,13 @@ export function MatchCommentsSection({ matchId, className }: { matchId: string; 
           </div>
         )}
       </div>
-      <ConfirmDialog open={!!reportTarget} title="Report comment?" message="Our team will review this comment. Thanks for helping keep the community safe." confirmTitle="Report" destructive onConfirm={() => { if (reportTarget) void report(reportTarget); setReportTarget(null); }} onCancel={() => setReportTarget(null)} />
-      <Toast message={sendError ?? toast} kind={sendError ? "error" : "success"} />
+      <ActionMenu anchor={menu.anchor} actions={menu.target ? actionsFor(menu.target) : []} onClose={menu.close} label="Comment actions" />
+      <Portal>
+        <ConfirmDialog open={!!toDelete} title="Delete your comment?" message="This can't be undone." confirmTitle="Delete" destructive onConfirm={() => { if (toDelete) void remove(toDelete); setToDelete(null); }} onCancel={() => setToDelete(null)} />
+      </Portal>
+      <ReportSheet target={report} onClose={() => setReport(null)} />
+      <BlockConfirm user={toBlock} onCancel={() => setToBlock(null)} onBlocked={() => {}} onFailed={setToast} />
+      <Portal><Toast message={sendError ?? toast} kind="error" /></Portal>
     </SectionBox>
   );
 }

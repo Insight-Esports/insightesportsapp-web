@@ -8,6 +8,7 @@
 //   /premium/predict/result          + stat[, baseline, direction, window, map, agent, opponent, side]
 //   /premium/predict/breakdown       game, type, id, name              → full breakdown
 //   /premium/predict/live            game, id, name[, match]           → live-player breakdown
+//   /premium/predict/live-team       game, id, name, match             → live team breakdown
 //   /premium/predict/h2h             game, id, name[, opponent, opponentName, map]
 //   /premium/predict/h2h/result      game, id, name, opponent, opponentName[, map]
 //   /premium/predict/map             game, id, name[, map]             → team map profile
@@ -78,6 +79,7 @@ export const flowHref = {
   result: (t: FlowTarget, extra: Record<string, string | number | boolean | null | undefined>) => `${PREDICT_BASE}/result${qs({ ...targetParams(t), ...extra })}`,
   breakdown: (t: FlowTarget) => `${PREDICT_BASE}/breakdown${qs({ game: t.game, type: t.targetType, id: t.targetId, name: t.targetName })}`,
   live: (t: FlowTarget) => `${PREDICT_BASE}/live${qs({ game: t.game, id: t.targetId, name: t.targetName, match: t.matchId })}`,
+  liveTeam: (t: Pick<FlowTarget, "game" | "targetId" | "targetName" | "matchId">) => `${PREDICT_BASE}/live-team${qs({ game: t.game, id: t.targetId, name: t.targetName, match: t.matchId })}`,
   h2h: (t: FlowTarget, opponentId?: string | null, opponentName?: string | null, map?: string | null) =>
     `${PREDICT_BASE}/h2h${qs({ game: t.game, id: t.targetId, name: t.targetName, opponent: opponentId, opponentName, map })}`,
   h2hResult: (t: FlowTarget, opponentId: string, opponentName: string, map?: string | null) =>

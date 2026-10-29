@@ -234,7 +234,7 @@ function Row({ entry, pointsToNext, isEven }: { entry: LeaderboardEntry; pointsT
         <FlairAvatar user={entry} size={28} />
         <span className="flex flex-col min-w-0">
           <span className="flex items-center gap-1.5 min-w-0">
-            <FlairName user={entry} className="t-body-sm" nameClassName={entry.isCurrentUser ? "text-violet" : "text-primary"} />
+            <FlairName user={entry} className="t-body-sm" nameClassName="text-primary" />
             {entry.isCurrentUser ? <span className="shrink-0 text-[9px] font-bold text-violet px-1.5 py-0.5 rounded-full bg-surface border border-border-subtle">YOU</span> : null}
           </span>
           {pointsToNext ? <span className="t-label-sm text-muted">{ptsLabel(pointsToNext)} to #{entry.rank - 1}</span> : null}

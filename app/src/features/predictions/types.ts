@@ -169,6 +169,11 @@ export interface PredictionGame {
   agent: string | null;
   matchup: string | null;
   result: string | null;
+  /** Links (premium-link-payloads): the row → the match; the opponent → the team. */
+  matchId: string | null;
+  opponentId: string | null;
+  opponentName: string | null;
+  opponentLogoUrl: string | null;
 }
 export interface OutlierItem { name: string | null; avgStat: number | null; gamesPlayed: number | null; percentAbove: number | null; percentBelow: number | null }
 export interface OutlierPair { positiveOutliers: OutlierItem[]; negativeOutliers: OutlierItem[] }
@@ -217,20 +222,25 @@ export interface PredictionResponse {
   liveCurrentValue: number | null;
   projection: PredictionProjection | null;
   opponentName: string | null;
+  /** Top-level opponent link (analyze with an opponent, live player, live team). */
+  opponentId: string | null;
+  opponentLogoUrl: string | null;
   vsOpponentGames: PredictionGame[] | null;
   vsOpponentAverage: number | null;
   vsOpponentSummary: string | null;
   disclaimer: string | null;
 }
 
-function normalizeGame(raw: Json): PredictionGame {
+export function normalizeGame(raw: Json): PredictionGame {
   return {
-    statValue: num(raw?.statValue) ?? 0,
-    matchDate: str(raw?.matchDate), mapName: str(raw?.mapName), agent: str(raw?.agent),
+    statValue: num(raw?.statValue ?? raw?.stat_value) ?? 0,
+    matchDate: str(raw?.matchDate ?? raw?.match_date), mapName: str(raw?.mapName ?? raw?.map_name), agent: str(raw?.agent),
     matchup: str(raw?.matchup), result: str(raw?.result),
+    matchId: str(raw?.matchId ?? raw?.match_id), opponentId: str(raw?.opponentId ?? raw?.opponent_id),
+    opponentName: str(raw?.opponentName ?? raw?.opponent_name ?? raw?.opponent), opponentLogoUrl: str(raw?.opponentLogoUrl ?? raw?.opponent_logo_url),
   };
 }
-function normalizeGames(raw: Json): PredictionGame[] | null {
+export function normalizeGames(raw: Json): PredictionGame[] | null {
   return Array.isArray(raw) ? raw.filter((g) => g && typeof g === "object").map(normalizeGame) : null;
 }
 function normalizeOutlierItem(raw: Json): OutlierItem {
@@ -264,8 +274,9 @@ export function normalizePrediction(raw: Json): PredictionResponse {
     summary: str(r.summary), trend: str(r.trend), trendReason: str(r.trendReason), last10Summary: str(r.last10Summary),
     last10Average: num(r.last10Average), last10Hits: int(r.last10Hits), last10HitRate: int(r.last10HitRate),
     lowHistory: optBool(r.lowHistory), historyWarning: str(r.historyWarning), liveCurrentValue: num(r.liveCurrentValue),
-    projection: r.projection && typeof r.projection === "object" ? { kind: str(r.projection.kind), value: num(r.projection.value) } : null,
-    opponentName: str(r.opponentName), vsOpponentGames: normalizeGames(r.vsOpponentGames), vsOpponentAverage: num(r.vsOpponentAverage),
+    projection: r.projection && typeof r.projection === "object" ? { kind: str(r.projection.kind), value: num(r.projection.value ?? r.projection.projectedFinal) } : null,
+    opponentName: str(r.opponentName), opponentId: str(r.opponentId), opponentLogoUrl: str(r.opponentLogoUrl),
+    vsOpponentGames: normalizeGames(r.vsOpponentGames), vsOpponentAverage: num(r.vsOpponentAverage),
     vsOpponentSummary: str(r.vsOpponentSummary), disclaimer: str(r.disclaimer),
   };
 }
@@ -281,6 +292,8 @@ export interface OverviewPeriod {
   label: string | null; gamesPlayed: number | null; wins: number | null; losses: number | null;
   winRate: string | null; record: string | null; avgStats: Record<string, number | null> | null;
   recentForm: string | null; bestGame: BestGame | null;
+  /** Team overview only: the period's games, newest first (kills as the value). */
+  games: PredictionGame[];
 }
 export interface NamedHighlight { name: string | null; games: number | null; winRate: string | null; avg: number | null }
 export interface AgentBreakdownItem { agent: string | null; avgStat: number | null; gamesPlayed: number | null; wins: number | null; winRate: number | null; avgKDA: number | null; avgACS: number | null; avgRating: number | null; avgKills: number | null }
@@ -332,6 +345,7 @@ function normalizePeriod(raw: Json): OverviewPeriod | null {
     label: str(raw.label), gamesPlayed: int(raw.gamesPlayed), wins: int(raw.wins), losses: int(raw.losses),
     winRate: str(raw.winRate), record: str(raw.record), avgStats: numMap(raw.avgStats), recentForm: str(raw.recentForm),
     bestGame: bg ? { opponent: str(bg.opponent), date: str(bg.date), mapName: str(bg.mapName), result: str(bg.result), stats: numMap(bg.stats) } : null,
+    games: Array.isArray(raw.games) ? raw.games.filter((g: Json) => g && typeof g === "object").map((g: Json) => normalizeGame({ ...g, statValue: g.statValue ?? g.kills })) : [],
   };
 }
 function normalizeHighlight(raw: Json): NamedHighlight | null {
@@ -466,4 +480,58 @@ export function normalizeLiveBreakdown(raw: Json): LiveBreakdownResponse {
 export interface PredictionTargetItem {
   id: string; name: string; subtitle: string | null;
   isLive?: boolean; liveInfo?: string | null; liveKills?: number; matchId?: string | null; imageURL?: string | null;
+}
+
+// ── Counting stats (alert targets round UP: over 17.5 → "At least 18") ──
+const NON_COUNTING = new Set(["acs", "adr", "cs_per_min"]);
+/** Whole-number stats. ACS, ADR and CS/min carry decimals. */
+export function isCountingStat(stat: string | null | undefined): boolean {
+  return !!stat && !NON_COUNTING.has(stat);
+}
+
+// ── Live team breakdown (POST /predictions/live-team-breakdown) ───────────
+export interface LiveTeamStatLine { stat: string; current: number | null; careerAverage: number | null; paceExpected: number | null; projectedFinal: number | null; vsPace: string | null }
+export interface LiveTeamRosterRow { playerId: string | null; name: string; imageURL: string | null; kills: number | null; deaths: number | null; assists: number | null; plusMinus: number | null; acs: number | null; adr: number | null; agent: string | null }
+export interface LiveTeamMap { number: number; status: string | null; targetWon: boolean | null; rounds: string | null }
+export interface LiveTeamBreakdown {
+  matchId: string | null; teamId: string | null; team: string | null; game: string | null; summary: string | null;
+  stats: LiveTeamStatLine[]; players: LiveTeamRosterRow[]; last10Games: PredictionGame[];
+  opponentName: string | null; opponentId: string | null; opponentLogoUrl: string | null;
+  vsOpponentGames: PredictionGame[]; vsOpponentAverage: number | null;
+  headToHead: { played: number; wins: number; losses: number } | null;
+  strength: { team: number | null; opponent: number | null } | null;
+  series: { bestOf: number | null; mapsWon: number; mapsLost: number; maps: LiveTeamMap[] } | null;
+  context: { map: string | null; score: { team1: number; team2: number } | null; gameTimeDisplay: string | null; fractionDone: number | null } | null;
+  disclaimer: string | null;
+}
+export function normalizeLiveTeamBreakdown(raw: Json): LiveTeamBreakdown {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const obj = (v: Json) => (v && typeof v === "object" && !Array.isArray(v) ? v : null);
+  const h2h = obj(r.headToHead), st = obj(r.strength), se = obj(r.series), cx = obj(r.context), sc = obj(cx?.score);
+  return {
+    matchId: str(r.matchId), teamId: str(r.teamId), team: str(r.team), game: str(r.game), summary: str(r.summary),
+    stats: Array.isArray(r.stats) ? r.stats.filter((s: Json) => s && typeof s === "object" && s.stat).map((s: Json) => ({
+      stat: String(s.stat), current: num(s.current), careerAverage: num(s.careerAverage), paceExpected: num(s.paceExpected), projectedFinal: num(s.projectedFinal), vsPace: str(s.vsPace),
+    })) : [],
+    players: Array.isArray(r.players) ? r.players.filter((p: Json) => p && typeof p === "object").map((p: Json) => ({
+      playerId: str(p.playerId ?? p.player_id ?? p.id), name: str(p.name ?? p.player_name) ?? "—",
+      // The live team breakdown sends imageUrl; image_url is carried through too.
+      imageURL: str(p.imageUrl ?? p.image_url ?? p.imageURL),
+      kills: int(p.kills), deaths: int(p.deaths), assists: int(p.assists), plusMinus: int(p.plusMinus ?? p.plus_minus),
+      acs: num(p.acs), adr: num(p.adr), agent: str(p.agent ?? p.character_name),
+    })) : [],
+    last10Games: normalizeGames(r.last10Games) ?? [],
+    opponentName: str(r.opponentName), opponentId: str(r.opponentId), opponentLogoUrl: str(r.opponentLogoUrl),
+    vsOpponentGames: normalizeGames(r.vsOpponentGames) ?? [], vsOpponentAverage: num(r.vsOpponentAverage),
+    headToHead: h2h ? { played: int(h2h.played) ?? 0, wins: int(h2h.wins) ?? 0, losses: int(h2h.losses) ?? 0 } : null,
+    strength: st ? { team: num(st.team), opponent: num(st.opponent) } : null,
+    series: se ? {
+      bestOf: int(se.bestOf), mapsWon: int(se.mapsWon) ?? 0, mapsLost: int(se.mapsLost) ?? 0,
+      maps: Array.isArray(se.maps) ? se.maps.filter((m: Json) => m && typeof m === "object").map((m: Json) => ({
+        number: int(m.number) ?? 0, status: str(m.status), targetWon: typeof m.targetWon === "boolean" ? m.targetWon : null, rounds: str(m.rounds),
+      })) : [],
+    } : null,
+    context: cx ? { map: str(cx.map), score: sc ? { team1: int(sc.team1) ?? 0, team2: int(sc.team2) ?? 0 } : null, gameTimeDisplay: str(cx.gameTimeDisplay), fractionDone: num(cx.fractionDone) } : null,
+    disclaimer: str(r.disclaimer),
+  };
 }

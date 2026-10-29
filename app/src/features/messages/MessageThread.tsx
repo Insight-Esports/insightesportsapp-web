@@ -3,26 +3,34 @@
 // receipt under the last message of mine, typing dots), keyset paging
 // upward, and the composer (photo / video attach when the server lists
 // dm_media / dm_video, Enter sends, Shift+Enter breaks a line).
+//
+// Oct 28: the person wears their flair in the header and on their bubbles'
+// avatar; each bubble has a menu (hover "⋯", right-click, long press):
+// Copy on text and links, Edit on your own text or link for 15 minutes once
+// /status lists dm_edit, Delete on anything of yours that has been sent.
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, ChevronLeft, Ellipsis, Hand, ImagePlus, Play, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronLeft, Copy, Ellipsis, Hand, ImagePlus, Pencil, Play, Trash2, X } from "lucide-react";
 import { useHideTabBar } from "@/components/shell/tab-bar";
 import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
-import { ConfirmDialog, EmptyState, InitialAvatar, SkeletonBar, Spinner, Toast } from "@/components/ui";
+import { ConfirmDialog, EmptyState, SkeletonBar, Spinner, Toast } from "@/components/ui";
+import { FlairAvatar, FlairName } from "@/components/ui/premium-flair";
+import { ActionMenu, MoreButton, Portal, useActionMenu, type MenuAction } from "@/features/moderation/ActionMenu";
+import { AlertDialog } from "@/features/moderation/dialogs";
 import { SkeletonBubbles, SkeletonCircle } from "@/components/ui/skeletons";
 import { blockUser, conversation as fetchConversation, removeConversation, sendTyping } from "./service";
 import { DMMediaError, prepareImage, prepareVideo, type PreparedMedia } from "./media";
 import { emitRemovedLocal, forgetRow, knownRow, queueInboxToast, rememberRow } from "./dm-local";
-import { dmsReadOnly, useMediaFeatures, useNow, usePageVisible } from "./hooks";
+import { dmsReadOnly, featureOn, useMediaFeatures, useNow, usePageVisible } from "./hooks";
 import { chapterStamp, durationClock } from "./format-dm";
-import { useThread } from "./use-thread";
+import { DM_EDIT_WINDOW_MS, useThread } from "./use-thread";
 import { MediaViewer, MessageBubble, TypingBubble } from "./bubbles";
 import { MenuItem } from "./MessagesInbox";
-import type { DMConversationRow, DMMessage } from "./types";
+import { isPendingId, otherFlair, type DMConversationRow, type DMMessage } from "./types";
 
 /** DMThreadLoaderView: the row by id (what the inbox already holds, else the list). */
 export function MessageThread({ conversationId }: { conversationId: string }) {
@@ -83,7 +91,35 @@ function ThreadView({ row }: { row: DMConversationRow }) {
   }, [router, row.id]);
 
   const vm = useThread(row, visible, onRemoved);
-  const { messages, loaded, canLoadMore, isLoadingMore, blockedState, sendError, clearSendError, otherIsTyping, receiptMessageId, seenLabel, loadMore, send, sendMedia, retry, unblock, startsRun, endsRun, showsTimeStamp } = vm;
+  const { messages, loaded, canLoadMore, isLoadingMore, blockedState, sendError, clearSendError, otherIsTyping, receiptMessageId, seenLabel, loadMore, send, sendMedia, retry, unblock, remove, edit, startsRun, endsRun, showsTimeStamp } = vm;
+  const other = otherFlair(row);
+  const canEdit = featureOn(status, "dm_edit");
+
+  // ── The bubble menu: Copy · Edit · Delete ──────────────────────────────
+  const bubbleMenu = useActionMenu<DMMessage>();
+  const [editing, setEditing] = useState<DMMessage | null>(null);
+  const [toDelete, setToDelete] = useState<DMMessage | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const actionsFor = (m: DMMessage): MenuAction[] => {
+    const sent = !isPendingId(m.id);
+    const list: MenuAction[] = [];
+    if (!m.media && m.decrypted) list.push({ key: "copy", label: "Copy", icon: <Copy size={15} />, onSelect: () => { void navigator.clipboard?.writeText(m.linkURL ?? m.text).catch(() => {}); } });
+    if (m.isMine && sent && !m.media && m.decrypted && canEdit && now.getTime() - new Date(m.createdAt).getTime() < DM_EDIT_WINDOW_MS) {
+      list.push({ key: "edit", label: "Edit", icon: <Pencil size={15} />, onSelect: () => startEdit(m) });
+    }
+    if (m.isMine && sent) list.push({ key: "delete", label: "Delete", icon: <Trash2 size={15} />, destructive: true, onSelect: () => setToDelete(m) });
+    return list;
+  };
+  /** Copy (text, links) or Delete (yours, sent) — Edit never comes alone. */
+  const hasActions = (m: DMMessage) => (!m.media && m.decrypted) || (m.isMine && !isPendingId(m.id));
+  const confirmDelete = async () => {
+    const m = toDelete;
+    setToDelete(null);
+    if (!m) return;
+    if (editing?.id === m.id) cancelEdit();
+    const err = await remove(m);
+    if (err) setDeleteError(err);
+  };
 
   const [draft, setDraft] = useState("");
   // The picked photo/video, staged in the composer until Send (MessageThreadView.attachment).
@@ -186,7 +222,8 @@ function ThreadView({ row }: { row: DMConversationRow }) {
     const text = e.target.value;
     setDraft(text);
     grow();
-    if (text && Date.now() - lastTypingSent.current > 2000) { lastTypingSent.current = Date.now(); sendTyping(row.id); }
+    // The event's own clock (ms since the page started), so the handler stays pure.
+    if (text && !editing && e.timeStamp - lastTypingSent.current > 2000) { lastTypingSent.current = e.timeStamp; sendTyping(row.id); }
   };
   const submit = () => {
     const text = draft.trim();
@@ -202,7 +239,8 @@ function ThreadView({ row }: { row: DMConversationRow }) {
     })();
   };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (editing) saveEdit(); else submit(); }
+    else if (e.key === "Escape" && editing) { e.preventDefault(); cancelEdit(); }
   };
   /** A picked photo or video: prepared, then staged in the composer. Nothing leaves until Send. */
   const onPick = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -238,7 +276,30 @@ function ThreadView({ row }: { row: DMConversationRow }) {
     router.replace("/messages");
   };
 
-  const canSend = draft.trim().length > 0 || attachment !== null;
+  // Edit: the composer takes the message's text; whatever was typed comes back after.
+  const stash = useRef<string | null>(null);
+  function startEdit(m: DMMessage) {
+    if (stash.current === null) stash.current = draft;
+    setEditing(m);
+    setDraft(m.linkURL ?? m.text);
+    requestAnimationFrame(() => { grow(); const t = textarea.current; if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } });
+  }
+  function cancelEdit() {
+    setEditing(null);
+    setDraft(stash.current ?? "");
+    stash.current = null;
+    requestAnimationFrame(grow);
+  }
+  const saveEdit = () => {
+    const m = editing;
+    if (!m) return;
+    const text = draft.trim();
+    if (!text) return;
+    cancelEdit();
+    void edit(m, text).then((err) => { if (err) setToast(`Couldn't edit — ${err}`); });
+  };
+
+  const canSend = editing ? draft.trim().length > 0 : draft.trim().length > 0 || attachment !== null;
   const profileHref = `/profile/${encodeURIComponent(row.otherId)}`;
 
   return (
@@ -247,8 +308,8 @@ function ThreadView({ row }: { row: DMConversationRow }) {
       <div className="flex items-center gap-2.5 px-3 pt-1.5 pb-2 hairline-b shrink-0">
         <Link href="/messages" aria-label="Back" className="grid place-items-center size-8 text-primary hover:text-violet md:hidden"><ChevronLeft size={20} strokeWidth={2.5} /></Link>
         <Link href={profileHref} className="flex items-center gap-2.5 min-w-0 hover:opacity-80">
-          <InitialAvatar name={row.otherUsername} imageURL={row.otherAvatarURL} size={30} />
-          <span className="text-[17px] font-bold tracking-[-0.3px] text-primary truncate">{row.otherUsername}</span>
+          <FlairAvatar user={other} size={30} />
+          <FlairName user={other} className="text-[17px] font-bold tracking-[-0.3px]" />
         </Link>
         <span className="flex-1" />
         <span className="relative hidden md:block">
@@ -283,8 +344,9 @@ function ThreadView({ row }: { row: DMConversationRow }) {
                     message={m}
                     seenLabel={m.id === receiptMessageId ? seenLabel(m) : null}
                     endsRun={endsRun(i)}
-                    avatarURL={row.otherAvatarURL}
-                    initialsName={row.otherUsername}
+                    other={other}
+                    rowProps={hasActions(m) ? bubbleMenu.rowProps(m) : undefined}
+                    more={hasActions(m) ? <MoreButton hover size={15} className="size-7" {...bubbleMenu.triggerProps(m)} aria-expanded={bubbleMenu.target?.id === m.id} /> : null}
                     showTime={revealedTimeId === m.id}
                     onToggleTime={() => setRevealedTimeId((cur) => (cur === m.id ? null : m.id))}
                     onOpenMedia={setViewing}
@@ -293,7 +355,7 @@ function ThreadView({ row }: { row: DMConversationRow }) {
                 </div>
               );
             })}
-            {otherIsTyping ? <div className="pt-1.5"><TypingBubble avatarURL={row.otherAvatarURL} initialsName={row.otherUsername} /></div> : null}
+            {otherIsTyping ? <div className="pt-1.5"><TypingBubble other={other} /></div> : null}
             <div className="h-1.5" />
           </div>
         )}
@@ -351,8 +413,16 @@ function ThreadView({ row }: { row: DMConversationRow }) {
                 </div>
               </div>
             ) : null}
-            <div className={clsx("flex items-end gap-2 rounded-[22px] bg-surface border border-border-subtle py-[5px] pr-[5px] max-w-[860px]", features.media ? "pl-[5px]" : "pl-4")}>
-              {features.media ? (
+            {editing ? (
+              <div className="flex items-center gap-1.5 pb-2 max-w-[860px] t-label-md text-violet-light">
+                <Pencil size={12} />
+                <span>Editing message</span>
+                <span className="flex-1" />
+                <button type="button" onClick={cancelEdit} aria-label="Cancel editing" className="grid place-items-center size-6 rounded text-muted hover:text-primary"><X size={14} /></button>
+              </div>
+            ) : null}
+            <div className={clsx("flex items-end gap-2 rounded-[22px] bg-surface border py-[5px] pr-[5px] max-w-[860px]", editing ? "border-violet" : "border-border-subtle", features.media && !editing ? "pl-[5px]" : "pl-4")}>
+              {features.media && !editing ? (
                 <>
                   <input ref={fileInput} type="file" accept={features.video ? "image/*,video/mp4,video/quicktime" : "image/*"} className="hidden" onChange={(e) => void onPick(e)} />
                   <button type="button" onClick={() => fileInput.current?.click()} aria-label="Attach a photo" title="Attach a photo" className="grid place-items-center size-[34px] shrink-0 text-violet hover:text-violet-light"><ImagePlus size={18} /></button>
@@ -363,12 +433,12 @@ function ThreadView({ row }: { row: DMConversationRow }) {
                 value={draft}
                 onChange={onDraft}
                 onKeyDown={onKey}
-                placeholder="Message…"
+                placeholder={editing ? "Edit your message" : "Message…"}
                 rows={1}
                 className="flex-1 min-w-0 resize-none bg-transparent outline-none t-body-md text-white placeholder:text-muted py-[7px] min-h-[34px] max-h-[120px] leading-[20px]"
               />
-              <button type="button" onClick={submit} aria-label="Send" title="Send" disabled={!canSend} className={clsx("grid place-items-center size-[34px] shrink-0 rounded-full bg-violet text-white transition-opacity duration-150", canSend ? "opacity-100 hover:brightness-110" : "opacity-0 pointer-events-none")}>
-                <ArrowUp size={15} strokeWidth={3} />
+              <button type="button" onClick={editing ? saveEdit : submit} aria-label={editing ? "Save edit" : "Send"} title={editing ? "Save" : "Send"} disabled={!canSend} className={clsx("grid place-items-center size-[34px] shrink-0 rounded-full bg-violet text-white transition-opacity duration-150", canSend ? "opacity-100 hover:brightness-110" : "opacity-0 pointer-events-none")}>
+                {editing ? <Check size={16} strokeWidth={3} /> : <ArrowUp size={15} strokeWidth={3} />}
               </button>
             </div>
           </div>
@@ -381,9 +451,14 @@ function ThreadView({ row }: { row: DMConversationRow }) {
         message="This conversation leaves your inbox. A new message from either side brings it back."
         confirmTitle="Remove" onConfirm={() => void runMenuAction()} onCancel={() => setConfirm(null)}
       />
+      <ActionMenu anchor={bubbleMenu.anchor} actions={bubbleMenu.target ? actionsFor(bubbleMenu.target) : []} onClose={bubbleMenu.close} label="Message actions" />
+      <Portal>
+        <ConfirmDialog open={!!toDelete} title="Delete message?" message="It'll be removed for both of you." confirmTitle="Delete" destructive onConfirm={() => void confirmDelete()} onCancel={() => setToDelete(null)} />
+      </Portal>
+      <AlertDialog open={!!deleteError} title="Couldn't delete" message={deleteError ?? undefined} onClose={() => setDeleteError(null)} />
       <ConfirmDialog
         open={confirm === "block"} title={`Block @${row.otherUsername}?`}
-        message="They won't be able to message you, and this conversation leaves your inbox."
+        message="They won't see your profile, comments or messages, and you won't see theirs. You can unblock them in Settings."
         confirmTitle="Block" destructive onConfirm={() => void runMenuAction()} onCancel={() => setConfirm(null)}
       />
       <Toast message={shownToast} kind="error" />

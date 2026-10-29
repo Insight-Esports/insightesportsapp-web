@@ -5,13 +5,13 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { api, endpoints } from "@/lib/api";
-import { gameLabel } from "@/lib/types";
 import { useFetch } from "@/lib/use-fetch";
 import { FilterChip, LoadFailure, SkeletonBar, SkeletonStatRow } from "@/components/ui";
 import { SkeletonStripedTable } from "@/components/ui/skeletons";
+import { EntityHeader } from "@/components/ui/entity-header";
 import { PredictScreen } from "./PredictScreen";
 import { flowHref, readTarget } from "./flow";
-import { AccentRead, Disclaimer, FlowError, Section, StatRow, StepHeader, StripedTable } from "./shared";
+import { AccentRead, Disclaimer, FlowError, Section, StatRow, StripedTable } from "./shared";
 import { gameMaps, normalizeTeamMapProfile, PredictionFormat, type TeamMapProfile } from "./types";
 
 // Fixed display order for the avgStats dictionary.
@@ -33,7 +33,9 @@ export function TeamMapProfileScreen() {
   return (
     <PredictScreen title="Map Profile" back={flowHref.options(t)}>
       <div className="flex flex-col gap-5 pt-1 max-w-3xl w-full mx-auto">
-        <StepHeader title="Map Profile" subtitle={<span className="text-violet">{t.targetName} · {gameLabel(t.game)}</span>} />
+        <div className="px-4 pt-3">
+          <EntityHeader type="team" id={t.targetId} name={t.targetName} game={t.game} />
+        </div>
         <div className="flex flex-col gap-2 px-4">
           <span className="t-label-sm text-muted">PICK A MAP</span>
           <div className="flex items-end gap-[22px] overflow-x-auto no-scrollbar">

@@ -9,6 +9,7 @@
 "use client";
 
 import { flowHref } from "@/features/predictions/flow";
+import { LiveTeamPredictRows } from "@/features/predictions/LiveTeamRows";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Clock, Eye, Flag, MessageCircle, MoveHorizontal } from "lucide-react";
@@ -419,7 +420,10 @@ function LivePlayerRow({ stat, columns, showAgent, matchId }: { stat: LivePlayer
 }
 
 // ── Prediction Teaser ─────────────────────────────────────────────────────
-export function PredictionTeaserSection({ team1Color: c1, team2Color: c2, game, matchId, team1TopPlayer, team2TopPlayer, team1Name, team2Name, isPremium, team1Stats = [], team2Stats = [] }: { team1Color: string; team2Color: string; game: string; matchId: string; team1TopPlayer: LivePlayerStat | null; team2TopPlayer: LivePlayerStat | null; team1Name: string; team2Name: string; isPremium: boolean; team1Stats?: LivePlayerStat[]; team2Stats?: LivePlayerStat[] }) {
+// Under the two top players, both TEAMS are rows too (Oct 28 §11) → the
+// team's Analyze page in live mode. Ids / crests / round score are optional
+// props; without them the rows read the shared GET /matches/live.
+export function PredictionTeaserSection({ team1Color: c1, team2Color: c2, game, matchId, team1TopPlayer, team2TopPlayer, team1Name, team2Name, isPremium, team1Stats = [], team2Stats = [], team1Id, team2Id, team1LogoURL, team2LogoURL, team1Score, team2Score }: { team1Color: string; team2Color: string; game: string; matchId: string; team1TopPlayer: LivePlayerStat | null; team2TopPlayer: LivePlayerStat | null; team1Name: string; team2Name: string; isPremium: boolean; team1Stats?: LivePlayerStat[]; team2Stats?: LivePlayerStat[]; team1Id?: string | null; team2Id?: string | null; team1LogoURL?: string | null; team2LogoURL?: string | null; team1Score?: number | null; team2Score?: number | null }) {
   const [expanded, setExpanded] = useState(false);
   const [othersOpen, setOthersOpen] = useState(false);
   const top = [team1TopPlayer, team2TopPlayer].filter((p): p is LivePlayerStat => !!p).sort((a, b) => b.kills - a.kills)[0] ?? null;
@@ -471,6 +475,11 @@ export function PredictionTeaserSection({ team1Color: c1, team2Color: c2, game, 
               {team1TopPlayer ? row(team1TopPlayer, team1Name, c1) : null}
               {team2TopPlayer ? row(team2TopPlayer, team2Name, c2) : null}
               {!team1TopPlayer && !team2TopPlayer ? <span className="t-label-sm text-muted">Available once player stats come in</span> : null}
+              <LiveTeamPredictRows
+                game={game} matchId={matchId} active={expanded}
+                team1={{ id: team1Id, name: team1Name, logoURL: team1LogoURL, score: team1Score, color: c1 }}
+                team2={{ id: team2Id, name: team2Name, logoURL: team2LogoURL, score: team2Score, color: c2 }}
+              />
               {others.length > 0 ? (
                 <div className="rounded-lg border border-border-subtle overflow-hidden">
                   <button type="button" onClick={() => setOthersOpen((v) => !v)} aria-expanded={othersOpen} className="flex items-center gap-2.5 w-full p-2.5 text-left hover:bg-surface/40 transition-colors">

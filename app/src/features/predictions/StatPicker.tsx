@@ -2,6 +2,10 @@
 // (game/target-aware, matching the backend whitelist), optionally a line +
 // over/under, and (pre-match players) the optional context filters. The
 // Last 10/15/25 window is chosen on the result screen, not here.
+//
+// Oct 28: the entity header on top; live TEAMS (Kills, +/−) gate a settled
+// line on the roster's summed kills and, without a line, open the live team
+// breakdown; "Set alert for this" (or "Set a line to make it an alert").
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
@@ -9,11 +13,13 @@ import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, Target } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { clsx } from "@/lib/format";
-import { gameLabel, normalizeTeams } from "@/lib/types";
+import { normalizeTeams } from "@/lib/types";
 import { Field, FilterChip, FilterSegment, SearchablePickerSheet } from "@/components/ui";
+import { EntityHeader } from "@/components/ui/entity-header";
 import { PredictScreen } from "./PredictScreen";
 import { flowHref, readTarget } from "./flow";
-import { BlockButton, StepHeader } from "./shared";
+import { BlockButton } from "./shared";
+import { SetAlertForThis } from "./links";
 import { CUMULATIVE_STATS, filterAgents, filterMaps, liveStatValue, normalizePredictionFilters, normalizeStatRows, PredictionFormat, PredictionStatCatalog, directionLabel, type PredictionDirection } from "./types";
 
 type SheetKind = "opponent" | "map" | "agent" | "champion" | null;
@@ -70,8 +76,9 @@ export function StatPickerScreen() {
     return () => { active = false; };
   }, [game, targetType, targetId, isLive]);
 
-  // Live only: the player's CURRENT value of the selected cumulative stat,
-  // so an already-settled line is rejected.
+  // Live only: the CURRENT value of the selected cumulative stat, so an
+  // already-settled line is rejected. A team adds up its players' rows
+  // (team_id) the way the server does; +/− is never gated.
   useEffect(() => {
     setLiveCurrentValue(null);
     if (!isLive || !matchId || !selectedStat || !CUMULATIVE_STATS.has(selectedStat)) return;
@@ -79,12 +86,17 @@ export function StatPickerScreen() {
     (async () => {
       try {
         const rows = normalizeStatRows(await api.get(endpoints.matchStats(matchId)));
-        const row = rows.find((r) => r.playerId === targetId);
-        if (active && row) setLiveCurrentValue(liveStatValue(selectedStat, row));
+        if (targetType === "team") {
+          const mine = rows.filter((r) => r.teamId === targetId);
+          if (active && mine.length) setLiveCurrentValue(mine.reduce((a, r) => a + (liveStatValue(selectedStat, r) ?? 0), 0));
+        } else {
+          const row = rows.find((r) => r.playerId === targetId);
+          if (active && row) setLiveCurrentValue(liveStatValue(selectedStat, row));
+        }
       } catch { /* no gate */ }
     })();
     return () => { active = false; };
-  }, [isLive, matchId, selectedStat, targetId]);
+  }, [isLive, matchId, selectedStat, targetId, targetType]);
 
   const trimmed = baselineText.trim();
   const baselineValue = trimmed === "" ? null : Number(trimmed);
@@ -102,14 +114,14 @@ export function StatPickerScreen() {
     return true;
   })();
   const alreadyReachedMessage = baselineValue != null && Number.isFinite(baselineValue) && liveCurrentValue != null && alreadyReached(baselineValue)
-    ? `${targetName} already has ${PredictionFormat.stat(liveCurrentValue)} ${selectedStat ? PredictionStatCatalog.label(selectedStat) : "this stat"} this game. Enter a higher number.`
+    ? `${targetName} already ${targetType === "team" ? "have" : "has"} ${PredictionFormat.stat(liveCurrentValue)} ${selectedStat ? PredictionStatCatalog.label(selectedStat) : "this stat"} this game. Enter a higher number.`
     : null;
 
   const helperText = (() => {
     if (!selectedStat) return "Leave empty for a full stat breakdown, or set a line to get hit probability.";
     const label = PredictionStatCatalog.label(selectedStat);
     if (baselineValue != null && Number.isFinite(baselineValue) && baselineValid) {
-      if (isLive) return `You'll get the live probability of ${targetName} landing ${directionLabel(direction).toLowerCase()} ${PredictionFormat.stat(baselineValue)} ${label} this game.`;
+      if (isLive) return `You'll get the live probability of ${targetName} landing ${directionLabel(direction).toLowerCase()} ${PredictionFormat.stat(baselineValue)} ${label} this ${targetType === "team" ? "series" : "game"}.`;
       return `You'll get the probability of landing ${directionLabel(direction).toLowerCase()} ${PredictionFormat.stat(baselineValue)} ${label}. You can switch between the last 10, 15, and 25 games on the result.`;
     }
     return `Leave empty for a breakdown of ${label}, or enter a line to get hit probability.`;
@@ -117,7 +129,12 @@ export function StatPickerScreen() {
 
   const activeFilterCount = [contextOpponent, contextMap, contextAgent, contextSide].filter(Boolean).length;
   const canRun = !!selectedStat && baselineValid;
-  const resultHref = canRun
+  const hasLine = baselineValue != null && Number.isFinite(baselineValue);
+  const liveTeam = isLive && targetType === "team";
+  const resultHref = canRun && liveTeam && !hasLine
+    // A live team without a line: the live team breakdown.
+    ? flowHref.liveTeam(t)
+    : canRun
     ? flowHref.result(t, {
         stat: selectedStat, baseline: baselineValue != null && Number.isFinite(baselineValue) ? baselineValue : null,
         direction: baselineValue != null ? direction : null, current: liveCurrentValue,
@@ -128,7 +145,10 @@ export function StatPickerScreen() {
   return (
     <PredictScreen title="Stat" back={flowHref.options(t)}>
       <div className="flex flex-col gap-6 pt-1 max-w-3xl w-full mx-auto">
-        <StepHeader title="Pick a stat" subtitle={<span className="text-violet">{targetName} · {gameLabel(game)}</span>} />
+        <div className="flex flex-col gap-3 px-4 pt-3">
+          <EntityHeader type={targetType} id={targetId} name={targetName} game={game} matchId={isLive ? matchId : null} live={isLive} />
+          <h1 className="t-headline-md text-primary">Pick a stat</h1>
+        </div>
 
         {/* Stat choices: the app's underline selection, wrapped. */}
         <div className="flex flex-wrap items-end gap-x-[22px] gap-y-3 px-4">
@@ -187,8 +207,12 @@ export function StatPickerScreen() {
           </div>
         ) : null}
 
-        <div className="px-4">
+        <div className="px-4 flex flex-col gap-3">
           <BlockButton href={resultHref ?? undefined} disabled={!canRun}>{baselineValue == null ? "Get Breakdown" : "Get Prediction"}</BlockButton>
+          <SetAlertForThis
+            targetType={targetType} targetId={targetId} targetName={targetName} game={game} stat={selectedStat}
+            line={hasLine && baselineValid ? baselineValue : null} direction={direction} matchId={isLive ? matchId : null}
+          />
         </div>
       </div>
 

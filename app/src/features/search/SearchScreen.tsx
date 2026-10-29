@@ -4,9 +4,17 @@
 // as the user types (debounced), with game tabs (All / VALORANT / CS2 /
 // League) that scope results. With an empty field it is a browse surface:
 // recent searches plus the selected game's popular players and teams.
-// The query and game live in the URL (?q=&game=). "In the app" (the app's own
-// tabs, features and settings pages) is matched locally on every keystroke and
-// always sits last, under Players, Teams, Users and Tournaments.
+// The query and game live in the URL (?q=&game=).
+//
+// "In the app" (the app's own tabs, features and settings pages) is the FIRST
+// section: the server's `features` for the term, then the local catalogue
+// matches it didn't name (app-destinations.ts). Up to 3 rows above people and
+// teams, up to 6 alone. It is painted only with the server's answer, in the
+// same frame as players and teams (no local rows ahead of it); offline or on
+// a failed request the local catalogue answers alone. Every request is tagged
+// and an answer whose echoed `query` isn't the current term is dropped.
+// A tab row (→) replaces the search entry with that tab: search closes in the
+// same moment the tab shows, with nothing left to slide back to.
 "use client";
 
 import { FlairUserInline } from "@/components/ui/premium-flair";
@@ -24,9 +32,12 @@ import { BackButton, NavBar } from "@/components/shell/NavBar";
 import { FollowButton } from "@/features/follow/FollowButton";
 import { useDebounced } from "@/features/players/useLoadMore";
 import { useQueryParams } from "@/features/players/useQueryParams";
+import { featureState } from "@/features/matches/live/feature-status";
 import { useAppState } from "@/store/app-state";
-import { appDestinationHref, matchAppDestinations, type AppDestination, type AppDestinationContext } from "./app-destinations";
-import { EMPTY_RESULTS, normalizeSearchResults, resultsEmpty, tournamentGame, type SearchResults, type SearchUser } from "./types";
+import {
+  appDestinationHref, MAX_APP_RESULTS, MAX_APP_RESULTS_WITH_OTHERS, mergeAppDestinations, type AppDestination, type AppDestinationContext,
+} from "./app-destinations";
+import { EMPTY_RESULTS, echoedSearchQuery, normalizeSearchResults, resultsEmpty, tournamentGame, type SearchResults, type SearchUser } from "./types";
 
 const RECENTS_KEY = "insight.recentSearches";
 const MAX_RECENTS = 8;
@@ -57,6 +68,11 @@ async function loadBrowse(): Promise<{ teams: Team[]; players: Player[] }> {
   return cachedBrowse;
 }
 
+/** A server answer and the term it answers ("" = none yet). */
+interface SearchAnswer { term: string; data: SearchResults }
+const NO_ANSWER: SearchAnswer = { term: "", data: EMPTY_RESULTS };
+const sameTerm = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
 function readRecents(): string[] {
   try { const v = JSON.parse(localStorage.getItem(RECENTS_KEY) ?? "[]"); return Array.isArray(v) ? v.map(String) : []; } catch { return []; }
 }
@@ -76,25 +92,38 @@ export function SearchScreen() {
   }, [debounced]);
   useEffect(() => { setQuery((q) => (q.trim() === urlQuery ? q : urlQuery)); }, [urlQuery]);
 
-  const [results, setResults] = useState<SearchResults>(EMPTY_RESULTS);
+  const [results, setResults] = useState<SearchAnswer>(NO_ANSWER);
   const [searching, setSearching] = useState(false);
   const [recents, setRecents] = useState<string[]>([]);
   const [browse, setBrowse] = useState<{ teams: Team[]; players: Player[] } | null>(cachedBrowse);
   const requestId = useRef(0);
+  const currentTerm = useRef("");
 
   useEffect(() => { setRecents(readRecents()); }, []);
   useEffect(() => { let active = true; loadBrowse().then((b) => { if (active) setBrowse(b); }); return () => { active = false; }; }, []);
 
   // Combined server search; the game filter narrows the response client-side too.
+  // Each request is tagged (requestId) and aborted when a newer one starts.
   useEffect(() => {
     const term = urlQuery.trim();
     const id = ++requestId.current;
-    if (!term) { setResults(EMPTY_RESULTS); setSearching(false); return; }
+    currentTerm.current = term;
+    if (!term) { setResults(NO_ANSWER); setSearching(false); return; }
     setSearching(true);
-    api.get(endpoints.search(term, game === "all" ? null : game))
-      .then((raw) => { if (id === requestId.current) setResults(normalizeSearchResults(raw)); })
-      .catch(() => { if (id === requestId.current) setResults(EMPTY_RESULTS); })
+    const ctrl = new AbortController();
+    api.get(endpoints.search(term, game === "all" ? null : game), { signal: ctrl.signal })
+      .then((raw) => {
+        if (id !== requestId.current) return;
+        // A late answer for another term ("team" after "teams") never lands: the
+        // echoed `query` (or this request's own term, from a server that doesn't
+        // echo) must be the current term. Then the catalogue answers alone.
+        const answered = echoedSearchQuery(raw) ?? term;
+        setResults({ term, data: sameTerm(answered, currentTerm.current) ? normalizeSearchResults(raw) : EMPTY_RESULTS });
+      })
+      // Offline or failed: no players / teams, the local catalogue answers alone.
+      .catch(() => { if (id === requestId.current) setResults({ term, data: EMPTY_RESULTS }); })
       .finally(() => { if (id === requestId.current) setSearching(false); });
+    return () => ctrl.abort();
   }, [urlQuery, game]);
 
   const recordTerm = useCallback((term: string) => {
@@ -116,36 +145,44 @@ export function SearchScreen() {
   // Results: the rows on screen only change once the new page's pictures are
   // warm; until then the previous rows stay (with the app's small spinner)
   // or, with nothing to keep, the row silhouettes.
-  const resultsRevealed = useReveal(searching, () => [...results.players.map((p) => p.imageURL), ...results.teams.map((t) => t.logoURL), ...results.users.map((u) => u.avatarURL)]);
-  const [displayed, setDisplayed] = useState<SearchResults>(EMPTY_RESULTS);
+  const resultsRevealed = useReveal(searching, () => [...results.data.players.map((p) => p.imageURL), ...results.data.teams.map((t) => t.logoURL), ...results.data.users.map((u) => u.avatarURL)]);
+  const [displayed, setDisplayed] = useState<SearchAnswer>(NO_ANSWER);
   useEffect(() => { if (resultsRevealed) setDisplayed(results); }, [resultsRevealed, results]);
 
-  const filtered: SearchResults = game === "all" ? displayed : {
-    players: displayed.players.filter((p) => p.game === game),
-    teams: displayed.teams.filter((t) => t.game === game),
-    tournaments: displayed.tournaments.filter((t) => tournamentGame(t) === game),
-    users: displayed.users,   // users have no game — they pass through every filter
+  const shown = displayed.data;
+  const filtered: SearchResults = game === "all" ? shown : {
+    players: shown.players.filter((p) => p.game === game),
+    teams: shown.teams.filter((t) => t.game === game),
+    tournaments: shown.tournaments.filter((t) => tournamentGame(t) === game),
+    users: shown.users,   // users have no game — they pass through every filter
+    features: shown.features,
   };
   const browsePlayers = (game === "all" ? browse?.players ?? [] : (browse?.players ?? []).filter((p) => p.game === game)).slice(0, 8);
   const browseTeams = (game === "all" ? browse?.teams ?? [] : (browse?.teams ?? []).filter((t) => t.game === game)).slice(0, 6);
   const label = gameLabel(game);
 
-  // "In the app": matched on the live field (no debounce, no request).
-  const { user } = useAppState();
+  // "In the app": the displayed answer's server features, then the catalogue
+  // matches for that same term. Never ahead of the answer (no local-only frame).
+  const { user, status } = useAppState();
   const term = query.trim();
-  const appHits = useMemo(() => matchAppDestinations(term), [term]);
+  const withOthers = filtered.players.length > 0 || filtered.teams.length > 0 || filtered.users.length > 0;
+  const appHits = useMemo(
+    () => mergeAppDestinations(shown.features, displayed.term, withOthers ? MAX_APP_RESULTS_WITH_OTHERS : MAX_APP_RESULTS, (name) => featureState(status, name).off),
+    [shown.features, displayed.term, withOthers, status],
+  );
   const appCtx: AppDestinationContext = { game: game === "all" ? user?.primaryGame ?? "VALORANT" : game, meId: user?.id ?? null };
   const appSection = appHits.length > 0 ? (
     <div className="md:col-span-2">
       <SearchSectionHeader title="In the app" />
       <div className="md:grid md:grid-cols-2 md:gap-x-6">
-        {appHits.map((d) => <AppDestinationRow key={d.id} dest={d} href={appDestinationHref(d, appCtx)} onNavigate={() => recordTerm(term)} />)}
+        {appHits.map((d) => <AppDestinationRow key={d.id} dest={d} href={appDestinationHref(d, appCtx)} onNavigate={() => recordTerm(displayed.term)} />)}
       </div>
     </div>
   ) : null;
-  // Players and teams are still on their way (debounce pending or the request /
-  // picture warm-up in flight) with nothing to keep on screen.
-  const serverPending = (term !== urlQuery.trim() || !resultsRevealed) && resultsEmpty(filtered);
+  const hasRows = !resultsEmpty(filtered) || appSection !== null;
+  // The answer for the typed term is still on its way (debounce, the request
+  // or the picture warm-up).
+  const pending = term !== urlQuery.trim() || displayed.term !== urlQuery.trim() || !resultsRevealed;
 
   let body;
   if (!term) {
@@ -195,16 +232,10 @@ export function SearchScreen() {
         )}
       </div>
     );
-  } else if (serverPending) {
-    // With app matches, 3 silhouettes hold the players / teams slot so the
-    // "In the app" section doesn't jump down when they arrive.
-    body = appSection ? (
-      <div className="md:grid md:grid-cols-2 md:gap-x-6">
-        <div className="md:col-span-2"><SkeletonPeopleRows rows={3} avatar={40} /></div>
-        {appSection}
-      </div>
-    ) : <SkeletonPeopleRows rows={6} avatar={40} />;
-  } else if (resultsEmpty(filtered) && !appSection) {
+  } else if (pending && !hasRows) {
+    // Nothing to keep on screen: silhouettes until the answer lands whole.
+    body = <SkeletonPeopleRows rows={6} avatar={40} />;
+  } else if (!hasRows) {
     body = (
       <div className="flex flex-col items-center gap-3 pt-20 px-10 text-center">
         <CircleHelp size={40} className="text-muted" />
@@ -215,6 +246,7 @@ export function SearchScreen() {
   } else {
     body = (
       <div className="md:grid md:grid-cols-2 md:gap-x-6">
+        {appSection}
         {filtered.players.length > 0 ? (
           <div>
             <SearchSectionHeader title="Players" />
@@ -239,7 +271,6 @@ export function SearchScreen() {
             {filtered.tournaments.map((t) => <TournamentSearchRow key={t} name={t} onNavigate={recordSearch} />)}
           </div>
         ) : null}
-        {appSection}
       </div>
     );
   }
@@ -251,7 +282,7 @@ export function SearchScreen() {
       <div className="px-4 pb-2 flex items-center gap-3">
         <div className="flex-1"><SearchField value={query} onChange={setQuery} placeholder="Search players, teams and features" autoFocus /></div>
         {/* The app's small spinner beside the field while a search refines rows already on screen. */}
-        {!resultsRevealed && urlQuery.trim() && !resultsEmpty(filtered) ? <Spinner size={16} /> : null}
+        {!resultsRevealed && urlQuery.trim() && hasRows ? <Spinner size={16} /> : null}
       </div>
       <GameTabBar selected={game} onChange={(g) => set({ game: g === "all" ? null : g })} games={GAMES} className="pb-2" />
       <div className="pt-1">{body}</div>
@@ -313,7 +344,10 @@ function TournamentSearchRow({ name, onNavigate }: { name: string; onNavigate?: 
 const APP_TRAILING = { tab: ArrowRight, web: ArrowUpRight, screen: ChevronRight } as const;
 
 /** AppDestinationRow: 40pt icon tile, title, one-line subtitle, and a trailing
- *  → (tab switch), ↗ (web link, new browser tab) or › (screen). */
+ *  → (tab switch), ↗ (web link, new browser tab) or › (screen).
+ *  A tab row replaces the search entry (router.replace via `replace`): the
+ *  tab shows and search is gone in one navigation, with no exit transition
+ *  and no search screen left behind in history. */
 function AppDestinationRow({ dest, href, onNavigate }: { dest: AppDestination; href: string; onNavigate?: () => void }) {
   const Icon = dest.icon;
   const Trailing = APP_TRAILING[dest.kind];
@@ -330,5 +364,5 @@ function AppDestinationRow({ dest, href, onNavigate }: { dest: AppDestination; h
   if (dest.kind === "web") {
     return <a href={href} target="_blank" rel="noopener noreferrer" onClick={onNavigate} className={rowCls} aria-label={`${dest.title} (opens in a new tab)`}>{inner}</a>;
   }
-  return <Link href={href} onClick={onNavigate} className={rowCls}>{inner}</Link>;
+  return <Link href={href} replace={dest.kind === "tab"} onClick={onNavigate} className={rowCls}>{inner}</Link>;
 }

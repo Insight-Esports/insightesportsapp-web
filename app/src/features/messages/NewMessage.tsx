@@ -1,21 +1,25 @@
 // NewMessage — NewMessageView.swift: search people (250 ms debounce),
 // suggestions while the field is empty (you follow, then follows you),
-// pick one → POST /conversations → the thread.
+// pick one → POST /conversations → the thread. People wear their flair;
+// blocked people aren't suggested (parity Oct 28).
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronRight } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
-import type { Json } from "@/lib/types";
+import { normalizePremiumStyle, normalizeTitle, type Json } from "@/lib/types";
 import { useAppState } from "@/store/app-state";
-import { AssetIcon, InitialAvatar, Ledger, LedgerRow, Page, SearchField, SkeletonLedger, Spinner } from "@/components/ui";
+import { AssetIcon, Ledger, LedgerRow, Page, SearchField, SkeletonLedger, Spinner } from "@/components/ui";
+import { FlairAvatar, FlairName } from "@/components/ui/premium-flair";
+import { useBlockedIds } from "@/features/moderation/use-blocked";
 import { useReveal } from "@/lib/use-reveal";
 import { startConversation, startConversationMessage } from "./start-conversation";
-import { normalizeSearchUser, type SearchUser } from "./types";
+import { normalizeSearchUser, searchUserFlair, type SearchUser } from "./types";
 
 interface SuggestedUser extends SearchUser { reason: "You follow" | "Follows you" }
-interface FollowRowLite { id?: string | null; target_id?: string | null; username?: string | null; avatar_url?: string | null }
+interface FollowRowLite { id?: string | null; target_id?: string | null; username?: string | null; avatar_url?: string | null; is_premium?: boolean | null; premium_style?: unknown; title?: string | null }
+const lookOf = (id: string, r: FollowRowLite) => ({ id, username: r.username ?? "user", avatarURL: r.avatar_url ?? null, isPremium: !!r.is_premium, premiumStyle: normalizePremiumStyle(r.premium_style), title: r.title !== undefined ? normalizeTitle(r.title) : undefined });
 
 export function NewMessage() {
   const router = useRouter();
@@ -47,13 +51,13 @@ export function NewMessage() {
         const id = r.target_id ?? r.id;
         if (!id || !r.username || id === me || seen.has(id)) continue;
         seen.add(id);
-        out.push({ id, username: r.username, avatarURL: r.avatar_url ?? null, reason: "You follow" });
+        out.push({ id, username: r.username, avatarURL: r.avatar_url ?? null, flair: lookOf(id, r), reason: "You follow" });
       }
       for (const r of followers) {
         const id = r.target_id ?? r.id;
         if (!id || !r.username || id === me || seen.has(id)) continue;
         seen.add(id);
-        out.push({ id, username: r.username, avatarURL: r.avatar_url ?? null, reason: "Follows you" });
+        out.push({ id, username: r.username, avatarURL: r.avatar_url ?? null, flair: lookOf(id, r), reason: "Follows you" });
       }
       setSuggested(out);
       setSuggestedLoading(false);
@@ -99,8 +103,10 @@ export function NewMessage() {
   // Suggested people and search hits publish with their avatars in place.
   const suggestedRevealed = useReveal(!!me && suggestedLoading, () => suggested.map((u) => u.avatarURL));
   const resultsRevealed = useReveal(searching, () => results.map((u) => u.avatarURL));
-  const showSuggested = term === "" && suggested.length > 0;
-  const shownResults = term && resultsRevealed ? results : [];
+  const blockedIds = useBlockedIds();
+  const people = suggested.filter((u) => !blockedIds.has(u.id));
+  const showSuggested = term === "" && people.length > 0;
+  const shownResults = term && resultsRevealed ? results.filter((u) => !blockedIds.has(u.id)) : [];
 
   return (
     <Page>
@@ -121,11 +127,11 @@ export function NewMessage() {
           <div className="flex flex-col gap-2 pb-2">
             <span className="t-kicker">Suggested</span>
             <Ledger>
-              {suggested.map((u) => (
+              {people.map((u) => (
                 <LedgerRow key={u.id} onClick={() => void open(u)}>
-                  <InitialAvatar name={u.username} imageURL={u.avatarURL} size={36} />
+                  <FlairAvatar user={searchUserFlair(u)} size={36} />
                   <span className="flex flex-col gap-0.5 min-w-0 flex-1">
-                    <span className="t-body-md text-primary truncate">{u.username}</span>
+                    <FlairName user={searchUserFlair(u)} className="t-body-md self-start" />
                     <span className="t-label-sm text-muted">{u.reason}</span>
                   </span>
                   {opening === u.id ? <Spinner size={16} /> : <AssetIcon name="messages" height={16} />}
@@ -139,8 +145,8 @@ export function NewMessage() {
           <Ledger>
             {shownResults.map((u) => (
               <LedgerRow key={u.id} onClick={() => void open(u)}>
-                <InitialAvatar name={u.username} imageURL={u.avatarURL} size={36} />
-                <span className="t-body-md text-primary truncate flex-1">{u.username}</span>
+                <FlairAvatar user={searchUserFlair(u)} size={36} />
+                <span className="flex-1 min-w-0"><FlairName user={searchUserFlair(u)} className="t-body-md" /></span>
                 {opening === u.id ? <Spinner size={16} /> : <ChevronRight size={14} className="text-muted" />}
               </LedgerRow>
             ))}

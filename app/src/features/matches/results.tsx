@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { History } from "lucide-react";
+import { Archive, ChevronRight, History } from "lucide-react";
 import { EmptyState, GameTabBar, LoadFailure, Page, SkeletonMatchCard, Spinner, TabHeader } from "@/components/ui";
 import { HeaderTools } from "@/components/shell/AppShell";
 import { ApiError, api, endpoints, errorMessage } from "@/lib/api";
@@ -17,6 +17,8 @@ import { CompletedMatchRow } from "./cards";
 import { CardGrid, DateSectionHeader, gameQuery, groupByDay, parseDayKey, resultsDayLabel, sortResultsDesc, useGameParam } from "./shared";
 import { useIsPhone } from "@/components/shell/use-phone";
 import { CalendarTool, ScheduleSegmentPicker } from "./schedule-phone";
+import { useArchiveSwitch } from "@/features/archive/data";
+import { archiveHomeHref } from "@/features/archive/shared";
 
 const PAGE_SIZE = 20;
 const STALE_MS = 30_000;
@@ -27,6 +29,7 @@ export function ResultsScreen() {
   const phone = useIsPhone();
   const team = params.get("team");
   const gameArg = game === "all" ? null : game;
+  const archive = useArchiveSwitch();
 
   const [results, setResults] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,6 +140,18 @@ export function ResultsScreen() {
       <TabHeader title="Schedule" tools={<HeaderTools extra={<CalendarTool game={game} from="results" />} />} />
       <ScheduleSegmentPicker value="results" game={game} />
       <GameTabBar selected={game} onChange={setGame} className="pt-2 pb-1" />
+
+      {/* The door to the match archive (every real match back to 2016). */}
+      {archive.off ? null : (
+        <div className="px-4 pt-3">
+          <Link href={archiveHomeHref(game)} className="flex items-center gap-3 px-3.5 py-3 rounded-xl bg-card border border-border-subtle hover:border-border-strong transition-colors">
+            <span className="grid place-items-center size-8 rounded-lg bg-violet/15 text-violet shrink-0"><Archive size={16} strokeWidth={2.25} /></span>
+            <span className="t-label-lg text-primary">Archive</span>
+            <span className="flex-1" />
+            <ChevronRight size={14} className="text-muted" />
+          </Link>
+        </div>
+      )}
 
       {team ? (
         <div className="flex items-center gap-2 px-4 pt-3 t-label-sm text-muted">

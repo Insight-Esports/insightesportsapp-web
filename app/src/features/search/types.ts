@@ -10,19 +10,34 @@ export interface SearchUser {
   flair: FlairUser;
 }
 
+/** One of the server's "features": an app screen matching the term, as an
+ *  insight:// deep link (backend config/appDestinations.js), in the server's ranking. */
+export interface SearchFeature {
+  link: string;
+  name: string | null;
+  description: string | null;
+}
+
 export interface SearchResults {
   players: Player[];
   teams: Team[];
   tournaments: string[];
   users: SearchUser[];
+  features: SearchFeature[];
 }
-export const EMPTY_RESULTS: SearchResults = { players: [], teams: [], tournaments: [], users: [] };
+export const EMPTY_RESULTS: SearchResults = { players: [], teams: [], tournaments: [], users: [], features: [] };
 
 export function resultsEmpty(r: SearchResults): boolean {
   return r.players.length === 0 && r.teams.length === 0 && r.tournaments.length === 0 && r.users.length === 0;
 }
 
-/** Combined server search: { players, teams, tournaments, users }.
+/** The term a search response answers (`query`, echoed since 2026-10-28), or
+ *  null when the server doesn't echo it. */
+export function echoedSearchQuery(raw: Json): string | null {
+  return typeof raw?.query === "string" ? raw.query.trim() : null;
+}
+
+/** Combined server search: { query, players, teams, tournaments, users, features }.
  *  Tournaments arrive as strings or {name} objects — decode both. */
 export function normalizeSearchResults(raw: Json): SearchResults {
   const tournaments: string[] = [];
@@ -35,11 +50,16 @@ export function normalizeSearchResults(raw: Json): SearchResults {
   const users: SearchUser[] = usersRaw
     .filter((u) => u?.id != null && u?.username != null)
     .map((u) => ({ id: String(u.id), username: String(u.username), avatarURL: str(u.avatar_url) ?? str(u.avatarURL), flair: flairUserFrom(u) }));
+  const featuresRaw: Json[] = Array.isArray(raw?.features) ? raw.features : [];
+  const features: SearchFeature[] = featuresRaw
+    .filter((f) => typeof f?.link === "string" && f.link)
+    .map((f) => ({ link: String(f.link), name: str(f.name), description: str(f.description) }));
   return {
     players: normalizePlayers(raw?.players ?? []),
     teams: normalizeTeams(raw?.teams ?? []),
     tournaments,
     users,
+    features,
   };
 }
 

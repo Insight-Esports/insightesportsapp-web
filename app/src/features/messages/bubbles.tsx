@@ -1,6 +1,6 @@
 // messages/bubbles.tsx — the thread's pieces (MessagesView.swift):
-// MessageBubble (mine right in violet, theirs left on surface, the
-// avatar at the end of their run), LinkPreviewBubble (TikTok/YouTube via
+// MessageBubble (mine right in violet, theirs left on surface, their
+// avatar in its ring box at the end of their run, the bubble menu), LinkPreviewBubble (TikTok/YouTube via
 // public oEmbed from the browser, everything else via /api/links/preview;
 // a plain host card when there's no preview), MediaBubble (a photo or a
 // video poster sized by the envelope's aspect; tap → viewer; a spinner
@@ -10,10 +10,12 @@
 // poster with a clock and plays on dm:media_ready), TypingBubble.
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowUpRight, Clock, Image as ImageIcon, Link2, MessageSquareText, Music2, Play, SquarePlay, Tv, Video, X, RotateCw } from "lucide-react";
 import { clsx } from "@/lib/format";
-import { imageSrc, InitialAvatar, Spinner } from "@/components/ui";
+import { imageSrc, Spinner } from "@/components/ui";
+import { FlairAvatar, ringBox, type FlairUser } from "@/components/ui/premium-flair";
+import type { RowMenuProps } from "@/features/moderation/ActionMenu";
 import { DMMediaError, imageURL, videoURL } from "./media";
 import { onDM } from "./service";
 import { openURLFor, previewIsEmpty, useLinkPreview } from "./link-preview";
@@ -21,54 +23,67 @@ import { clock, durationClock } from "./format-dm";
 import { isPendingId, mediaAspect, type DMMedia, type DMMessage } from "./types";
 
 // ── MessageBubble ─────────────────────────────────────────────────────────
-export function MessageBubble({ message, seenLabel, endsRun, avatarURL, initialsName, showTime, onToggleTime, onOpenMedia, onRetry }: {
+// Their bubbles carry their avatar in its ring box at the end of a run; the
+// menu (Copy · Edit · Delete) opens from the bubble itself: the hover "⋯",
+// a right-click, or a long press. "Edited" sits under an edited bubble
+// ("Edited · Seen 2h ago" on your last one).
+export function MessageBubble({ message, seenLabel, endsRun, other, showTime, onToggleTime, onOpenMedia, onRetry, rowProps, more }: {
   message: DMMessage;
   seenLabel: string | null;
   endsRun: boolean;
-  avatarURL: string | null;
-  initialsName: string;
+  /** The other person, as UserIdentity draws them (their bubble's avatar). */
+  other: FlairUser;
   showTime: boolean;
   onToggleTime: () => void;
   onOpenMedia: (m: DMMessage) => void;
   onRetry: (id: string) => void;
+  /** Right-click / long press / Shift+F10 on the bubble (useActionMenu). */
+  rowProps?: RowMenuProps;
+  /** The hover "⋯" beside the bubble. */
+  more?: ReactNode;
 }) {
   const mine = message.isMine;
   const failed = !!message.failed;
+  const status = !failed ? [message.editedAt ? "Edited" : null, seenLabel].filter(Boolean).join(" · ") : "";
+  const gutter = ringBox(24) + 8;   // their avatar's box + the gap
   return (
     <div className={clsx("flex flex-col gap-[3px]", mine ? "items-end" : "items-start")}>
       <div className={clsx("flex items-end gap-2 max-w-full", mine && "flex-row-reverse")}>
         {!mine ? (
-          endsRun ? <InitialAvatar name={initialsName} imageURL={avatarURL} size={24} /> : <span className="size-6 shrink-0" />
+          endsRun ? <FlairAvatar user={other} size={24} /> : <span className="shrink-0" style={{ width: ringBox(24) }} />
         ) : null}
-        <div className={clsx("min-w-0", mine ? "ml-[70px]" : "mr-[70px]")}>
-          {message.media ? (
-            <MediaBubble message={message} onOpen={onOpenMedia} onRetry={onRetry} />
-          ) : message.linkURL ? (
-            <LinkPreviewBubble url={message.linkURL} isMine={mine} />
-          ) : (
-            <button
-              type="button"
-              onClick={failed ? () => onRetry(message.id) : onToggleTime}
-              className={clsx(
-                "block text-left px-3.5 py-[9px] rounded-[18px] t-body-md whitespace-pre-wrap break-words",
-                mine ? "bg-violet text-white" : "bg-surface text-primary",
-                !message.decrypted && "italic !text-muted",
-                isPendingId(message.id) && !failed && "opacity-70",
-                failed && "opacity-60",
-              )}
-            >
-              {message.text}
-            </button>
-          )}
+        <div {...rowProps} className={clsx("group flex items-center gap-1 min-w-0 [-webkit-touch-callout:none]", mine ? "ml-[70px] flex-row-reverse" : "mr-[70px]")}>
+          <div className="min-w-0">
+            {message.media ? (
+              <MediaBubble message={message} onOpen={onOpenMedia} onRetry={onRetry} />
+            ) : message.linkURL ? (
+              <LinkPreviewBubble url={message.linkURL} isMine={mine} />
+            ) : (
+              <button
+                type="button"
+                onClick={failed ? () => onRetry(message.id) : onToggleTime}
+                className={clsx(
+                  "block text-left px-3.5 py-[9px] rounded-[18px] t-body-md whitespace-pre-wrap break-words",
+                  mine ? "bg-violet text-white" : "bg-surface text-primary",
+                  !message.decrypted && "italic !text-muted",
+                  isPendingId(message.id) && !failed && "opacity-70",
+                  failed && "opacity-60",
+                )}
+              >
+                {message.text}
+              </button>
+            )}
+          </div>
+          {more}
         </div>
       </div>
       {failed ? (
-        <button type="button" onClick={() => onRetry(message.id)} className={clsx("flex items-center gap-1 t-label-sm text-error hover:underline", mine ? "pr-1" : "pl-9")}>
+        <button type="button" onClick={() => onRetry(message.id)} className="flex items-center gap-1 t-label-sm text-error hover:underline" style={mine ? { paddingRight: 4 } : { paddingLeft: gutter }}>
           <RotateCw size={11} />Not sent · Tap to retry
         </button>
       ) : null}
-      {showTime ? <span className={clsx("t-label-sm text-muted", mine ? "pr-1" : "pl-9")}>{clock(message.createdAt)}</span> : null}
-      {seenLabel && !failed ? <span className="t-label-sm text-muted pr-1">{seenLabel}</span> : null}
+      {showTime ? <span className="t-label-sm text-muted" style={mine ? { paddingRight: 4 } : { paddingLeft: gutter }}>{clock(message.createdAt)}</span> : null}
+      {status ? <span className="t-label-sm text-muted" style={mine ? { paddingRight: 4 } : { paddingLeft: gutter }}>{status}</span> : null}
     </div>
   );
 }
@@ -345,10 +360,10 @@ export function MediaViewer({ message, onClose }: { message: DMMessage; onClose:
 }
 
 // ── Typing indicator (three dots, Instagram's) ────────────────────────────
-export function TypingBubble({ avatarURL, initialsName }: { avatarURL: string | null; initialsName: string }) {
+export function TypingBubble({ other }: { other: FlairUser }) {
   return (
     <div className="flex items-end gap-2 mr-[70px]">
-      <InitialAvatar name={initialsName} imageURL={avatarURL} size={24} />
+      <FlairAvatar user={other} size={24} />
       <span className="flex items-center gap-1 px-3.5 py-3 rounded-[18px] bg-surface">
         {[0, 1, 2].map((i) => (
           <span key={i} className="size-1.5 rounded-full bg-muted dm-typing-dot" style={{ animationDelay: `${i * 300}ms` }} />

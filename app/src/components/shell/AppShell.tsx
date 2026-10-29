@@ -22,11 +22,11 @@ import { FlairAvatar, FlairName } from "@/components/ui/premium-flair";
 
 const TABS: { href: string; label: string; icon: ReactNode; match: (p: string) => boolean }[] = [
   { href: "/", label: "Live", icon: <Radio size={18} />, match: (p) => p === "/" || p.startsWith("/match") },
-  { href: "/schedule", label: "Schedule", icon: <CalendarDays size={18} />, match: (p) => p.startsWith("/schedule") || p.startsWith("/results") },
+  { href: "/schedule", label: "Schedule", icon: <CalendarDays size={18} />, match: (p) => p.startsWith("/schedule") || p.startsWith("/results") || p.startsWith("/archive") },
   { href: "/players", label: "Players", icon: <User size={18} />, match: (p) => p.startsWith("/players") },
   { href: "/teams", label: "Teams", icon: <Users size={18} />, match: (p) => p.startsWith("/teams") },
   { href: "/news", label: "News", icon: <Newspaper size={18} />, match: (p) => p.startsWith("/news") },
-  { href: "/premium", label: "Premium", icon: <PremiumGlyph />, match: (p) => p.startsWith("/premium") || p.startsWith("/predict") || p.startsWith("/weekly-report") },
+  { href: "/premium", label: "Premium", icon: <PremiumGlyph />, match: (p) => p.startsWith("/premium") || p.startsWith("/predict") || p.startsWith("/weekly-report") || p.startsWith("/alerts") },
 ];
 
 /** Karlo's premium mark, template-tinted like every other tab icon. */

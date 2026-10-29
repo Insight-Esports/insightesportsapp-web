@@ -5,6 +5,10 @@
 //
 // URL: ?tab=saved · ?tab=saved&id=<report> (a saved report's detail).
 // Wide screens: the report beside the saved-reports ledger.
+//
+// Oct 28 §7: under each section, a row of chips from `section.entities`
+// (20px photo or crest, then the name) → the player or team page; with none,
+// the followed teams and players named in the text (iOS's fallback).
 "use client";
 
 import Link from "next/link";
@@ -13,12 +17,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Bookmark, BookmarkX, ChevronLeft, ChevronRight, CirclePlus, Trash2 } from "lucide-react";
 import { api, ApiError, endpoints } from "@/lib/api";
 import { clsx } from "@/lib/format";
-import { AssetIcon, ConfirmDialog, FilterSegment, Img, Page, SkeletonLedger, Spinner } from "@/components/ui";
+import { AssetIcon, ConfirmDialog, FilterSegment, Img, InitialAvatar, Page, SkeletonLedger, Spinner, TeamMark } from "@/components/ui";
+import { entityHref } from "@/components/ui/entity-header";
+import { str, type Json } from "@/lib/types";
+import { prefetchPlayer, prefetchTeam } from "@/features/entity-cache";
 import { SkeletonReport } from "@/components/ui/skeletons";
 import { NavBar } from "@/components/shell/NavBar";
 import { useReveal } from "@/lib/use-reveal";
 import { PremiumGate } from "@/features/premium/PremiumGate";
-import { normalizeLatest, normalizeReport, normalizeReports, placeArticles, publishedLabel, reportStory, weekLabel, type ReportArticle, type WeeklyReport } from "./types";
+import { entitiesNamedIn, normalizeLatest, normalizeReport, normalizeReports, placeArticles, publishedLabel, reportStory, weekLabel, type ReportArticle, type ReportEntity, type WeeklyReport } from "./types";
 
 type Tab = "week" | "saved";
 
@@ -138,6 +145,7 @@ function kickerFor(type: string | null): string | null {
 
 export function ReportBody({ report }: { report: WeeklyReport }) {
   const headline = report.headline?.trim();
+  const followed = useFollowedEntities(report.sections.some((s) => s.entities.length === 0));
   const { bySection, unmatched } = placeArticles(report);
   const total = report.sections.length === 0 ? report.reportText.length : report.sections.map((s) => s.body ?? "").join("").length;
   const isThin = total > 0 && total < 320;
@@ -159,6 +167,7 @@ export function ReportBody({ report }: { report: WeeklyReport }) {
           {report.sections.map((s, i) => {
             const kicker = kickerFor(s.type);
             const matched = bySection.get(i) ?? [];
+            const chips = s.entities.length ? s.entities : entitiesNamedIn(`${s.title ?? ""}\n${s.body ?? ""}`, followed);
             return (
               <section key={i} className="flex items-stretch p-4 rounded-[14px] bg-card border border-border-subtle">
                 <span className="w-[3px] rounded-[2px] bg-violet shrink-0 my-0.5" />
@@ -166,6 +175,7 @@ export function ReportBody({ report }: { report: WeeklyReport }) {
                   {kicker ? <span className="t-label-sm font-semibold tracking-[0.14em] text-muted">{kicker}</span> : null}
                   {s.title ? <span className="font-rounded text-[19px] font-bold text-primary leading-tight">{s.title}</span> : null}
                   {s.body ? <p className="t-body-md text-secondary whitespace-pre-line leading-[1.7]">{s.body}</p> : null}
+                  {chips.length ? <EntityChips entities={chips} /> : null}
                   {matched.length ? <div className="pt-1"><ArticleLedger articles={matched} /></div> : null}
                 </div>
               </section>
@@ -189,6 +199,53 @@ export function ReportBody({ report }: { report: WeeklyReport }) {
       ) : null}
     </div>
   );
+}
+
+/** The section's teams and players: 20px photo / crest + name → their page. */
+function EntityChips({ entities }: { entities: ReportEntity[] }) {
+  return (
+    <div className="flex flex-wrap gap-1.5 pt-0.5">
+      {entities.map((e) => (
+        <Link
+          key={`${e.type}:${e.id}`}
+          href={entityHref(e.type, e.id)}
+          onMouseEnter={() => (e.type === "player" ? prefetchPlayer(e.id) : prefetchTeam(e.id))}
+          className="inline-flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full bg-surface border border-border-subtle hover:border-border-strong hover:bg-surface/70 transition-colors min-w-0 max-w-full"
+        >
+          {e.type === "player" ? <InitialAvatar name={e.name} imageURL={e.imageURL} size={20} /> : <TeamMark name={e.name} logoURL={e.imageURL} size={20} />}
+          <span className="t-label-md text-primary truncate">{e.name}</span>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+// The followed teams and players with names + pictures (for the chip
+// fallback), loaded once per session, only when a section needs it.
+let followedPromise: Promise<ReportEntity[]> | null = null;
+let followedCache: ReportEntity[] | null = null;
+function loadFollowed(): Promise<ReportEntity[]> {
+  if (!followedPromise) {
+    const rows = (type: "player" | "team") => api.get<Json>(endpoints.following("me", 500, 0, type)).then((raw) => {
+      const arr: Json[] = Array.isArray(raw) ? raw : Array.isArray(raw?.following) ? raw.following : Array.isArray(raw?.data) ? raw.data : [];
+      return arr.flatMap((r): ReportEntity[] => {
+        const id = str(r?.target_id) ?? str(r?.id), name = str(r?.name);
+        return id && name ? [{ type, id, name, game: str(r?.game), imageURL: str(r?.image_url) ?? str(r?.logo_url) ?? str(r?.avatar_url) }] : [];
+      });
+    }).catch(() => [] as ReportEntity[]);
+    followedPromise = Promise.all([rows("team"), rows("player")]).then(([t, p]) => { followedCache = [...t, ...p]; return followedCache; });
+  }
+  return followedPromise;
+}
+function useFollowedEntities(needed: boolean): ReportEntity[] {
+  const [list, setList] = useState<ReportEntity[]>(() => followedCache ?? []);
+  useEffect(() => {
+    if (!needed || followedCache) return;
+    let on = true;
+    void loadFollowed().then((l) => { if (on) setList(l); });
+    return () => { on = false; };
+  }, [needed]);
+  return followedCache ?? list;
 }
 
 /** Articles as one sharp ledger: striped rows, one bordered container. */

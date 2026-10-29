@@ -1,22 +1,29 @@
 // features/search/app-destinations.ts — AppDestinations.swift.
 //
-// Search finds the app itself: every tab, feature and settings page, matched
-// locally and instantly against this catalogue.
+// Search finds the app itself: every tab, feature and settings page. Two
+// sources feed "In the app" (the FIRST section of the results):
+//
+//   1. The server's `features` ([{link: "insight://…"}], in its ranking),
+//      mapped to routes by FEATURE_LINKS below; a link with no route is dropped.
+//   2. This local catalogue, for the matches the server didn't name. It is
+//      also the whole answer when the request fails or the app is offline.
 //
 //   Matching: at least 2 characters; the query and every title / keyword are
 //   normalized (lowercase, accents stripped, punctuation → spaces); every typed
 //   word must be the start of a word in the title or in a keyword.
 //   Ranking:  +100 title equals the query, +50 title starts with the query,
-//   +25 every typed word starts a title word. Ties keep catalogue order; at
-//   most 6 are shown.
+//   +25 every typed word starts a title word. Ties keep catalogue order.
+//   Shown: up to 3 rows when there are people or teams to show, up to 6 when
+//   "In the app" is alone.
 //
 // Web-only notes: "Link Web" is iOS-only and skipped. "Badges" is left out
 // until the web has a badge gallery route.
 import {
-  Bell, BellRing, CalendarDays, CalendarRange, ChartColumn, CircleHelp, CircleUser, Crown, FileChartColumn, FileText,
+  Archive, Bell, BellRing, CalendarDays, CalendarRange, ChartColumn, CircleHelp, CircleUser, Crown, FileChartColumn, FileText,
   Gamepad2, Hand, History, Lock, Mail, MessageCircle, Newspaper, Pencil, Radio, Settings, ShieldCheck, Sparkles,
-  Swords, Target, Trophy, User, UserCheck, Users, UsersRound, type LucideIcon,
+  Swords, Target, Trophy, User, UserCheck, Users, UsersRound, Vote, type LucideIcon,
 } from "lucide-react";
+import { alertsListHref } from "@/features/alerts/entry";
 import { flowHref } from "@/features/predictions/flow";
 
 /** tab → switches tab (→), screen → pushes a screen (›), web → opens the site in a new tab (↗). */
@@ -48,6 +55,9 @@ export const APP_DESTINATIONS: AppDestination[] = [
     keywords: ["live matches", "now", "scores", "home", "stream", "watch", "chat", "win probability", "live predictor"] },
   { id: "schedule", title: "Schedule", subtitle: "Upcoming matches by day", icon: CalendarDays, kind: "tab", href: "/schedule",
     keywords: ["upcoming", "matches", "fixtures", "today", "tomorrow", "games"] },
+  // Before Results so "history" opens the Archive first (both carry the word).
+  { id: "archive", title: "Archive", subtitle: "Every match back to 2016, by year and day", icon: Archive, kind: "screen", href: "/archive",
+    keywords: ["history", "past matches", "old matches", "old results", "encyclopedia", "year", "years", "all matches", "match history"] },
   { id: "results", title: "Results", subtitle: "Finished matches, scores and VODs", icon: History, kind: "tab", href: "/results",
     keywords: ["past", "finished", "completed", "scores", "history", "watch back", "vod", "highlights"] },
   { id: "calendar", title: "Calendar", subtitle: "Browse matches by date", icon: CalendarRange, kind: "screen", href: "/schedule?view=calendar",
@@ -68,6 +78,8 @@ export const APP_DESTINATIONS: AppDestination[] = [
     keywords: ["stats", "records", "maps", "head to head", "h2h", "form", "analysis", "premium"] },
   { id: "weekly-report", title: "Weekly Report", subtitle: "Your week, recapped", icon: FileChartColumn, kind: "screen", href: "/weekly-report",
     keywords: ["recap", "report", "summary", "week", "premium"] },
+  { id: "stat-alerts", title: "Stat Alerts", subtitle: "A push the moment your call hits", icon: Bell, kind: "screen", href: () => alertsListHref(),
+    keywords: ["alert", "alerts", "notify", "notification", "target", "kills", "hit", "track", "tracker", "watch", "premium"] },
   { id: "premium", title: "Premium", subtitle: "Plans, perks and your subscription", icon: Crown, kind: "screen", href: "/premium/upgrade",
     keywords: ["pro", "upgrade", "subscribe", "subscription", "plans", "price", "perks", "manage", "cancel", "restore"] },
   { id: "profile", title: "Your Profile", subtitle: "Your stats, activity and points", icon: CircleUser, kind: "screen", href: "/profile",
@@ -107,7 +119,10 @@ export const APP_DESTINATIONS: AppDestination[] = [
 ];
 
 export const MIN_APP_QUERY = 2;
+/** "In the app" on its own. */
 export const MAX_APP_RESULTS = 6;
+/** "In the app" above players / teams / users. */
+export const MAX_APP_RESULTS_WITH_OTHERS = 3;
 
 /** Lowercase, strip accents, punctuation (anything not a letter or digit) → spaces, collapse. */
 export function normalizeAppQuery(s: string): string {
@@ -156,4 +171,91 @@ export function matchAppDestinations(query: string, limit = MAX_APP_RESULTS): Ap
 
 export function appDestinationHref(dest: AppDestination, ctx: AppDestinationContext): string {
   return typeof dest.href === "function" ? dest.href(ctx) : dest.href;
+}
+
+// ── Server features ──────────────────────────────────────────────────────────
+
+/** A server feature as search decodes it (features/search/types.ts). */
+export interface AppFeatureLink {
+  link: string;
+  name?: string | null;
+  description?: string | null;
+}
+
+/** insight://<key> → the catalogue row it opens (spec §9 table). `polls` has
+ *  no catalogue row of its own; it opens the Live tab under its own name. */
+const FEATURE_LINKS: Record<string, string> = {
+  live: "live", polls: "polls", matches: "schedule", archive: "archive", teams: "teams", players: "players",
+  news: "news", predictions: "predictions", alerts: "stat-alerts", reports: "weekly-report", premium: "premium",
+  leaderboard: "leaderboard", messages: "messages", notifications: "notifications", profile: "profile",
+  following: "following", settings: "settings", support: "support",
+};
+const POLLS: AppDestination = {
+  id: "polls", title: "Polls", subtitle: "Vote and earn points", icon: Vote, kind: "tab", href: "/", keywords: [],
+};
+
+/** "insight://teams" → "teams"; null for anything that isn't an insight:// link. */
+export function featureLinkKey(link: string): string | null {
+  const m = /^insight:\/\/([^/?#\s]+)/i.exec(link.trim());
+  return m ? m[1].toLowerCase() : null;
+}
+
+/** The catalogue row a server feature opens, or null (dropped) when its link has no route. */
+export function destinationForFeature(f: AppFeatureLink): AppDestination | null {
+  const key = featureLinkKey(f.link);
+  const id = key ? FEATURE_LINKS[key] : undefined;
+  if (!id) return null;
+  if (id === "polls") return { ...POLLS, title: f.name || POLLS.title, subtitle: f.description || POLLS.subtitle };
+  return APP_DESTINATIONS.find((d) => d.id === id) ?? null;
+}
+
+/** Rows behind a feature switch (`/status` features): hidden while it's off. */
+const FEATURE_SWITCHES: Record<string, string> = { "stat-alerts": "stat_alerts", archive: "match_archive", polls: "polls" };
+
+/** "In the app" for a term: the server's matches first, in its order, then the
+ *  local catalogue matches it didn't name; at most `limit`. With no server
+ *  answer (offline, failed) pass `[]` and the catalogue answers alone.
+ *  `switchOff(name)` hides rows whose feature switch is off. */
+export function mergeAppDestinations(features: AppFeatureLink[], term: string, limit = MAX_APP_RESULTS, switchOff?: (name: string) => boolean): AppDestination[] {
+  const out: AppDestination[] = [];
+  const seen = new Set<string>();
+  const add = (d: AppDestination | null) => {
+    if (!d || seen.has(d.id)) return;
+    const sw = FEATURE_SWITCHES[d.id];
+    if (sw && switchOff?.(sw)) return;
+    seen.add(d.id);
+    out.push(d);
+  };
+  for (const f of features) add(destinationForFeature(f));
+  for (const d of matchAppDestinations(term, APP_DESTINATIONS.length)) add(d);
+  return out.slice(0, limit);
+}
+
+// ── Self-checks (dev only) ───────────────────────────────────────────────────
+
+/** Searches whose first "In the app" row is fixed, catalogue alone and with the
+ *  server's answer for the same term. Returns the failures (empty = all good). */
+export function appDestinationSelfCheck(): string[] {
+  const checks: [term: string, firstId: string, server: string[]][] = [
+    ["teams", "teams", ["insight://teams"]],
+    ["alert", "stat-alerts", ["insight://alerts"]],
+    ["history", "archive", ["insight://archive"]],
+  ];
+  const failures: string[] = [];
+  for (const [term, firstId, server] of checks) {
+    const local = matchAppDestinations(term)[0]?.id;
+    if (local !== firstId) failures.push(`"${term}" (catalogue) → ${local ?? "nothing"}, expected ${firstId}`);
+    const merged = mergeAppDestinations(server.map((link) => ({ link })), term)[0]?.id;
+    if (merged !== firstId) failures.push(`"${term}" (with server) → ${merged ?? "nothing"}, expected ${firstId}`);
+  }
+  for (const key of Object.keys(FEATURE_LINKS)) {
+    if (!destinationForFeature({ link: `insight://${key}` })) failures.push(`insight://${key} has no route`);
+  }
+  if (destinationForFeature({ link: "insight://tournaments" })) failures.push("unknown links must be dropped");
+  return failures;
+}
+
+if (process.env.NODE_ENV !== "production" && typeof window !== "undefined") {
+  const failures = appDestinationSelfCheck();
+  if (failures.length) console.error("[app-destinations] self-check failed:\n" + failures.join("\n"));
 }

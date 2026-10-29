@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { History } from "lucide-react";
+import { ChevronRight, History } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { clsx, fmt1, fmt2, formatDate } from "@/lib/format";
 import { EmptyState, Img, SectionHeader, SkeletonLedger, Spinner } from "@/components/ui";
@@ -80,7 +80,7 @@ export function usePlayerGames(playerId: string) {
 
 /** The list owns its pager unless the page passes one in (PlayerDetail does,
  *  so it can hold the whole screen until the first page is in). */
-export function PlayerRecentGamesList({ playerId, game, onRows, pager: external }: { playerId: string; game: string; onRows?: (rows: PlayerGameRow[]) => void; pager?: ReturnType<typeof usePlayerGames> }) {
+export function PlayerRecentGamesList({ playerId, game, onRows, pager: external, archiveHref }: { playerId: string; game: string; onRows?: (rows: PlayerGameRow[]) => void; pager?: ReturnType<typeof usePlayerGames>; /** "Match History ›" under the list (the match archive). */ archiveHref?: string | null }) {
   const own = usePlayerGames(external ? "" : playerId);
   const pager = external ?? own;
   const sentinel = useLoadMore(pager.loadMore, pager.loaded && !pager.reachedEnd && !pager.loadingMore);
@@ -118,6 +118,9 @@ export function PlayerRecentGamesList({ playerId, game, onRows, pager: external 
           <div ref={sentinel} className="h-px" />
         </div>
       )}
+      {pager.loaded && archiveHref ? (
+        <Link href={archiveHref} className="self-start mx-4 flex items-center gap-1 t-label-lg text-violet hover:underline">Match History<ChevronRight size={14} /></Link>
+      ) : null}
     </section>
   );
 }

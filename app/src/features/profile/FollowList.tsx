@@ -1,21 +1,27 @@
 // FollowList — FollowListView.swift: Followers / Following, reached from the
 // counts on a profile. Rows open that user's profile; a trailing "•••" menu
-// offers Block / Report / (own followers only) Remove Follower. Paginates.
+// (or a right-click) offers Report profile / Block @user (Unblock once
+// blocked) / (own followers only) Remove Follower. Blocked people are
+// hidden, and a block drops the row at once (Moderation.swift). Paginates.
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { Ellipsis, Hand, ShieldAlert, UserX, Users, UserPlus } from "lucide-react";
+import { UserX, Users, UserPlus } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { gameLabel, type Json } from "@/lib/types";
 import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
 import { useReveal } from "@/lib/use-reveal";
-import { ConfirmDialog, EmptyState, Page, SkeletonLedger, Spinner } from "@/components/ui";
+import { EmptyState, Page, SkeletonLedger, Spinner, Toast } from "@/components/ui";
 import { FlairAvatar, FlairName } from "@/components/ui/premium-flair";
 import { NavBar } from "@/components/shell/NavBar";
 import { normalizeFollowRows, type FollowUser } from "./types";
 import { seedFollow, useFollowState } from "./follow-store";
+import { ActionMenu, MoreButton, Portal, useActionMenu, type MenuAction, type RowMenuProps } from "@/features/moderation/ActionMenu";
+import { BlockConfirm, personActions, unblockQuietly, type ModerationUser } from "@/features/moderation/dialogs";
+import { ReportSheet, type ReportTarget } from "@/features/moderation/ReportSheet";
+import { useBlockedIds } from "@/features/moderation/use-blocked";
 
 export type FollowListMode = "followers" | "following";
 const PAGE = 20;
@@ -29,9 +35,14 @@ export function FollowList({ mode, userId }: { mode: FollowListMode; userId: str
   const [hasLoaded, setHasLoaded] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [reachedEnd, setReachedEnd] = useState(false);
-  const [blockTarget, setBlockTarget] = useState<FollowUser | null>(null);
-  const [reportTarget, setReportTarget] = useState<FollowUser | null>(null);
+  const [report, setReport] = useState<ReportTarget | null>(null);
+  const [toBlock, setToBlock] = useState<ModerationUser | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const menu = useActionMenu<FollowUser>();
+  const blocked = useBlockedIds();
+  const shown = users.filter((u) => !blocked.has(u.id));
   const offsetRef = useRef(0);
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 3000); return () => clearTimeout(t); }, [toast]);
 
   const fetchPage = useCallback(async (replacing: boolean) => {
     const offset = replacing ? 0 : offsetRef.current;
@@ -77,14 +88,6 @@ export function FollowList({ mode, userId }: { mode: FollowListMode; userId: str
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [users.length, reachedEnd, loadingMore, revealed]);
 
-  async function block(u: FollowUser) {
-    const previous = users;
-    setUsers((p) => p.filter((x) => x.id !== u.id));
-    try { await api.post(endpoints.blockUser(u.id), {}); } catch { setUsers(previous); }
-  }
-  async function report(u: FollowUser) {
-    try { await api.post(endpoints.reportUser(u.id), {}); } catch { /* fire-and-forget; the UI already confirmed */ }
-  }
   async function removeFollower(u: FollowUser) {
     const previous = users;
     setUsers((p) => p.filter((x) => x.id !== u.id));
@@ -92,6 +95,18 @@ export function FollowList({ mode, userId }: { mode: FollowListMode; userId: str
   }
 
   const title = mode === "followers" ? "Followers" : "Following";
+  const actionsFor = (u: FollowUser): MenuAction[] => {
+    if (user && user.id === u.id) return [];
+    const who = { id: u.id, username: u.username };
+    const list = personActions({
+      user: who, blocked: blocked.has(u.id), isOwn: false, reportLabel: "Report profile",
+      onReport: () => setReport({ kind: "profile", user: { id: u.id, username: u.username, avatarURL: u.avatarURL, isPremium: u.isPremium, premiumStyle: u.premiumStyle, title: u.title } }),
+      onBlock: () => setToBlock(who),
+      onUnblock: () => { void unblockQuietly(u.id); },
+    });
+    if (isOwnList && mode === "followers") list.push({ key: "remove", label: "Remove Follower", icon: <UserX size={15} />, destructive: true, dividerBefore: true, onSelect: () => void removeFollower(u) });
+    return list;
+  };
 
   return (
     <Page>
@@ -100,7 +115,7 @@ export function FollowList({ mode, userId }: { mode: FollowListMode; userId: str
       <div className="px-4 pt-4 max-w-2xl w-full mx-auto">
         {!revealed ? (
           <SkeletonLedger rows={8} avatar={44} />
-        ) : users.length === 0 ? (
+        ) : shown.length === 0 ? (
           <EmptyState
             className="!mx-0 mt-10"
             icon={mode === "followers" ? <Users /> : <UserPlus />}
@@ -109,15 +124,13 @@ export function FollowList({ mode, userId }: { mode: FollowListMode; userId: str
           />
         ) : (
           <div className="ledger">
-            {users.map((u) => (
+            {shown.map((u) => (
               <FollowUserRow
                 key={u.id}
                 user={u}
                 isSelf={!!user && user.id === u.id}
-                canRemove={isOwnList && mode === "followers"}
-                onBlock={() => setBlockTarget(u)}
-                onReport={() => setReportTarget(u)}
-                onRemove={() => void removeFollower(u)}
+                rowProps={menu.rowProps(u)}
+                more={actionsFor(u).length ? <MoreButton className="size-8 rounded-lg" {...menu.triggerProps(u)} aria-expanded={menu.target?.id === u.id} /> : null}
               />
             ))}
             {!reachedEnd ? <div ref={sentinel} className="h-px" /> : null}
@@ -126,44 +139,24 @@ export function FollowList({ mode, userId }: { mode: FollowListMode; userId: str
         )}
       </div>
 
-      <ConfirmDialog
-        open={!!blockTarget}
-        title={`Block @${blockTarget?.username ?? ""}?`}
-        message="They won't be able to follow you or interact with you, and you won't see their content."
-        confirmTitle="Block" destructive
-        onConfirm={() => { if (blockTarget) void block(blockTarget); setBlockTarget(null); }}
-        onCancel={() => setBlockTarget(null)}
-      />
-      <ConfirmDialog
-        open={!!reportTarget}
-        title={`Report @${reportTarget?.username ?? ""}?`}
-        message="Our team will review this account. Thanks for helping keep the community safe."
-        confirmTitle="Report" destructive
-        onConfirm={() => { if (reportTarget) void report(reportTarget); setReportTarget(null); }}
-        onCancel={() => setReportTarget(null)}
-      />
+      <ActionMenu anchor={menu.anchor} actions={menu.target ? actionsFor(menu.target) : []} onClose={menu.close} label="Person actions" />
+      {/* A block — from the menu or the Report sheet — drops the row (the blocked list hides it). */}
+      <ReportSheet target={report} onClose={() => setReport(null)} />
+      <BlockConfirm user={toBlock} onCancel={() => setToBlock(null)} onBlocked={() => {}} onFailed={setToast} />
+      <Portal><Toast message={toast} kind="error" /></Portal>
     </Page>
   );
 }
 
-function FollowUserRow({ user, isSelf, canRemove, onBlock, onReport, onRemove }: { user: FollowUser; isSelf: boolean; canRemove: boolean; onBlock: () => void; onReport: () => void; onRemove: () => void }) {
+function FollowUserRow({ user, isSelf, rowProps, more }: { user: FollowUser; isSelf: boolean; rowProps: RowMenuProps; more: ReactNode }) {
   const { following, toggle } = useFollowState("user", user.id);
-  const [menu, setMenu] = useState(false);
-  useEffect(() => {
-    if (!menu) return;
-    const close = () => setMenu(false);
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") setMenu(false); };
-    document.addEventListener("click", close);
-    document.addEventListener("keydown", key);
-    return () => { document.removeEventListener("click", close); document.removeEventListener("keydown", key); };
-  }, [menu]);
   return (
-    <div className="ledger-row hover:bg-surface/40 transition-colors">
-      <Link href={`/profile/${encodeURIComponent(user.id)}`} className="flex items-center gap-3 flex-1 min-w-0">
+    <div {...rowProps} className="ledger-row hover:bg-surface/40 transition-colors [-webkit-touch-callout:none]">
+      <Link href={isSelf ? "/profile" : `/profile/${encodeURIComponent(user.id)}`} className="flex items-center gap-3 flex-1 min-w-0">
         {/* A list: the flair holds still. */}
         <FlairAvatar user={user} size={44} />
         <span className="flex flex-col min-w-0">
-          <FlairName user={user} className="t-body-md" nameClassName="text-primary" />
+          <FlairName user={user} className="t-body-md" />
           {user.favoriteGame ? <span className="t-label-sm text-muted">{gameLabel(user.favoriteGame)}</span> : null}
         </span>
       </Link>
@@ -172,16 +165,7 @@ function FollowUserRow({ user, isSelf, canRemove, onBlock, onReport, onRemove }:
           {following ? "Following" : "Follow"}
         </button>
       ) : null}
-      <span className="relative">
-        <button type="button" aria-label="More" aria-haspopup="menu" onClick={(e) => { e.stopPropagation(); setMenu((m) => !m); }} className="grid place-items-center size-8 rounded-lg text-muted hover:text-primary hover:bg-card"><Ellipsis size={16} /></button>
-        {menu ? (
-          <div className="absolute right-0 top-9 z-20 min-w-44 ledger py-1" role="menu">
-            <button type="button" role="menuitem" onClick={onBlock} className="flex items-center gap-2.5 w-full px-3 py-2.5 t-body-md text-error hover:bg-surface/60 text-left"><Hand size={15} />Block</button>
-            <button type="button" role="menuitem" onClick={onReport} className="flex items-center gap-2.5 w-full px-3 py-2.5 t-body-md text-error hover:bg-surface/60 text-left"><ShieldAlert size={15} />Report</button>
-            {canRemove ? <button type="button" role="menuitem" onClick={onRemove} className="flex items-center gap-2.5 w-full px-3 py-2.5 t-body-md text-error hover:bg-surface/60 text-left"><UserX size={15} />Remove Follower</button> : null}
-          </div>
-        ) : null}
-      </span>
+      {more}
     </div>
   );
 }

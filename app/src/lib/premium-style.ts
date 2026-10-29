@@ -136,8 +136,12 @@ export interface Flair {
 /**
  * Draw nothing unless is_premium; otherwise premium_style, or ["ring"] when
  * it's null; [] shows nothing. For the signed-in user (`isMe`) the local
- * mirror wins. `chat`: no avatars, so a ring without a shine becomes the
- * diamond, and a chat shine is always violet (chat rows carry no user id).
+ * mirror wins.
+ *
+ * `chat` is the retired Oct 24 chat rule (no avatars, so a ring without a
+ * shine became the diamond and the shine was always violet). Since Oct 28
+ * chat rows carry userId and draw avatars like everywhere else
+ * (web/ios-parity-2026-10-28.md §3); nothing passes it any more.
  */
 export function resolveFlair(
   user: FlairInput,

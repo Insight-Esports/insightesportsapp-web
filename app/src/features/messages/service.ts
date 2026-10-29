@@ -5,7 +5,9 @@
 // keys come from the linked phone (keys.ts), plaintext never leaves memory.
 "use client";
 
-import { api, ApiError, endpoints } from "@/lib/api";
+import { api, ApiError, endpoints, request } from "@/lib/api";
+import { blockUser as blockEverywhere, loadBlocked, resetBlocked, unblockUser as unblockEverywhere } from "@/features/moderation/blocked";
+import { clearBans } from "@/features/moderation/ban";
 import { getSocket } from "@/lib/socket";
 import type { Socket } from "socket.io-client";
 import { deriveSymmetricKey, openEnvelope, sealEnvelope, type DMEnvelope } from "./crypto";
@@ -21,6 +23,10 @@ type Events = {
   localMessage: { conversationId: string; message: DMMessage };
   read: { conversationId: string; userId: string; readAt: string | null };
   removed: { conversationId: string };
+  /** dm:deleted — unsent by its sender (either side, any device). */
+  deleted: { conversationId: string; messageId: string };
+  /** dm:edited — the sender changed it (pending on the backend). */
+  edited: { conversationId: string; message: DMMessageRow };
   typing: { conversationId: string; userId: string };
   /** dm:media_ready — an upload's bytes landed. Bubbles waiting on that id fetch now (only older iOS builds still send before their video is up). */
   mediaReady: { conversationId: string; uploadId: string; kind: string; size: number };
@@ -94,6 +100,9 @@ export function adoptKey(k: StoredKey) {
 }
 
 export function forgetKeyState() {
+  // Sign-out: the next account starts with its own blocked list and no ban lines.
+  resetBlocked();
+  clearBans();
   myKey = null; linkUserId = null; linkPromise = null; keyCache.clear(); publicKeyCache.clear();
   latestByConversation.clear(); setUnread(0);
   setLink({ kind: "unlinked" });
@@ -168,10 +177,10 @@ export async function decrypt(m: DMMessageRow, otherUserId: string, otherPublicK
   try {
     const key = await symmetricKey(otherUserId, pub, myVersion, theirVersion);
     const env = await openEnvelope(m.ciphertext, m.nonce, key);
-    if (env.t === "link" && env.url && asURL(env.url)) return { ...base, text: env.url, decrypted: true, linkURL: env.url.trim() };
+    if (env.t === "link" && env.url && asURL(env.url)) return { ...base, text: env.url, decrypted: true, linkURL: env.url.trim(), editedAt: m.editedAt };
     const media = mediaFromEnvelope(env);
     if (media) return { ...base, text: media.kind === "image" ? "📷 Photo" : "🎬 Video", decrypted: true, media };
-    return { ...base, text: env.body ?? "", decrypted: true };
+    return { ...base, text: env.body ?? "", decrypted: true, editedAt: m.editedAt };
   } catch {
     return base;
   }
@@ -208,6 +217,41 @@ export async function sendEnvelope(envelope: DMEnvelope, contentType: string, co
   const row = normalizeMessageRow(raw);
   if (!row) throw new ApiError(0, "Failed to process server response.", "DECODE");
   return row;
+}
+
+/**
+ * Edit (pending, gated by dm_edit): the new text sealed exactly like a send
+ * (the text or link envelope), PATCH {ciphertext, nonce, senderKeyVersion,
+ * recipientKeyVersion, contentType}. Returns the server row when it sends one.
+ */
+export async function editText(text: string, conversationId: string, messageId: string, otherUserId: string, otherPublicKey: string, otherKeyVersion: number): Promise<DMMessageRow | null> {
+  if (!myKey) throw new Error("NOT_LINKED");
+  const isLink = asURL(text) !== null;
+  const envelope: DMEnvelope = isLink ? { t: "link", url: text.trim() } : { t: "text", body: text };
+  const myV = myKey.version;
+  const key = await symmetricKey(otherUserId, otherPublicKey, myV, otherKeyVersion);
+  const sealed = await sealEnvelope(envelope, key);
+  const raw = await api.patch(endpoints.dmMessage(conversationId, messageId), {
+    ciphertext: sealed.ciphertext, nonce: sealed.nonce,
+    senderKeyVersion: myV, recipientKeyVersion: otherKeyVersion, contentType: isLink ? "link" : "text",
+  });
+  const r = raw && typeof raw === "object" && "message" in (raw as Record<string, unknown>) ? (raw as Record<string, unknown>).message : raw;
+  return normalizeMessageRow(r);
+}
+
+/**
+ * Unsend: DELETE /dm/conversations/:id/messages/:messageId, with
+ * {uploadIds: [blobId, posterId]} for a photo or video so the stored files
+ * go too. 404 MESSAGE_NOT_FOUND counts as done.
+ */
+export async function deleteMessage(conversationId: string, message: DMMessage): Promise<void> {
+  const uploadIds = message.media ? [message.media.blobId, message.media.posterId].filter((x): x is string => !!x && x !== "pending") : [];
+  try {
+    await request(endpoints.dmMessage(conversationId, message.id), "DELETE", uploadIds.length ? { uploadIds } : undefined);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 404 && e.code === "MESSAGE_NOT_FOUND") return;
+    throw e;
+  }
 }
 
 // ── Endpoints ─────────────────────────────────────────────────────────────
@@ -248,11 +292,12 @@ export async function markRead(conversationId: string): Promise<void> {
 export async function removeConversation(conversationId: string): Promise<void> {
   try { await api.delete(endpoints.dmRemove(conversationId)); } catch { /* row already gone locally */ }
 }
+/** The app-wide block (POST /dm/blocks), through the shared blocked store. */
 export async function blockUser(userId: string): Promise<void> {
-  try { await api.post(endpoints.dmBlock, { userId }); } catch { /* ignore */ }
+  try { await blockEverywhere(userId); } catch { /* ignore */ }
 }
 export async function unblockUser(userId: string): Promise<void> {
-  try { await api.delete(endpoints.dmUnblock(userId)); } catch { /* ignore */ }
+  try { await unblockEverywhere(userId); } catch { /* ignore */ }
 }
 
 // ── Read ledger (DMReadLedger) — per account, in localStorage ─────────────
@@ -321,6 +366,16 @@ export function expireStalePending() {
     const ttl = m.media ? 10 * 60_000 : 20_000;
     if (isPendingId(m.id) && Date.now() - new Date(m.createdAt).getTime() > ttl) latestByConversation.delete(id);
   }
+}
+/** A message is gone (unsent): the inbox falls back to the one before it (or the server's row). */
+export function forgetLatestIf(conversationId: string, messageId: string, previous: DMMessage | null = null) {
+  if (latestByConversation.get(conversationId)?.id !== messageId) return;
+  if (previous) latestByConversation.set(conversationId, previous);
+  else latestByConversation.delete(conversationId);
+}
+/** A message was edited: the inbox preview follows when it is the newest. */
+export function replaceLatestIf(conversationId: string, message: DMMessage) {
+  if (latestByConversation.get(conversationId)?.id === message.id) latestByConversation.set(conversationId, message);
 }
 /** A dropped send with nothing real before it: the row stops claiming "Sending…". */
 export function forgetPendingLatest(conversationId: string, pendingId: string) {
@@ -408,6 +463,20 @@ export async function ensureDMSocket(): Promise<Socket | null> {
     s.on("dm:removed", (payload: { conversationId?: string }) => {
       if (payload?.conversationId) emit("removed", { conversationId: payload.conversationId });
     });
+    // dm:deleted {conversationId, messageId} reaches both sides, every device.
+    s.on("dm:deleted", (payload: { conversationId?: string; messageId?: string }) => {
+      if (!payload?.conversationId || !payload.messageId) return;
+      forgetLatestIf(payload.conversationId, String(payload.messageId));
+      emit("deleted", { conversationId: payload.conversationId, messageId: String(payload.messageId) });
+    });
+    // dm:edited {conversationId, message: row} (pending on the backend).
+    s.on("dm:edited", (payload: { conversationId?: string; message?: unknown }) => {
+      const row = normalizeMessageRow(payload?.message);
+      if (!payload?.conversationId || !row) return;
+      // The inbox re-reads the row rather than keep the old text as "newest".
+      forgetLatestIf(payload.conversationId, row.id);
+      emit("edited", { conversationId: payload.conversationId, message: { ...row, editedAt: row.editedAt ?? new Date().toISOString() } });
+    });
     return s;
   } catch {
     return null;
@@ -427,6 +496,8 @@ export function noteLocalMessage(conversationId: string, message: DMMessage) {
 
 /** Start everything for a signed-in user: key, socket, unread. Idempotent. */
 export async function startDM(userId: string): Promise<LinkState> {
+  // Sign-in: the app-wide blocked list loads with the DM service.
+  void loadBlocked(userId);
   const state = await ensureLinked(userId);
   await ensureDMSocket();
   if (state.kind !== "unlinked") void refreshUnread();

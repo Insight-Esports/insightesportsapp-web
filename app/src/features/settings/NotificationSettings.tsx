@@ -12,11 +12,15 @@ import { LoadFailure, SkeletonLedger } from "@/components/ui";
 import { useFetch } from "@/lib/use-fetch";
 import { clsx } from "@/lib/format";
 import { NOTIFICATION_TYPES, LEADERBOARD_TYPES, normalizePreferences, type NotificationPreferences, type NotificationTypeId } from "@/features/notifications/types";
+import { useAppState } from "@/store/app-state";
+import { featureState } from "@/features/matches/live/feature-status";
 import { SettingsFrame, SettingsSection, SettingsToggleRow } from "./components";
+
+const STAT_ALERT_TYPES = new Set<NotificationTypeId>(["stat_alert_live", "stat_alert_result"]);
 
 const GROUPS: { title: string; types: NotificationTypeId[] }[] = [
   { title: "Match Alerts", types: ["followed_starting_soon", "mid_match", "followed_result"] },
-  { title: "Your Activity", types: ["prediction_resolved", "poll_resolved", "weekly_report", "streak_milestone", "badge_earned"] },
+  { title: "Your Activity", types: ["prediction_resolved", "poll_resolved", "weekly_report", "streak_milestone", "badge_earned", "stat_alert_live", "stat_alert_result"] },
   { title: "Leaderboard", types: LEADERBOARD_TYPES },
   { title: "Social", types: ["new_follower", "followed_news"] },
 ];
@@ -31,6 +35,8 @@ const HOURS = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, "0")
 const deviceTZ = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return "UTC"; } };
 
 export function NotificationSettings() {
+  // The two Stat Alerts toggles follow the stat_alerts switch.
+  const alertsOff = featureState(useAppState().status, "stat_alerts").off;
   const fetched = useFetch(async (signal) => normalizePreferences(await api.get<Json>(endpoints.notificationPreferences, { signal })), []);
   const [prefs, setPrefs] = useState<NotificationPreferences | null>(null);
   useEffect(() => { if (fetched.data) setPrefs(fetched.data); }, [fetched.data]);
@@ -77,7 +83,7 @@ export function NotificationSettings() {
 
               {GROUPS.map((g) => (
                 <SettingsSection key={g.title} title={g.title}>
-                  {g.types.map((id) => (
+                  {g.types.filter((id) => !(alertsOff && STAT_ALERT_TYPES.has(id))).map((id) => (
                     <SettingsToggleRow key={id} title={NOTIFICATION_TYPES[id].title} subtitle={NOTIFICATION_TYPES[id].subtitle} checked={isEnabled(id)} onChange={(on) => setEnabled(id, on)} />
                   ))}
                 </SettingsSection>

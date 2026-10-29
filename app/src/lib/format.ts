@@ -44,6 +44,14 @@ export function fmt1(v: number | null | undefined): string {
 export function fmt2(v: number | null | undefined): string {
   return v == null || Number.isNaN(v) ? "—" : v.toFixed(2);
 }
+/** RatingFormat (Components.swift): one rule, read from the number's own
+ *  scale. Player: |r| ≥ 10 shows whole (League, e.g. 377), else 2 decimals
+ *  (VALORANT / CS2, around 1.0–1.4). Team: always whole. "—" when missing. */
+export function formatRating(v: number | null | undefined, kind: "player" | "team"): string {
+  if (v == null || Number.isNaN(v)) return "—";
+  if (kind === "team" || Math.abs(v) >= 10) return String(Math.round(v) || 0);
+  return v.toFixed(2);
+}
 export function fmtInt(v: number | null | undefined): string {
   return v == null || Number.isNaN(v) ? "—" : Math.round(v).toLocaleString();
 }

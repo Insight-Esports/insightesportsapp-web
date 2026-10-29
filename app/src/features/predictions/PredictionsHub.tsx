@@ -1,16 +1,19 @@
 // predictions/PredictionsHub.tsx — PredictionsView / PredictionFlowView: the
 // Premium tab root. Game → Player or Team → Continue into the predictor,
-// direct Breakdowns, and the Weekly Report door. Whole tab is premium-gated.
+// direct Breakdowns, the Weekly Report door and the Stat Alerts row.
+// Whole tab is premium-gated.
 "use client";
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowRight, ChevronRight, User, Users } from "lucide-react";
+import { ArrowRight, Bell, ChevronRight, User, Users } from "lucide-react";
 import { clsx } from "@/lib/format";
 import { SELECTABLE_GAMES } from "@/lib/types";
 import { AssetIcon, FilterSegment, Page, TabHeader } from "@/components/ui";
 import { HeaderTools } from "@/components/shell/AppShell";
 import { PremiumGate } from "@/features/premium/PremiumGate";
+import { alertsListHref } from "@/features/alerts/entry";
+import { useAlerts } from "@/features/alerts/store";
 import { flowHref } from "./flow";
 import { BlockButton, DotKicker, Hero } from "./shared";
 import type { PredictionTargetType } from "./types";
@@ -98,8 +101,37 @@ function PredictionFlow() {
             <ChevronRight size={13} className="text-muted shrink-0" />
           </Link>
         </div>
+
+        <StatAlertsDoor />
       </div>
     </div>
+  );
+}
+
+/** The "Stat Alerts" row (bell tile): "N active · a push the moment one hits". Hidden while stat_alerts is off. */
+function StatAlertsDoor() {
+  const alerts = useAlerts({ maxAgeMs: 60_000 });
+  if (alerts.off) return null;
+  const n = alerts.active.length;
+  return (
+    <>
+      <div className="mx-4 hairline-b" />
+      <DotKicker className="px-4">ALERTS</DotKicker>
+      <div className="px-4">
+        <Link href={alertsListHref()} className="flex items-center gap-3 p-4 rounded-[14px] bg-card border border-border-subtle hover:border-border-strong hover:bg-surface/40 transition-colors">
+          <span className="relative grid place-items-center size-11 rounded-xl bg-violet-gradient shrink-0">
+            <span className="absolute inset-0 rounded-xl bg-white/14" />
+            <Bell size={22} strokeWidth={2.25} className="relative text-white" />
+          </span>
+          <span className="flex flex-col gap-0.5 min-w-0">
+            <span className="t-headline-sm text-primary">Stat Alerts</span>
+            <span className="t-label-sm text-muted truncate">{n > 0 ? `${n} active · a push the moment one hits` : "A push the moment your call hits"}</span>
+          </span>
+          <span className="flex-1" />
+          <ChevronRight size={13} className="text-muted shrink-0" />
+        </Link>
+      </div>
+    </>
   );
 }
 

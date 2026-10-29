@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { History } from "lucide-react";
+import { ChevronRight, History } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { clsx, formatDate } from "@/lib/format";
 import { matchResultTime, normalizeMatches, type Match } from "@/lib/types";
@@ -89,7 +89,7 @@ export function useTeamRecentGames(teamId: string, game: string | null) {
 
 /** The list owns its pager unless the page passes one in (TeamDetail does,
  *  so it can hold the whole screen until the first page is in). */
-export function TeamRecentGamesList({ teamId, game, perspective, title = "Recent Games", onRows, pager: external }: { teamId: string; game: string | null; perspective: RecentGamesPerspective; title?: string; onRows?: (rows: Match[]) => void; pager?: ReturnType<typeof useTeamRecentGames> }) {
+export function TeamRecentGamesList({ teamId, game, perspective, title = "Recent Games", onRows, pager: external, archiveHref }: { teamId: string; game: string | null; perspective: RecentGamesPerspective; title?: string; onRows?: (rows: Match[]) => void; pager?: ReturnType<typeof useTeamRecentGames>; /** "All Matches ›" under the list (the match archive). */ archiveHref?: string | null }) {
   const own = useTeamRecentGames(external ? "" : teamId, game);
   const pager = external ?? own;
   const sentinel = useLoadMore(pager.loadMore, pager.loaded && !pager.reachedEnd && !pager.loadingMore);
@@ -122,11 +122,16 @@ export function TeamRecentGamesList({ teamId, game, perspective, title = "Recent
           <div ref={sentinel} className="h-px" />
         </div>
       )}
+      {pager.loaded && archiveHref ? (
+        <Link href={archiveHref} className="self-start mx-4 flex items-center gap-1 t-label-lg text-violet hover:underline">All Matches<ChevronRight size={14} /></Link>
+      ) : null}
     </section>
   );
 }
 
-function RecentGameRow({ match: m, perspective }: { match: Match; perspective: RecentGamesPerspective }) {
+/** One game read from `perspective`'s side. `dateLabel` replaces the
+ *  completion date (the archive shows when the match was played). */
+export function RecentGameRow({ match: m, perspective, dateLabel }: { match: Match; perspective: RecentGamesPerspective; dateLabel?: string }) {
   const side = isTeam1(perspective, m);
   const opponent = side === true ? m.team2Name : side === false ? m.team1Name : `${m.team1Name} vs ${m.team2Name}`;
   const opponentLogo = side === true ? m.team2LogoURL : side === false ? m.team1LogoURL : null;
@@ -134,7 +139,7 @@ function RecentGameRow({ match: m, perspective }: { match: Match; perspective: R
   const theirs = side === false ? m.team1Score : m.team2Score;
   return (
     <Link href={`/match/${encodeURIComponent(m.id)}`} className="flex items-center gap-1 px-3 py-2.5 hover:bg-surface/70 transition-colors">
-      <span className="w-[52px] shrink-0 t-label-sm text-muted">{formatDate(matchResultTime(m))}</span>
+      <span className="w-[52px] shrink-0 t-label-sm text-muted">{dateLabel ?? formatDate(matchResultTime(m))}</span>
       <span className="flex-1 min-w-0 flex items-center gap-1.5">
         {side !== null ? <TeamMark name={opponent} logoURL={opponentLogo} size={20} /> : null}
         <span className="t-body-sm text-primary truncate">{opponent}</span>

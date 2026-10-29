@@ -20,6 +20,9 @@ import { InitialAvatar, LoadFailure, Page, SectionHeader, SkeletonStatRow, TeamM
 import { SkeletonPlayerDetail, SkeletonSection, SkeletonStripedTable } from "@/components/ui/skeletons";
 import { playerCacheKey, prefetchTeam, recallPlayer, rememberTeam } from "@/features/entity-cache";
 import { FollowButton } from "@/features/follow/FollowButton";
+import { SetAlertButton } from "@/features/alerts/SetAlertButton";
+import { useArchiveSwitch } from "@/features/archive/data";
+import { playerArchiveHref } from "@/features/archive/shared";
 import { UpcomingGamesList } from "@/features/teams/UpcomingGamesList";
 import { StatTable, StripedTable, type StatCell } from "./StatTable";
 import { PlayerRecentGamesList, usePlayerGames } from "./PlayerRecentGamesList";
@@ -193,12 +196,21 @@ function PlayerDetailLoaded({ id, player: initial, detailLoaded }: { id: string;
   ) : null;
 
   const upcoming = player.teamName ? <UpcomingGamesList teamId={player.teamId} teamName={player.teamName} game={game} /> : null;
-  const recent = <PlayerRecentGamesList playerId={id} game={game} pager={pager} />;
+  const archive = useArchiveSwitch();
+  const recent = <PlayerRecentGamesList playerId={id} game={game} pager={pager} archiveHref={archive.off ? null : playerArchiveHref(id)} />;
   const comments = <PlayerComments player={player} />;
 
   return (
     <Page>
-      <TitleBar title={player.name} trailing={<FollowButton targetType="player" targetId={id} compact />} />
+      <TitleBar
+        title={player.name}
+        trailing={
+          <div className="flex items-center gap-2 shrink-0">
+            {game ? <SetAlertButton targetType="player" targetId={id} targetName={player.name} game={game} /> : null}
+            <FollowButton targetType="player" targetId={id} compact />
+          </div>
+        }
+      />
       {header}
       {/* Phones: the iOS order top to bottom. Desktop: the rail (agents, upcoming) sits beside the main column. Every section renders exactly once. */}
       <div className={`pt-5 grid grid-cols-[minmax(0,1fr)] gap-5 lg:items-start ${agents || upcoming ? "lg:grid-cols-[minmax(0,1fr)_360px] lg:pr-4" : ""}`}>

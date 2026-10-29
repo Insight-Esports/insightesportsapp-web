@@ -1,37 +1,55 @@
 // PlayerComments — PlayerCommentsView.swift as a section of the player page.
 //
-// A moderated comment section. Moderation built in (required for
-// user-generated content): report a comment, block the author, delete your
-// own comment — each behind a confirmation — and a 500-char cap on new
-// comments (matches backend). The can_delete flag is a UI hint only; the
-// server re-checks ownership on every request.
+// A moderated comment section (required for user-generated content), with
+// a 500-char cap on new comments (matches backend). The can_delete flag is
+// a UI hint only; the server re-checks ownership on every request.
+//
+// Oct 28 (Moderation.swift / UserIdentity.swift): each author shows their
+// real photo in its ring box and links to their profile; the "⋯" (or a
+// right-click) offers Delete on your own, Report and Block @user on anyone
+// else's. Report opens the Report sheet; blocked people's comments
+// disappear. A comment ban (403 COMMENT_BANNED) shows its line above the
+// composer and keeps Send disabled.
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { Ban, Flag, MessagesSquare, MoreHorizontal, Send, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { MessagesSquare, Send, Trash2 } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { timeAgo } from "@/lib/format";
 import { type Player, type PlayerComment } from "@/lib/types";
-import { ConfirmDialog, EmptyState, GradientAvatar, Ledger, SectionHeader, SkeletonBar, Spinner, Toast } from "@/components/ui";
+import { ConfirmDialog, EmptyState, Ledger, SectionHeader, SkeletonBar, Spinner, Toast } from "@/components/ui";
 import { FlairAvatar, FlairName, type FlairUser } from "@/components/ui/premium-flair";
+import { useAppState } from "@/store/app-state";
+import { ActionMenu, MoreButton, Portal, useActionMenu, type MenuAction, type RowMenuProps } from "@/features/moderation/ActionMenu";
+import { BlockConfirm, personActions, unblockQuietly, type ModerationUser } from "@/features/moderation/dialogs";
+import { ReportSheet, type ReportTarget } from "@/features/moderation/ReportSheet";
+import { useBlockedIds } from "@/features/moderation/use-blocked";
+import { noteBan, useBanLine } from "@/features/moderation/ban";
 import { useLoadMore } from "./useLoadMore";
 import { normalizeCommentsPage, normalizeCreatedComment } from "./types";
 
 const PAGE_SIZE = 20;
 const MAX_CHARS = 500;
 
-type Pending = { kind: "report" | "block" | "delete"; comment: PlayerComment } | null;
+const authorOf = (c: PlayerComment): FlairUser => ({ id: c.userId || null, username: c.username, avatarURL: c.avatarURL, isPremium: c.isPremium, premiumStyle: c.premiumStyle, title: c.title });
 
 export function PlayerComments({ player }: { player: Player }) {
+  const { user } = useAppState();
   const [comments, setComments] = useState<PlayerComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [reachedEnd, setReachedEnd] = useState(false);
   const [draft, setDraft] = useState("");
   const [posting, setPosting] = useState(false);
-  const [pending, setPending] = useState<Pending>(null);
+  const [toDelete, setToDelete] = useState<PlayerComment | null>(null);
+  const [report, setReport] = useState<ReportTarget | null>(null);
+  const [toBlock, setToBlock] = useState<ModerationUser | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inFlight = useRef(false);
+  const menu = useActionMenu<PlayerComment>();
+  const blocked = useBlockedIds();
+  const banLine = useBanLine("comment");
+  const shown = comments.filter((c) => !c.userId || !blocked.has(c.userId));
 
   const fetchPage = useCallback(() => api.get(endpoints.playerComments(player.id)).then(normalizeCommentsPage), [player.id]);
 
@@ -74,7 +92,7 @@ export function PlayerComments({ player }: { player: Player }) {
   }, [error]);
 
   const trimmed = draft.trim();
-  const canSend = trimmed.length > 0 && trimmed.length <= MAX_CHARS && !posting;
+  const canSend = trimmed.length > 0 && trimmed.length <= MAX_CHARS && !posting && !banLine;
 
   async function post() {
     if (!canSend) return;
@@ -91,33 +109,37 @@ export function PlayerComments({ player }: { player: Player }) {
         if (fetched) setComments(fetched);
       }
       setDraft("");
-    } catch {
-      setError("Couldn't post your comment. Please try again.");
+    } catch (e) {
+      if (!noteBan(e)) setError("Couldn't post your comment. Please try again.");
     } finally {
       setPosting(false);
     }
   }
 
-  async function confirmPending() {
-    const p = pending;
-    setPending(null);
-    if (!p) return;
+  async function confirmDelete() {
+    const c = toDelete;
+    setToDelete(null);
+    if (!c) return;
     try {
-      if (p.kind === "report") {
-        await api.post(endpoints.reportComment(p.comment.id), {});
-      } else if (p.kind === "block") {
-        await api.post(endpoints.blockUser(p.comment.userId), {});
-        setComments((prev) => prev.filter((c) => c.userId !== p.comment.userId));
-      } else {
-        await api.delete(endpoints.deleteComment(p.comment.id));
-        setComments((prev) => prev.filter((c) => c.id !== p.comment.id));
-      }
+      await api.delete(endpoints.deleteComment(c.id));
+      setComments((prev) => prev.filter((x) => x.id !== c.id));
     } catch {
-      setError(p.kind === "report" ? "Couldn't submit the report. Please try again."
-        : p.kind === "block" ? "Couldn't block this user. Please try again."
-        : "Couldn't delete your comment. Please try again.");
+      setError("Couldn't delete your comment. Please try again.");
     }
   }
+
+  const actionsFor = (c: PlayerComment): MenuAction[] => {
+    const own = c.canDelete && (!user || !c.userId || c.userId === user.id);
+    if (own) return [{ key: "delete", label: "Delete", icon: <Trash2 size={15} />, destructive: true, onSelect: () => setToDelete(c) }];
+    if (!c.userId) return [];
+    const who = { id: c.userId, username: c.username };
+    return personActions({
+      user: who, blocked: blocked.has(c.userId), isOwn: false,
+      onReport: () => setReport({ kind: "comment", commentId: c.id, text: c.body, user: { ...authorOf(c), id: c.userId } }),
+      onBlock: () => setToBlock(who),
+      onUnblock: () => { void unblockQuietly(who.id); },
+    });
+  };
 
   function onKey(e: KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void post(); }
@@ -137,16 +159,18 @@ export function PlayerComments({ player }: { player: Player }) {
               </div>
             ))}
           </div>
-        ) : comments.length === 0 ? (
+        ) : shown.length === 0 ? (
           <EmptyState icon={<MessagesSquare />} title="No comments yet" subtitle={`Be the first to share your take on ${player.name}`} className="!mx-0" />
         ) : (
           <>
             <Ledger striped={false}>
-              {comments.map((c) => (
-                <CommentRow key={c.id} comment={c}
-                  onReport={() => setPending({ kind: "report", comment: c })}
-                  onBlock={() => setPending({ kind: "block", comment: c })}
-                  onDelete={() => setPending({ kind: "delete", comment: c })} />
+              {shown.map((c) => (
+                <CommentRow
+                  key={c.id}
+                  comment={c}
+                  rowProps={menu.rowProps(c)}
+                  more={actionsFor(c).length ? <MoreButton className="w-[30px] h-6" {...menu.triggerProps(c)} aria-expanded={menu.target?.id === c.id} /> : null}
+                />
               ))}
               {loadingMore ? <div className="flex justify-center py-3"><Spinner size={16} /></div> : null}
             </Ledger>
@@ -155,6 +179,7 @@ export function PlayerComments({ player }: { player: Player }) {
         )}
 
         {/* Compose */}
+        {banLine ? <span role="alert" className="t-label-md text-secondary pt-1">{banLine}</span> : null}
         <div className="flex items-end gap-2.5 pt-1">
           <textarea
             value={draft}
@@ -163,7 +188,8 @@ export function PlayerComments({ player }: { player: Player }) {
             placeholder="Add a comment..."
             rows={1}
             maxLength={MAX_CHARS + 50}
-            className="flex-1 resize-none rounded-[10px] bg-surface px-3 py-2.5 t-body-md text-white placeholder:text-muted outline-none border border-transparent focus:border-border-strong min-h-[42px] max-h-28"
+            disabled={!!banLine}
+            className="flex-1 resize-none rounded-[10px] bg-surface px-3 py-2.5 t-body-md text-white placeholder:text-muted outline-none border border-transparent focus:border-border-strong min-h-[42px] max-h-28 disabled:opacity-50"
           />
           <button type="button" aria-label="Send" disabled={!canSend} onClick={() => void post()} className="grid place-items-center size-[42px] rounded-[10px] bg-violet text-white disabled:opacity-50 hover:brightness-110 transition">
             {posting ? <Spinner size={16} className="border-white/40 border-t-white" /> : <Send size={16} />}
@@ -172,74 +198,35 @@ export function PlayerComments({ player }: { player: Player }) {
         {trimmed.length > MAX_CHARS ? <span className="t-label-sm text-error">{trimmed.length}/{MAX_CHARS}</span> : null}
       </div>
 
-      <ConfirmDialog
-        open={pending?.kind === "report"}
-        title="Report this comment?"
-        message="Our team will review this comment. Thanks for helping keep the community safe."
-        confirmTitle="Report" destructive onConfirm={confirmPending} onCancel={() => setPending(null)} />
-      <ConfirmDialog
-        open={pending?.kind === "block"}
-        title="Block this user?"
-        message="You won't see comments from this user anymore."
-        confirmTitle="Block" destructive onConfirm={confirmPending} onCancel={() => setPending(null)} />
-      <ConfirmDialog
-        open={pending?.kind === "delete"}
-        title="Delete your comment?"
-        message="This can't be undone."
-        confirmTitle="Delete" destructive onConfirm={confirmPending} onCancel={() => setPending(null)} />
-      <Toast message={error ? `Something went wrong — ${error}` : null} kind="error" />
+      <ActionMenu anchor={menu.anchor} actions={menu.target ? actionsFor(menu.target) : []} onClose={menu.close} label="Comment actions" />
+      <Portal>
+        <ConfirmDialog
+          open={!!toDelete}
+          title="Delete your comment?"
+          message="This can't be undone."
+          confirmTitle="Delete" destructive onConfirm={() => void confirmDelete()} onCancel={() => setToDelete(null)} />
+      </Portal>
+      <ReportSheet target={report} onClose={() => setReport(null)} />
+      <BlockConfirm user={toBlock} onCancel={() => setToBlock(null)} onBlocked={() => {}} onFailed={setError} />
+      <Portal><Toast message={error} kind="error" /></Portal>
     </section>
   );
 }
 
-function CommentRow({ comment, onReport, onBlock, onDelete }: { comment: PlayerComment; onReport: () => void; onBlock: () => void; onDelete: () => void }) {
-  const [menu, setMenu] = useState(false);
-  const author: FlairUser = { id: comment.userId || null, username: comment.username, avatarURL: comment.avatarURL, isPremium: comment.isPremium, premiumStyle: comment.premiumStyle, title: comment.title };
-  const wrap = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!menu) return;
-    const onDoc = (e: MouseEvent) => { if (!wrap.current?.contains(e.target as Node)) setMenu(false); };
-    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === "Escape") setMenu(false); };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
-  }, [menu]);
+function CommentRow({ comment, rowProps, more }: { comment: PlayerComment; rowProps: RowMenuProps; more: ReactNode }) {
+  const author = authorOf(comment);
   return (
-    <div className="ledger-row !items-start flex-col gap-2 hairline-b last:border-b-0">
+    <div {...rowProps} tabIndex={-1} className="ledger-row !items-start flex-col gap-2 hairline-b last:border-b-0 outline-none [-webkit-touch-callout:none]">
       <div className="flex items-center gap-2.5 w-full">
-        {/* Comments are a list: the flair holds still. */}
-        <FlairAvatar user={author} size={32}><GradientAvatar name={comment.username} size={32} /></FlairAvatar>
+        {/* Comments are a list: the flair holds still. Photo and name open the profile. */}
+        <FlairAvatar user={author} size={32} link />
         <span className="flex flex-col min-w-0 flex-1">
-          <FlairName user={author} className="t-label-md self-start" nameClassName="text-primary" />
+          <FlairName user={author} link className="t-label-md self-start" />
           <span className="t-label-sm text-muted">{timeAgo(comment.createdAt)}</span>
         </span>
-        <div ref={wrap} className="relative">
-          <button type="button" aria-label="More" aria-expanded={menu} onClick={() => setMenu((m) => !m)} className="grid place-items-center w-[30px] h-6 rounded text-muted hover:text-primary">
-            <MoreHorizontal size={16} />
-          </button>
-          {menu ? (
-            <div role="menu" className="absolute right-0 top-7 z-20 min-w-40 rounded-xl bg-card border border-hairline py-1 shadow-xl">
-              {comment.canDelete ? (
-                <MenuItem icon={<Trash2 size={14} />} label="Delete" destructive onClick={() => { setMenu(false); onDelete(); }} />
-              ) : (
-                <>
-                  <MenuItem icon={<Flag size={14} />} label="Report" onClick={() => { setMenu(false); onReport(); }} />
-                  <MenuItem icon={<Ban size={14} />} label="Block User" destructive onClick={() => { setMenu(false); onBlock(); }} />
-                </>
-              )}
-            </div>
-          ) : null}
-        </div>
+        {more}
       </div>
       <p className="t-body-md text-secondary whitespace-pre-wrap break-words w-full">{comment.body}</p>
     </div>
-  );
-}
-
-function MenuItem({ icon, label, destructive, onClick }: { icon: React.ReactNode; label: string; destructive?: boolean; onClick: () => void }) {
-  return (
-    <button type="button" role="menuitem" onClick={onClick} className={`flex items-center gap-2.5 w-full px-3 py-2 t-body-sm text-left hover:bg-surface/70 ${destructive ? "text-error" : "text-primary"}`}>
-      {icon}{label}
-    </button>
   );
 }

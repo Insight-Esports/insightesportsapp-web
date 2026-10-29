@@ -6,6 +6,12 @@
 // a live match for this game, composed from /matches/live + /matches/:id/stats.
 // Teams load once via /teams and filter locally. directBreakdown skips the
 // options step and opens the breakdown straight away.
+//
+// Oct 28 §11: teams get the same All / Live toggle. LIVE lists both sides of
+// every live match for the game from the shared GET /matches/live alone
+// (lib/live-matches), both sides together, in match order: crest, name,
+// LIVE, "8 – 5 · leading", "vs Opponent". A live team opens Analyze in live
+// mode (or, from Breakdowns, the live team breakdown).
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
@@ -13,7 +19,9 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronRight, PlayCircle, Search } from "lucide-react";
 import { api, endpoints, errorMessage } from "@/lib/api";
 import { clsx } from "@/lib/format";
-import { gameLabel, normalizeMatches, normalizePlayers, normalizeTeams } from "@/lib/types";
+import { gameLabel, normalizeMatches, normalizePlayers, normalizeTeams, type Match } from "@/lib/types";
+import { refreshLiveMatches, useLiveMatches } from "@/lib/live-matches";
+import { liveScoreLine } from "@/components/ui/entity-header";
 import { useReveal } from "@/lib/use-reveal";
 import { EmptyState, FilterChip, InitialAvatar, Ledger, LedgerRow, LiveBadge, SearchField, SkeletonLedger, Spinner, TeamMark } from "@/components/ui";
 import { PredictScreen } from "./PredictScreen";
@@ -29,7 +37,8 @@ export function TargetSelectScreen() {
   const game = readGame(sp);
   const targetType = readTargetType(sp);
   const directBreakdown = sp.get("breakdown") === "1";
-  const isLiveMode = targetType === "player" && sp.get("mode") === "live";
+  const isLiveMode = sp.get("mode") === "live";
+  const liveTeamMode = isLiveMode && targetType === "team";
 
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -135,6 +144,28 @@ export function TargetSelectScreen() {
     return () => { active = false; ctrl.abort(); };
   }, [game, targetType, tick]);
 
+  // ── Teams (LIVE): both sides of every live match, from the shared list ──
+  const liveList = useLiveMatches(liveTeamMode);
+  const [liveChecked, setLiveChecked] = useState(false);
+  useEffect(() => {
+    if (!liveTeamMode) return;
+    let on = true;
+    void refreshLiveMatches().then(() => { if (on) setLiveChecked(true); });
+    return () => { on = false; };
+  }, [liveTeamMode, tick]);
+  const liveTeamItems = useMemo<PredictionTargetItem[]>(() => {
+    if (!liveTeamMode) return [];
+    const side = (m: Match, first: boolean): PredictionTargetItem | null => {
+      const id = first ? m.team1Id : m.team2Id;
+      if (!id) return null;
+      return {
+        id, name: first ? m.team1Name : m.team2Name, imageURL: first ? m.team1LogoURL : m.team2LogoURL,
+        subtitle: `vs ${first ? m.team2Name : m.team1Name}`, isLive: true, liveInfo: liveScoreLine(m, id), matchId: m.id,
+      };
+    };
+    return liveList.filter((m) => m.game === game).flatMap((m) => [side(m, true), side(m, false)]).filter((x): x is PredictionTargetItem => !!x);
+  }, [liveTeamMode, liveList, game]);
+
   const teamResults = useMemo(() => {
     if (targetType !== "team" || !allTeams) return null;
     const term = query.trim().toLowerCase();
@@ -142,21 +173,23 @@ export function TargetSelectScreen() {
     return { items: matches.slice(0, TEAM_MAX_VISIBLE), truncated: matches.length > TEAM_MAX_VISIBLE };
   }, [targetType, allTeams, query]);
 
-  const items = targetType === "team" ? teamResults?.items ?? [] : results;
-  const isTruncated = targetType === "team" ? !!teamResults?.truncated : truncated;
+  const items = liveTeamMode ? liveTeamItems : targetType === "team" ? teamResults?.items ?? [] : results;
+  const isTruncated = liveTeamMode ? false : targetType === "team" ? !!teamResults?.truncated : truncated;
+  const listLoading = liveTeamMode ? !liveChecked : loading;
+  const listError = liveTeamMode ? null : error;
   const reload = () => setTick((t) => t + 1);
 
   // PredictionTargetSelectViewModel: page-one photos / crests (first 30) warm
   // before the list publishes. A refining search keeps the rows on screen
   // with the small spinner, exactly as the app does.
-  const revealed = useReveal(loading, () => items.slice(0, 30).map((i) => i.imageURL));
+  const revealed = useReveal(listLoading, () => items.slice(0, 30).map((i) => i.imageURL));
   const [displayed, setDisplayed] = useState<PredictionTargetItem[]>([]);
   useEffect(() => { if (revealed) setDisplayed(items); }, [revealed, items]);
   const rows = revealed ? items : displayed;
 
   const hrefFor = (item: PredictionTargetItem) => {
     const t: FlowTarget = { game, targetType, targetId: item.id, targetName: item.name, isLive: !!item.isLive, matchId: item.matchId ?? null };
-    if (directBreakdown) return item.isLive && targetType === "player" ? flowHref.live(t) : flowHref.breakdown(t);
+    if (directBreakdown) return item.isLive ? (targetType === "player" ? flowHref.live(t) : flowHref.liveTeam(t)) : flowHref.breakdown(t);
     return flowHref.options(t);
   };
 
@@ -165,15 +198,13 @@ export function TargetSelectScreen() {
       <div className="flex flex-col gap-5 pt-1">
         <div className="flex flex-col gap-1.5 px-4">
           <h1 className="t-headline-md text-primary">{targetType === "player" ? "Pick a player" : "Pick a team"}</h1>
-          <span className="t-body-sm text-muted">{gameLabel(game)} · {targetType === "player" ? "search or pick from live" : "search by name"}</span>
+          <span className="t-body-sm text-muted">{gameLabel(game)} · search or pick from live</span>
         </div>
 
-        {targetType === "player" ? (
-          <div className="flex items-end gap-[22px] px-4">
-            <FilterChip label="All Players" selected={!isLiveMode} onClick={() => setLiveMode(false)} />
-            <FilterChip label="Live" selected={isLiveMode} onClick={() => setLiveMode(true)} live />
-          </div>
-        ) : null}
+        <div className="flex items-end gap-[22px] px-4">
+          <FilterChip label={targetType === "player" ? "All Players" : "All Teams"} selected={!isLiveMode} onClick={() => setLiveMode(false)} />
+          <FilterChip label="Live" selected={isLiveMode} onClick={() => setLiveMode(true)} live />
+        </div>
 
         {!isLiveMode ? (
           <div className="px-4 flex items-center gap-3">
@@ -185,9 +216,9 @@ export function TargetSelectScreen() {
         <div className="px-4 flex flex-col gap-2.5">
           {!revealed && rows.length === 0 ? (
             <SkeletonLedger rows={8} avatar={34} />
-          ) : error ? (
+          ) : listError ? (
             <div className="flex flex-col items-center gap-2 py-8 px-6 text-center">
-              <span className="t-body-md text-secondary">{error}</span>
+              <span className="t-body-md text-secondary">{listError}</span>
               <button type="button" onClick={reload} className="t-label-md text-violet hover:underline">Retry</button>
             </div>
           ) : rows.length === 0 ? (

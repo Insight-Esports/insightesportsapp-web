@@ -4,7 +4,9 @@
 
 import { bool, iso, str, type Json } from "@/lib/types";
 
-export interface ReportSection { type: string | null; title: string | null; body: string | null }
+/** A team or player a section talks about (section.entities, Oct 28): a chip → their page. */
+export interface ReportEntity { type: "team" | "player"; id: string; name: string; game: string | null; imageURL: string | null }
+export interface ReportSection { type: string | null; title: string | null; body: string | null; entities: ReportEntity[] }
 export interface ReportArticle { title: string; url: string; imageURL: string | null; source: string | null; publishedAt: string | null }
 export interface WeeklyReport {
   id: string;
@@ -21,6 +23,43 @@ function parseMaybeJson(v: Json): Json {
   return v;
 }
 
+/** A missing `entities` key means []. */
+function normalizeEntities(raw: Json): ReportEntity[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ReportEntity[] = [];
+  for (const e of raw) {
+    if (!e || typeof e !== "object") continue;
+    const type = e.type === "team" || e.type === "player" ? e.type : null;
+    const id = str(e.id), name = str(e.name);
+    if (!type || !id || !name) continue;
+    out.push({ type, id, name, game: str(e.game), imageURL: str(e.image_url ?? e.imageUrl ?? e.imageURL) });
+  }
+  return out;
+}
+
+/**
+ * iOS's fallback when a section has no entities: the followed teams and
+ * players named in its text — whole word, case-insensitive, names of 2+
+ * characters, in order of first mention.
+ */
+export function entitiesNamedIn(text: string, followed: ReportEntity[]): ReportEntity[] {
+  const found: { at: number; e: ReportEntity }[] = [];
+  const seen = new Set<string>();
+  for (const e of followed) {
+    const name = e.name.trim();
+    if (name.length < 2) continue;
+    const key = `${e.type}:${e.id}`;
+    if (seen.has(key)) continue;
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(`${/^\w/.test(name) ? "(?<![\\w])" : ""}${esc}${/\w$/.test(name) ? "(?![\\w])" : ""}`, "i");
+    const at = text.search(re);
+    if (at === -1) continue;
+    seen.add(key);
+    found.push({ at, e });
+  }
+  return found.sort((a, b) => a.at - b.at).map((f) => f.e);
+}
+
 export function normalizeReport(raw: Json): WeeklyReport | null {
   if (!raw || typeof raw !== "object" || raw.id == null) return null;
   const sections = parseMaybeJson(raw.sections);
@@ -28,7 +67,7 @@ export function normalizeReport(raw: Json): WeeklyReport | null {
   return {
     id: String(raw.id),
     reportText: str(raw.report_text) ?? str(raw.reportText) ?? "",
-    sections: Array.isArray(sections) ? sections.filter((s) => s && typeof s === "object").map((s: Json) => ({ type: str(s.type), title: str(s.title), body: str(s.body) })) : [],
+    sections: Array.isArray(sections) ? sections.filter((s) => s && typeof s === "object").map((s: Json) => ({ type: str(s.type), title: str(s.title), body: str(s.body), entities: normalizeEntities(s.entities) })) : [],
     articles: Array.isArray(articles) ? articles.filter((a) => a && typeof a === "object" && a.url).map((a: Json) => ({ title: str(a.title) ?? "", url: String(a.url), imageURL: str(a.image_url) ?? str(a.imageURL), source: str(a.source), publishedAt: str(a.published_at) ?? str(a.publishedAt) })) : [],
     headline: str(raw.headline),
     generatedAt: iso(raw.generated_at) ?? iso(raw.generatedAt) ?? new Date().toISOString(),

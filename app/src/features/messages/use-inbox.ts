@@ -9,12 +9,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, endpoints } from "@/lib/api";
-import type { Json } from "@/lib/types";
+import { normalizePremiumStyle, normalizeTitle, type Json } from "@/lib/types";
 import { useAppState } from "@/store/app-state";
 import {
   blockUser, decrypt, expireStalePending, messages as fetchMessages, newestFor, noteLatest, onDM, refreshUnread, removeConversation, conversations as fetchConversations, unreadFor,
 } from "./service";
 import { forgetRow, onReadLocal, onRemovedLocal, openConversationId, rememberRows } from "./dm-local";
+import { onBlockChange } from "@/features/moderation/blocked";
 import { laterOf } from "./format-dm";
 import { isPendingId, type DMConversationRow, type DMMessage, type DMMessageRow, type SearchUser } from "./types";
 
@@ -27,7 +28,7 @@ export interface InboxThread {
 }
 export const threadUnread = (t: InboxThread) => t.row.unreadCount ?? 0;
 
-interface FollowRowLite { id?: string | null; target_id?: string | null; username?: string | null; avatar_url?: string | null }
+interface FollowRowLite { id?: string | null; target_id?: string | null; username?: string | null; avatar_url?: string | null; is_premium?: boolean | null; premium_style?: unknown; title?: string | null }
 
 export function useInbox(enabled: boolean) {
   const { refreshUnread: refreshBadges } = useAppState();
@@ -90,7 +91,7 @@ export function useInbox(enabled: boolean) {
     for (const r of rows) {
       const id = r.target_id ?? r.id;
       if (!id || !r.username || threaded.has(id) || id === me) continue;
-      out.push({ id, username: r.username, avatarURL: r.avatar_url ?? null });
+      out.push({ id, username: r.username, avatarURL: r.avatar_url ?? null, flair: { id, username: r.username, avatarURL: r.avatar_url ?? null, isPremium: !!r.is_premium, premiumStyle: normalizePremiumStyle(r.premium_style), title: r.title !== undefined ? normalizeTitle(r.title) : undefined } });
     }
     setSuggested(out);
   }, [me]);
@@ -191,6 +192,15 @@ export function useInbox(enabled: boolean) {
       onDM("localMessage", ({ conversationId, message }) => noteLocal(conversationId, message)),
       onDM("read", () => { setTimeout(() => setTick((t) => t + 1), 150); }),   // the ledger is written first; redraw after
       onDM("removed", ({ conversationId }) => drop(conversationId)),
+      // An unsent or edited message: the preview falls back / follows (re-read).
+      onDM("deleted", () => { void load(); }),
+      onDM("edited", () => { void load(); }),
+      // Blocked anywhere in the app: their thread leaves the inbox now.
+      onBlockChange((userId, blocked) => {
+        if (!blocked) return;
+        for (const t of threadsRef.current) if (t.row.otherId === userId) drop(t.row.id);
+        setSuggested((prev) => prev.filter((u) => u.id !== userId));
+      }),
       onReadLocal(({ conversationId }) => noteRead(conversationId)),
       onRemovedLocal((conversationId) => { drop(conversationId); syncUnread(); }),
     ];

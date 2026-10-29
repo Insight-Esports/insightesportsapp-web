@@ -1,7 +1,9 @@
 // messages/types.ts — the DM wire models (DirectMessages.swift), decoded
 // tolerantly like the app does: the other party may arrive flat
 // (other_username…) or nested ({other: {…}}); a missing name renders "User".
-import { bool, int, iso, str, type Json } from "@/lib/types";
+import { bool, int, iso, normalizePremiumStyle, normalizeTitle, str, type Json, type PremiumStylePiece } from "@/lib/types";
+// Type-only: the decoders below stay free of UI imports (no import cycle via app state).
+import type { FlairUser } from "@/components/ui/premium-flair";
 
 export interface DMKeyRow {
   userId: string | null;
@@ -32,6 +34,8 @@ export interface DMMessageRow {
   recipientKeyVersion: number;
   contentType: string | null;
   createdAt: string; // ISO
+  /** Set once the sender edited it (pending on the backend: dm_edit). */
+  editedAt: string | null;
 }
 export function normalizeMessageRow(raw: Json): DMMessageRow | null {
   if (!raw || typeof raw !== "object" || raw.id == null) return null;
@@ -45,6 +49,7 @@ export function normalizeMessageRow(raw: Json): DMMessageRow | null {
     recipientKeyVersion: int(raw.recipient_key_version ?? raw.recipientKeyVersion) ?? 1,
     contentType: str(raw.content_type ?? raw.contentType),
     createdAt: iso(raw.created_at ?? raw.createdAt) ?? new Date().toISOString(),
+    editedAt: iso(raw.edited_at ?? raw.editedAt),
   };
 }
 
@@ -59,6 +64,11 @@ export interface DMConversationRow {
   otherId: string;
   otherUsername: string;
   otherAvatarURL: string | null;
+  /** The other person's look (other_is_premium / other_premium_style / other_title). */
+  otherIsPremium: boolean;
+  otherPremiumStyle: PremiumStylePiece[] | null;
+  /** undefined = not on the row (podium fallback). */
+  otherTitle?: string | null;
   otherPublicKey: string | null;
   otherKeyVersion: number | null;
   lastMessage: DMMessageRow | null;
@@ -79,11 +89,19 @@ export function normalizeConversationRow(raw: Json): DMConversationRow {
     otherId: str(r.other_id ?? nested?.id ?? r.other_user_id) ?? "",
     otherUsername: str(r.other_username ?? nested?.username ?? r.username) ?? "User",
     otherAvatarURL: str(r.other_avatar_url ?? nested?.avatar_url ?? r.avatar_url),
+    otherIsPremium: bool(r.other_is_premium ?? nested?.is_premium),
+    otherPremiumStyle: normalizePremiumStyle(r.other_premium_style ?? nested?.premium_style),
+    otherTitle: r.other_title !== undefined ? normalizeTitle(r.other_title) : nested && nested.title !== undefined ? normalizeTitle(nested.title) : undefined,
     otherPublicKey: str(r.other_public_key ?? nested?.public_key),
     otherKeyVersion: int(r.other_key_version ?? nested?.key_version),
     lastMessage: normalizeMessageRow(r.last_message),
     unreadCount: int(r.unread_count),
   };
+}
+
+/** The other person as UserIdentity draws them (ring, shine, diamond, ORACLE). */
+export function otherFlair(r: DMConversationRow): FlairUser {
+  return { id: r.otherId || null, username: r.otherUsername, avatarURL: r.otherAvatarURL, isPremium: r.otherIsPremium, premiumStyle: r.otherPremiumStyle, title: r.otherTitle };
 }
 
 export interface DMThreadPage {
@@ -134,13 +152,25 @@ export interface DMMessage {
   localPreview?: string | null;
   /** Set on a pending row that the server rejected. */
   failed?: boolean;
+  /** Set once edited ("Edited" under the bubble). */
+  editedAt?: string | null;
 }
 
 export const isPendingId = (id: string) => id.startsWith("pending-");
 
-/** Search result row (/search → users[]). */
-export interface SearchUser { id: string; username: string; avatarURL: string | null }
+/** Search result row (/search → users[]), or a follow row (suggestions). */
+export interface SearchUser { id: string; username: string; avatarURL: string | null; flair?: FlairUser }
 export function normalizeSearchUser(raw: Json): SearchUser | null {
   if (!raw || raw.id == null) return null;
-  return { id: String(raw.id), username: str(raw.username) ?? "user", avatarURL: str(raw.avatar_url ?? raw.avatarURL) };
+  const id = String(raw.id);
+  const username = str(raw.username) ?? "user";
+  const avatarURL = str(raw.avatar_url ?? raw.avatarURL);
+  return {
+    id, username, avatarURL,
+    flair: { id, username, avatarURL, isPremium: bool(raw.is_premium ?? raw.isPremium), premiumStyle: normalizePremiumStyle(raw.premium_style ?? raw.premiumStyle), title: raw.title !== undefined ? normalizeTitle(raw.title) : undefined },
+  };
+}
+/** The look of a SearchUser (plain when the row carried none). */
+export function searchUserFlair(u: SearchUser): FlairUser {
+  return u.flair ?? { id: u.id, username: u.username, avatarURL: u.avatarURL, isPremium: false, premiumStyle: null };
 }

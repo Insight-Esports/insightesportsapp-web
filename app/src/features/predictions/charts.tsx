@@ -9,7 +9,11 @@
 // - Value labels up to 12 bars; beyond that labels drop and spacing tightens.
 "use client";
 
+import Link from "next/link";
+import type { ReactNode } from "react";
 import { clsx } from "@/lib/format";
+import { matchPageHref } from "@/components/ui/entity-header";
+import { GameRows } from "./links";
 import { PredictionFormat, type PredictionGame } from "./types";
 
 const BAR_MAX = 90;
@@ -65,12 +69,18 @@ export function GamesBars({ games, baseline, direction, showLabels }: { games: P
       <div className="absolute inset-x-0 bottom-0 flex items-end" style={{ gap, height }}>
         {ordered.map((g, i) => {
           const h = Math.max(2, (g.statValue / chartMax) * BAR_MAX);
-          return (
-            <div key={i} className="flex-1 min-w-0 flex flex-col items-center justify-end gap-[3px]" title={[g.matchup, g.mapName, g.agent, g.matchDate].filter(Boolean).join(" · ")}>
+          const title = [g.opponentName ? `vs ${g.opponentName}` : g.matchup, g.mapName, g.agent, g.matchDate].filter(Boolean).join(" · ");
+          const cls = "flex-1 min-w-0 flex flex-col items-center justify-end gap-[3px]";
+          const inner = (
+            <>
               {labels ? <span className="text-[9px] font-semibold text-muted leading-none whitespace-nowrap">{PredictionFormat.compact(g.statValue)}</span> : null}
               <span className="block w-full rounded-[1.5px]" style={{ height: h, background: hitColor(g.statValue, baseline, isUnder) }} />
-            </div>
+            </>
           );
+          // Each bar opens its match (the row list under the chart does too).
+          return g.matchId
+            ? <Link key={i} href={matchPageHref(g.matchId)} className={clsx(cls, "hover:opacity-80")} title={title} aria-label={title || "Open the match"}>{inner}</Link>
+            : <div key={i} className={cls} title={title}>{inner}</div>;
         })}
       </div>
       {baseline != null && baselineY != null ? (
@@ -99,16 +109,19 @@ export function GamesLegend({ baseline, direction }: { baseline: number | null; 
   );
 }
 
-/** Bordered card with bars + legend (the live screen's liveGamesCard). */
-export function GamesCard({ title, games, baseline, direction, average, className }: { title: string; games: PredictionGame[]; baseline: number | null; direction: string | null; average: number | null; className?: string }) {
+/** Bordered card with bars + legend (the live screen's liveGamesCard), then the linked game rows. */
+export function GamesCard({ title, games, baseline, direction, average, className, rows = true }: { title: ReactNode; games: PredictionGame[]; baseline: number | null; direction: string | null; average: number | null; className?: string; rows?: boolean }) {
   return (
-    <div className={clsx("flex flex-col gap-2.5 p-3.5 rounded-xl bg-card border border-border-subtle", className)}>
-      <div className="flex items-center justify-between">
-        <span className="t-label-sm text-muted uppercase">{title}</span>
-        {average != null ? <span className="t-label-sm text-violet">avg {PredictionFormat.stat(average)}</span> : null}
+    <div className={clsx("flex flex-col gap-2.5", className)}>
+      <div className="flex flex-col gap-2.5 p-3.5 rounded-xl bg-card border border-border-subtle">
+        <div className="flex items-center justify-between gap-2 min-w-0">
+          <span className="t-label-sm text-muted uppercase flex items-center gap-1.5 min-w-0">{title}</span>
+          {average != null ? <span className="t-label-sm text-violet shrink-0">avg {PredictionFormat.stat(average)}</span> : null}
+        </div>
+        <GamesBars games={games} baseline={baseline} direction={direction} showLabels />
+        <GamesLegend baseline={baseline} direction={direction} />
       </div>
-      <GamesBars games={games} baseline={baseline} direction={direction} showLabels />
-      <GamesLegend baseline={baseline} direction={direction} />
+      {rows ? <GameRows games={games} baseline={baseline} direction={direction} /> : null}
     </div>
   );
 }

@@ -10,17 +10,21 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Pencil, Ellipsis, Check, X, BarChart3, Flame, ArrowUpRight, UserPlus, Flag, Hand, ShieldAlert } from "lucide-react";
-import { api, endpoints, errorMessage } from "@/lib/api";
+import { Pencil, Check, X, BarChart3, Flame, ArrowUpRight, UserPlus, Flag } from "lucide-react";
+import { api, ApiError, endpoints } from "@/lib/api";
 import { useFetch } from "@/lib/use-fetch";
 import { useReveal } from "@/lib/use-reveal";
 import { normalizeUser, gameLabel, type Json } from "@/lib/types";
 import { clsx, formatDate } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
-import { AssetIcon, ConfirmDialog, EmptyState, GamePill, InitialAvatar, Ledger, LedgerRow, LoadFailure, Page, Spinner, Toast, ToolButton } from "@/components/ui";
+import { AssetIcon, EmptyState, GamePill, InitialAvatar, Ledger, LedgerRow, LoadFailure, Page, Spinner, Toast } from "@/components/ui";
 import { FlairAvatar, FlairName } from "@/components/ui/premium-flair";
 import { SkeletonProfile } from "@/components/ui/skeletons";
-import { NavBar } from "@/components/shell/NavBar";
+import { NavBar, useGoBack } from "@/components/shell/NavBar";
+import { ActionMenu, MoreButton, useActionMenu } from "@/features/moderation/ActionMenu";
+import { BlockConfirm, personActions, unblockQuietly, type ModerationUser } from "@/features/moderation/dialogs";
+import { ReportSheet, type ReportTarget } from "@/features/moderation/ReportSheet";
+import { useIsBlocked } from "@/features/moderation/use-blocked";
 import { startConversation, startConversationMessage } from "@/features/messages/start-conversation";
 import { FollowButton } from "./FollowButton";
 import {
@@ -30,6 +34,8 @@ import {
 } from "./types";
 
 interface Loaded {
+  /** 403: blocked either way (or otherwise hidden) — "This profile isn't available". */
+  unavailable?: boolean;
   profile: UserProfile;
   followedTeams: FollowedEntity[];
   followedPlayers: FollowedEntity[];
@@ -39,7 +45,13 @@ interface Loaded {
 
 async function loadProfile(userId: string | null, signal: AbortSignal): Promise<Loaded> {
   if (userId) {
-    const raw = await api.get<Json>(endpoints.publicProfile(userId), { signal });
+    let raw: Json;
+    try {
+      raw = await api.get<Json>(endpoints.publicProfile(userId), { signal });
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403) return { unavailable: true, profile: normalizePublicProfile({ id: userId }), followedTeams: [], followedPlayers: [], activity: [], ledger: [] };
+      throw e;
+    }
     return { profile: normalizePublicProfile(raw), followedTeams: [], followedPlayers: [], activity: [], ledger: [] };
   }
   const me = normalizeUser(await api.get<Json>(endpoints.userProfile, { signal }));
@@ -76,7 +88,9 @@ export function ProfileDetail({ userId = null }: { userId?: string | null }) {
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 2600); return () => clearTimeout(t); }, [toast]);
 
   const isOwn = data?.profile.isCurrentUser ?? ownId === null;
-  const title = isOwn ? "Profile" : "Player";
+  // "Player" only means pro players now; anyone's profile is "Profile".
+  const title = "Profile";
+  const unavailable = !!data?.unavailable;
 
   // ProfileLoadingState stays up until every profile request has answered
   // and the avatar + followed crests are warm; then the page appears whole.
@@ -86,13 +100,15 @@ export function ProfileDetail({ userId = null }: { userId?: string | null }) {
     <Page>
       <NavBar
         title={title}
-        trailing={!isOwn && data && revealed ? (
-          <ProfileMenu profile={data.profile} onDone={say} />
+        trailing={!isOwn && data && revealed && !unavailable ? (
+          <ProfileMenu profile={data.profile} onFailed={(m) => say(m, "error")} />
         ) : null}
       />
 
       {!revealed && !error ? (
         <SkeletonProfile />
+      ) : unavailable ? (
+        <div className="pt-10"><EmptyState title="This profile isn't available" /></div>
       ) : error || !data ? (
         <div className="pt-6"><LoadFailure error={error ?? "This profile can't be shown right now."} connectionProblem={connectionProblem} onRetry={reload} /></div>
       ) : (
@@ -351,55 +367,28 @@ function MessageButton({ userId, onError }: { userId: string; onError: (message:
   );
 }
 
-// ── Block / Report menu on a public profile ───────────────────────────────
-function ProfileMenu({ profile, onDone }: { profile: UserProfile; onDone: (m: string, kind?: "info" | "error" | "success") => void }) {
-  const [open, setOpen] = useState(false);
-  const [confirm, setConfirm] = useState<"block" | "report" | null>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = () => setOpen(false);
-    document.addEventListener("click", close);
-    return () => document.removeEventListener("click", close);
-  }, [open]);
-
-  async function run() {
-    const which = confirm;
-    setConfirm(null);
-    if (!which) return;
-    try {
-      if (which === "block") {
-        await api.post(endpoints.blockUser(profile.id), {});
-        onDone(`Blocked @${profile.username}`, "success");
-      } else {
-        await api.post(endpoints.reportUser(profile.id), {});
-        onDone("Thanks — our team will review this account.", "success");
-      }
-    } catch (e) {
-      onDone(errorMessage(e), "error");
-    }
-  }
-
+// ── "⋯" on someone else's profile: Report profile · Block / Unblock ──────
+// (Moderation.swift). A block — from the menu or from the Report sheet —
+// closes the profile.
+function ProfileMenu({ profile, onFailed }: { profile: UserProfile; onFailed: (message: string) => void }) {
+  const goBack = useGoBack();
+  const menu = useActionMenu<"profile">();
+  const blocked = useIsBlocked(profile.id);
+  const [report, setReport] = useState<ReportTarget | null>(null);
+  const [toBlock, setToBlock] = useState<ModerationUser | null>(null);
+  const who = { id: profile.id, username: profile.username };
+  const actions = personActions({
+    user: who, blocked, isOwn: false, reportLabel: "Report profile",
+    onReport: () => setReport({ kind: "profile", user: { id: profile.id, username: profile.username, avatarURL: profile.avatarURL, isPremium: profile.isPremium, premiumStyle: profile.premiumStyle, title: profile.title } }),
+    onBlock: () => setToBlock(who),
+    onUnblock: () => { void unblockQuietly(profile.id).then((ok) => { if (!ok) onFailed("Couldn't unblock. Check your connection and try again."); }); },
+  });
   return (
     <span className="relative">
-      <ToolButton label="More" onClick={(e) => { e.stopPropagation(); setOpen((o) => !o); }}><Ellipsis size={18} /></ToolButton>
-      {open ? (
-        <div className="absolute right-0 top-9 z-20 min-w-40 ledger py-1" role="menu">
-          <button type="button" role="menuitem" onClick={() => setConfirm("block")} className="flex items-center gap-2.5 w-full px-3 py-2.5 t-body-md text-error hover:bg-surface/60 text-left"><Hand size={15} />Block</button>
-          <button type="button" role="menuitem" onClick={() => setConfirm("report")} className="flex items-center gap-2.5 w-full px-3 py-2.5 t-body-md text-error hover:bg-surface/60 text-left"><ShieldAlert size={15} />Report</button>
-        </div>
-      ) : null}
-      <ConfirmDialog
-        open={confirm === "block"}
-        title={`Block @${profile.username}?`}
-        message="They won't be able to follow you or interact with you, and you won't see their content."
-        confirmTitle="Block" destructive onConfirm={run} onCancel={() => setConfirm(null)}
-      />
-      <ConfirmDialog
-        open={confirm === "report"}
-        title={`Report @${profile.username}?`}
-        message="Our team will review this account. Thanks for helping keep the community safe."
-        confirmTitle="Report" destructive onConfirm={run} onCancel={() => setConfirm(null)}
-      />
+      <MoreButton label="More" size={18} className="size-8 rounded-lg text-secondary hover:text-primary hover:bg-card" {...menu.triggerProps("profile")} aria-expanded={!!menu.target} />
+      <ActionMenu anchor={menu.anchor} actions={menu.target ? actions : []} onClose={menu.close} label="Profile actions" />
+      <ReportSheet target={report} onClose={({ blocked: didBlock }) => { setReport(null); if (didBlock) goBack(); }} />
+      <BlockConfirm user={toBlock} onCancel={() => setToBlock(null)} onBlocked={() => goBack()} onFailed={onFailed} />
     </span>
   );
 }

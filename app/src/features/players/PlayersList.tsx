@@ -11,7 +11,7 @@ import Link from "next/link";
 import { SlidersHorizontal, UserX, X } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { normalizePlayers, SELECTABLE_GAMES, type GameId, type Player } from "@/lib/types";
-import { clsx, fmt2 } from "@/lib/format";
+import { clsx, formatRating } from "@/lib/format";
 import { useReveal } from "@/lib/use-reveal";
 import { EmptyState, GameTabBar, InitialAvatar, Ledger, LedgerHeader, LoadFailure, Page, SearchField, SkeletonLedger, Spinner, TabHeader, TeamMark, ToolButton } from "@/components/ui";
 import { HeaderTools } from "@/components/shell/AppShell";
@@ -157,7 +157,7 @@ function ActiveFilterTag({ label, onRemove }: { label: string; onRemove: () => v
 
 /** PlayerRow: rank · avatar · name + "team • role" · rating. Wide screens add Team / Role / Nationality columns. */
 function PlayerRow({ player, rank, ratingLabel }: { player: Player; rank: number; ratingLabel: string }) {
-  const ratingValue = player.rating == null ? "N/A" : fmt2(player.rating);
+  const ratingValue = player.rating == null ? "N/A" : formatRating(player.rating, "player");
   const team = player.teamName;
   return (
     <Link

@@ -3,6 +3,8 @@
 // follow,comment}Controller.js (snake_case rows, camelCase envelopes where
 // the real backend uses them). Deterministic via h.rand(seed).
 
+import { mockSearchFeatures } from "./_search-features.mjs";
+
 // ── Seed data ─────────────────────────────────────────────────────────────
 const NAT = { NA: ["USA", "Canada"], EMEA: ["Sweden", "Denmark", "Russia", "Turkey", "France", "UK"], Europe: ["Sweden", "Denmark", "France", "Ukraine", "Bosnia"], CIS: ["Russia", "Kazakhstan", "Ukraine"], APAC: ["Japan", "Korea", "Philippines", "Thailand"], Asia: ["Mongolia", "China", "Australia"], Brazil: ["Brazil"], LCK: ["Korea"], LEC: ["Germany", "Spain", "Slovenia", "Denmark"], LCS: ["USA", "Canada"], LPL: ["China"] };
 
@@ -409,15 +411,19 @@ export function register(app, h) {
 
   // ── Search ────────────────────────────────────────────────────────────────
   app.get("/api/search", protect, (req, res) => {
-    const q = String(req.query.query ?? req.query.q ?? "").trim().toLowerCase();
+    const term = String(req.query.query ?? req.query.q ?? "").trim();
+    const q = term.toLowerCase();
     const game = req.query.game ? String(req.query.game) : null;
-    if (!q) return res.json({ players: [], teams: [], tournaments: [], users: [] });
+    // `query` echoes the term answered; `features` = the app's own screens (both 2026-10-28).
+    if (!q) return res.json({ query: term, players: [], teams: [], tournaments: [], users: [], features: [] });
     const users = [["user-2", "andrew"], ["user-3", "gavin"], ["user-4", "karlo"], ["user-6", "tenz_fan"], ["user-7", "faker_goat"]].map(([id, username]) => ({ id, username, avatar_url: null }));
     res.json({
       players: players.filter((p) => (!game || p.game === game) && (p.name.toLowerCase().includes(q) || (p.real_name || "").toLowerCase().includes(q))).slice(0, 10).map(publicPlayer),
       teams: teams.filter((t) => (!game || t.game === game) && (t.name.toLowerCase().includes(q) || t.abbreviation.toLowerCase().includes(q))).slice(0, 10).map(publicTeam),
       tournaments: GAMES.flatMap((g) => (!game || g === game ? TOURNAMENTS[g].filter((t) => t.toLowerCase().includes(q)).map((name) => ({ name, game: g })) : [])),
       users: users.filter((u) => u.username.includes(q)),
+      query: term,
+      features: mockSearchFeatures(term),
     });
   });
 

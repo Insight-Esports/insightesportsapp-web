@@ -3,7 +3,8 @@
 // whether their side leads), lobby rank, team impact, an evidence-built
 // summary (preferring the backend's /predictions/live-breakdown read).
 // Data: /matches/live → their match; /matches/:id + /matches/:id/stats on a
-// 20s refresh.
+// 20s refresh. Oct 28: the entity header (with the live match link) replaces
+// the old name + matchup line; the opponent's crest links to their page.
 "use client";
 
 import { useSearchParams } from "next/navigation";
@@ -13,14 +14,16 @@ import { api, endpoints, errorMessage } from "@/lib/api";
 import { clsx } from "@/lib/format";
 import { int, normalizeMatches, str, team1Color, team2Color, type Json, type Match } from "@/lib/types";
 import { useInterval } from "@/lib/use-fetch";
-import { LiveBadge, TeamMark } from "@/components/ui";
+import { TeamMark } from "@/components/ui";
+import { EntityHeader } from "@/components/ui/entity-header";
+import { OpponentLink } from "./links";
 import { SkeletonLiveBreakdown } from "@/components/ui/skeletons";
 import { PredictScreen } from "./PredictScreen";
 import { flowHref, readGame } from "./flow";
 import { Caps, Disclaimer, FlowError, Section, StatRow, StripedTable, type Cell } from "./shared";
 import { normalizeLiveBreakdown, normalizeStatRows, type MatchStatRow } from "./types";
 
-interface Score { playerTeamName: string; opponentName: string; playerTeamScore: number; opponentScore: number; playerTeamColor: string; opponentColor: string; playerTeamLogoURL: string | null; opponentLogoURL: string | null }
+interface Score { playerTeamName: string; opponentName: string; playerTeamScore: number; opponentScore: number; playerTeamColor: string; opponentColor: string; playerTeamLogoURL: string | null; opponentLogoURL: string | null; opponentId: string | null }
 interface Rank { killsRank: number; totalPlayers: number; secondaryLine: string | null }
 interface Metric extends Cell { highlight: boolean }
 interface LiveState {
@@ -82,6 +85,7 @@ export function LiveBreakdownScreen() {
         playerTeamScore: onTeam1 ? t1 : t2, opponentScore: onTeam1 ? t2 : t1,
         playerTeamColor: onTeam1 ? team1Color(current) : team2Color(current), opponentColor: onTeam1 ? team2Color(current) : team1Color(current),
         playerTeamLogoURL: onTeam1 ? current.team1LogoURL : current.team2LogoURL, opponentLogoURL: onTeam1 ? current.team2LogoURL : current.team1LogoURL,
+        opponentId: onTeam1 ? current.team2Id : current.team1Id,
       };
 
       // Lobby rank.
@@ -177,9 +181,8 @@ export function LiveBreakdownScreen() {
   return (
     <PredictScreen title="Live Breakdown" back={flowHref.options(t)}>
       <div className="flex flex-col gap-4 pt-2 max-w-3xl w-full mx-auto">
-        <div className="flex flex-col items-center gap-1.5 px-4 text-center">
-          <span className="flex items-center gap-2"><h1 className="t-headline-lg text-primary">{playerName}</h1><LiveBadge /></span>
-          {state?.matchLine ? <span className="t-label-md text-violet">{state.matchLine}</span> : null}
+        <div className="px-4 pt-1">
+          <EntityHeader type="player" id={playerId} name={playerName} game={game} matchId={knownMatchId} live imageURL={state?.row?.imageURL ?? null} />
         </div>
 
         <div className="px-4 flex flex-col gap-4">
@@ -239,8 +242,7 @@ function ScoreStrip({ s }: { s: Score }) {
       <span className="t-mono-md text-primary">{s.playerTeamScore}</span>
       <span className="t-mono-md text-muted">–</span>
       <span className="t-mono-md text-primary">{s.opponentScore}</span>
-      <span className="t-label-md" style={{ color: s.opponentColor }}>{s.opponentName.slice(0, 3).toUpperCase()}</span>
-      <TeamMark name={s.opponentName} logoURL={s.opponentLogoURL} color={s.opponentColor} size={22} />
+      <OpponentLink id={s.opponentId} name={s.opponentName.slice(0, 3).toUpperCase()} logoURL={s.opponentLogoURL} size={22} className="flex-row-reverse" textClassName="t-label-md text-secondary" />
       <span className="flex-1" />
       <span className={clsx("t-label-sm", s.playerTeamScore >= s.opponentScore ? "text-primary" : "text-muted")}>{stateLabel(s)}</span>
     </div>
