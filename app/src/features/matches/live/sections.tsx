@@ -18,6 +18,7 @@ import { clsx } from "@/lib/format";
 import { team1Color, team2Color, teamStub, type Match } from "@/lib/types";
 import { prefetchPlayer, prefetchTeam, rememberTeam } from "@/features/entity-cache";
 import { withFromMatch } from "../from-match";
+import { readableSides } from "@/features/tournaments/series/series-logic";
 import type { FanPoll, FanPollOption, LeagueObjective, LivePlayerStat, LiveRound } from "./types";
 
 export function teamHref(id: string | null, name: string): string {
@@ -257,7 +258,9 @@ export function LeagueObjectives({ team1Color: c1, team2Color: c2, objectives }:
 }
 
 // ── Win Probability Bar (FREE for all users) ──────────────────────────────
-export function WinProbabilityBar({ team1Color: c1, team2Color: c2, team1Name, team2Name, team1Probability }: { team1Color: string; team2Color: string; team1Name: string; team2Name: string; team1Probability: number }) {
+export function WinProbabilityBar({ team1Color, team2Color, team1Name, team2Name, team1Probability, note }: { team1Color: string; team2Color: string; team1Name: string; team2Name: string; team1Probability: number; /** Muted line under the bar (a tournament game's series effects). */ note?: string | null }) {
+  // A near-black team colour (Spirit, FURIA) reads light on the dark card.
+  const [c1, c2] = readableSides(team1Color, team2Color);
   const p1 = Math.max(0, Math.min(100, team1Probability));
   const p2 = 100 - p1;
   return (
@@ -271,6 +274,7 @@ export function WinProbabilityBar({ team1Color: c1, team2Color: c2, team1Name, t
         <span className="h-full transition-[width] duration-700 ease-in-out" style={{ width: `${p1}%`, background: c1 }} />
         <span className="h-full flex-1" style={{ background: c2 }} />
       </div>
+      {note ? <span className="t-label-sm text-muted">{note}</span> : null}
     </SectionBox>
   );
 }

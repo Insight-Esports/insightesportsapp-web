@@ -290,26 +290,64 @@ export function register(app, h) {
       disclaimer: DISCLAIMER,
     });
   });
+  // Team map profile rev 2 (backend getTeamMapProfile): the map's record +
+  // averages, `overall` (every map) and `recentGames` (the last games on the
+  // map, newest first, statValue = +/−). Seeded per team + map so the call
+  // varies: better / worse / usual, a 2-game map (too few) and Vertigo (none).
   app.get("/api/predictions/team-map/:id", h.protect, (req, res) => {
     const game = gameOf(req);
     const t = findTeam(req.params.id, game);
     if (!t) return res.status(404).json({ error: "Team not found" });
-    const map = String(req.query.map ?? "");
+    const map = String(req.query.map ?? "").trim();
+    if (!map) return res.status(400).json({ error: "map query parameter is required" });
+    const STATS = { kills: [68, 10], deaths: [62, 10], assists: [22, 6], plusMinus: [5, 8], acs: [214, 20], adr: [141, 15], headshots: [27, 6] };
+    const statsFor = (seed, spreadScale) => {
+      const out = {};
+      for (const [k, [m, s]] of Object.entries(STATS)) {
+        if (game === "League" && ["acs", "adr", "headshots"].includes(k)) continue;
+        if (game === "CS2" && k === "acs") continue;
+        out[k] = round1(m + (h.rand(seed + hash(k)) - 0.5) * s * spreadScale);
+      }
+      if (game === "League") out.gold = Math.round(61000 + (h.rand(seed + 77) - 0.5) * 8000);
+      return out;
+    };
+    const tSeed = hash(t.id);
+    const oGames = 40 + (tSeed % 30);
+    const oWins = Math.round(oGames * (0.42 + h.rand(tSeed + 3) * 0.24));
+    const overallStats = statsFor(tSeed, 0.6);
+    const overall = { gamesPlayed: oGames, wins: oWins, losses: oGames - oWins, winRate: `${Math.round((oWins / oGames) * 100)}%`, winRateValue: Math.round((oWins / oGames) * 1000) / 10, avgStats: overallStats };
     const seed = hash(t.id + map);
-    const gp = map.toLowerCase() === "vertigo" ? 0 : 6 + Math.floor(h.rand(seed) * 16);
-    const wins = Math.round(gp * (0.4 + h.rand(seed + 1) * 0.4));
-    const avgStats = {};
-    for (const [k, [m, s]] of Object.entries({ kills: [68, 10], deaths: [62, 10], assists: [22, 6], plusMinus: [5, 8], acs: [214, 20], adr: [141, 15], headshots: [27, 6] })) {
-      if (game === "League" && ["acs", "adr", "headshots"].includes(k)) continue;
-      avgStats[k] = fmt(m + (h.rand(seed + hash(k)) - 0.5) * s);
+    const gp = map.toLowerCase() === "vertigo" ? 0 : 2 + Math.floor(h.rand(seed) * 13);
+    const DISC = "For entertainment purposes only. This is not financial advice.";
+    if (gp === 0) {
+      return res.json({ team: t.name, game, map, gamesPlayed: 0, message: `No completed matches found for this team on ${map}.`, overall, recentGames: [], disclaimer: DISC });
     }
+    const target = Math.max(0.05, Math.min(0.95, oWins / oGames + (h.rand(seed + 1) - 0.5) * 0.36));
+    const wins = Math.round(gp * target);
+    const avgStats = {};
+    for (const [k, v] of Object.entries(overallStats)) {
+      const sp = k === "plusMinus" ? 6 : k === "gold" ? 3000 : Math.max(1.5, Math.abs(v) * 0.09);
+      avgStats[k] = k === "gold" ? Math.round(v + (h.rand(seed + hash(k)) - 0.5) * sp * 2) : round1(v + (h.rand(seed + hash(k)) - 0.5) * sp * 2);
+    }
+    const opponents = (TEAMS[game] ?? TEAMS.VALORANT).filter((o) => o[1] !== t.name);
+    // W/L sequence with exactly `wins` wins across gp games, newest first; the last 10 are served.
+    const seq = Array.from({ length: gp }, (_, i) => ({ i, r: h.rand(seed + i * 17 + 9) })).sort((x, y) => x.r - y.r).map((x, rank) => ({ i: x.i, w: rank < wins })).sort((x, y) => x.i - y.i);
+    const recentGames = seq.slice(0, 10).map(({ i, w }) => {
+      const o = opponents[Math.floor(h.rand(seed + i * 5 + 2) * opponents.length)];
+      const pm = Math.round((w ? 1 : -1) * (2 + h.rand(seed + i * 23) * 14));
+      return {
+        statValue: pm, matchDate: h.isoAgo((i + 1) * 4 * 864e5), mapName: map,
+        matchup: `${t.name} vs ${o[1]}`, result: w ? "win" : "loss",
+        matchId: `m-done-${((seed + i * 7) % 60) + 1}`,
+        opponentId: `team-${o[1].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}`, opponentName: o[1], opponentLogoUrl: null,
+      };
+    });
     res.json({
-      team: t.name, game, map, gamesPlayed: gp, record: gp ? `${wins}-${gp - wins}` : "0-0", wins, losses: gp - wins,
-      winRate: gp ? `${Math.round((wins / gp) * 100)}%` : null, winRateValue: gp ? Math.round((wins / gp) * 100) : null,
-      avgStats: gp ? avgStats : null,
-      message: gp ? null : `${t.name} haven't played ${map} in a tracked match yet.`,
-      accuracyWarning: gp && gp < 8 ? `Only ${gp} games on ${map} — a small sample, so treat the split as directional.` : null,
-      disclaimer: DISCLAIMER,
+      team: t.name, game, map, gamesPlayed: gp, record: `${wins}W - ${gp - wins}L`, wins, losses: gp - wins,
+      winRate: `${Math.round((wins / gp) * 100)}%`, winRateValue: Math.round((wins / gp) * 1000) / 10,
+      avgStats, overall, recentGames,
+      accuracyWarning: gp < 5 ? `Only ${gp} game(s) on ${map}, so averages may not be representative.` : null,
+      disclaimer: DISC,
     });
   });
   // Live predictor family (premium): never blocks on history.

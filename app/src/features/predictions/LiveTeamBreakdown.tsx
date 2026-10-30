@@ -1,20 +1,23 @@
-// predictions/LiveTeamBreakdown.tsx — LiveTeamBreakdown.swift (parity doc
-// 2026-10-28 §11): the current-game breakdown for a TEAM playing right now.
-// POST /predictions/live-team-breakdown {matchId, teamId}, refreshed every
-// 20 s; a 404 means the match isn't live any more. From the top:
-//   1 header (with the live match link)  2 score strip  3 how they're playing
-//   4 team line  5 series  6 roster  7 matchup  8 last 10 · kills  9 footer
+// predictions/LiveTeamBreakdown.tsx — LiveTeamBreakdown.swift (parity docs
+// 2026-10-28 §11, 2026-10-29 §4): the current-game breakdown for a TEAM
+// playing right now. POST /predictions/live-team-breakdown {matchId, teamId}
+// (rev 2), refreshed every 20 s; a 404 means the match isn't live any more.
+// From the top:
+//   1 header (its live match link carries the score — no score strip)
+//   2 how they're playing  3 team line (pace colour from rev 2's `good`)
+//   4 series  5 map profile (VALORANT/CS2)  6 roster  7 matchup
+//   8 last 10 · kills  9 footer
 "use client";
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
-import { Activity, Play } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Activity, ChevronRight, Play } from "lucide-react";
 import { api, ApiError, endpoints, errorMessage } from "@/lib/api";
 import { clsx } from "@/lib/format";
 import { liveMatchById, useLiveMatches } from "@/lib/live-matches";
 import { useInterval } from "@/lib/use-fetch";
-import { InitialAvatar, TeamMark } from "@/components/ui";
+import { InitialAvatar, SkeletonBar, TeamMark } from "@/components/ui";
 import { SkeletonLiveBreakdown } from "@/components/ui/skeletons";
 import { EntityHeader, entityHref } from "@/components/ui/entity-header";
 import { prefetchPlayer } from "@/features/entity-cache";
@@ -22,7 +25,12 @@ import { PredictScreen } from "./PredictScreen";
 import { flowHref, readGame } from "./flow";
 import { Caps, Disclaimer, FlowError, Section, StripedTable } from "./shared";
 import { GameRows, OpponentLink } from "./links";
-import { normalizeLiveTeamBreakdown, PredictionFormat, PredictionStatCatalog, type LiveTeamBreakdown, type LiveTeamMap } from "./types";
+import { MapGrid } from "./MapGrid";
+import { callTone, mapPoolWith } from "./TeamMapProfile";
+import {
+  mapCall, mapDeltaText, mapWinRateDelta, normalizeLiveTeamBreakdown, normalizeTeamMapProfile, PredictionFormat, PredictionStatCatalog,
+  type LiveTeamBreakdown, type LiveTeamMap, type TeamMapProfile,
+} from "./types";
 
 const REFRESH_MS = 20_000;
 const abbr = (name: string | null | undefined) => (name ?? "—").slice(0, 3).toUpperCase();
@@ -63,7 +71,7 @@ export function LiveTeamBreakdownScreen() {
   useInterval(() => { if (!notLive) setTick((n) => n + 1); }, REFRESH_MS);
   const missing = !matchId || !teamId;
 
-  // Which side the team is on (for context.score) — from the shared live list.
+  // Which side the team is on (for its crest) — from the shared live list.
   const list = useLiveMatches(true);
   const live = liveMatchById(list, matchId);
   const isTeam1 = live ? live.team1Id === teamId : true;
@@ -82,7 +90,7 @@ export function LiveTeamBreakdownScreen() {
           ) : error && !data ? (
             <FlowError title={error} />
           ) : data ? (
-            <Body d={data} game={game} teamName={teamName} teamLogo={live ? (isTeam1 ? live.team1LogoURL : live.team2LogoURL) : null} isTeam1={isTeam1} />
+            <Body d={data} game={game} teamId={teamId} teamName={teamName} teamLogo={live ? (isTeam1 ? live.team1LogoURL : live.team2LogoURL) : null} />
           ) : null}
         </div>
       </div>
@@ -90,13 +98,14 @@ export function LiveTeamBreakdownScreen() {
   );
 }
 
-function Body({ d, game, teamName, teamLogo, isTeam1 }: { d: LiveTeamBreakdown; game: string; teamName: string; teamLogo: string | null; isTeam1: boolean }) {
+function Body({ d, game, teamId, teamName, teamLogo }: { d: LiveTeamBreakdown; game: string; teamId: string; teamName: string; teamLogo: string | null }) {
   const name = d.team ?? teamName;
   const maps = seriesTiles(d);
   const inSeries = (d.series?.bestOf ?? 1) > 1 || (d.series?.maps.length ?? 0) > 1;
+  const showGold = game === "League" && d.players.some((p) => p.gold != null);
+  const lastHeader = game === "VALORANT" ? "ACS" : game === "CS2" ? "ADR" : showGold ? "GOLD" : null;
   return (
     <>
-      <ScoreStrip d={d} name={name} logo={teamLogo} isTeam1={isTeam1} inSeries={inSeries} />
 
       {d.summary ? (
         <div className="flex flex-col gap-2 p-3.5 rounded-xl bg-card border border-border-subtle">
@@ -112,10 +121,10 @@ function Body({ d, game, teamName, teamLogo, isTeam1 }: { d: LiveTeamBreakdown; 
             rows={d.stats.map((s) => (
               <>
                 <span className="flex-1 t-body-sm text-primary truncate">{PredictionStatCatalog.label(s.stat)}</span>
-                <span className="w-14 text-center t-mono-sm text-violet">{s.current == null ? "—" : s.stat === "plus_minus" ? signed(s.current) : PredictionFormat.stat(s.current)}</span>
-                <span className="w-14 text-center t-mono-sm text-secondary">{s.careerAverage == null ? "—" : PredictionFormat.stat(s.careerAverage)}</span>
-                <span className="w-14 text-center t-mono-sm text-primary">{s.projectedFinal == null ? "—" : PredictionFormat.stat(s.projectedFinal)}</span>
-                <PaceCell pace={s.vsPace} />
+                <span className="w-14 text-center t-mono-sm text-violet">{lineValue(s.stat, s.current, true)}</span>
+                <span className="w-14 text-center t-mono-sm text-secondary">{lineValue(s.stat, s.careerAverage)}</span>
+                <span className="w-14 text-center t-mono-sm text-primary">{lineValue(s.stat, s.projectedFinal)}</span>
+                <PaceCell pace={s.vsPace} good={s.good} />
               </>
             ))}
           />
@@ -130,13 +139,28 @@ function Body({ d, game, teamName, teamLogo, isTeam1 }: { d: LiveTeamBreakdown; 
         </Section>
       ) : null}
 
+      {game !== "League" && teamId && d.opponentId ? (
+        <MapProfileCard
+          game={game}
+          liveMap={d.context?.map ?? null}
+          teams={[{ id: d.teamId ?? teamId, name, logo: teamLogo }, { id: d.opponentId, name: d.opponentName ?? "Opponent", logo: d.opponentLogoUrl }]}
+        />
+      ) : null}
+
       {d.players.length ? (
         <Section title="ROSTER">
           <StripedTable
-            header={<><span className="flex-1">PLAYER</span><span className="w-[100px] text-center">K / D / A</span><span className="w-10 text-center">+/−</span>{game === "VALORANT" ? <span className="w-11 text-center">ACS</span> : game === "CS2" ? <span className="w-11 text-center">ADR</span> : null}</>}
+            header={<>
+              <span className="flex-1 min-w-0">PLAYER</span>
+              <span className="w-[22px] text-right">K</span>
+              <span className="w-[22px] text-right">D</span>
+              <span className="w-[22px] text-right">A</span>
+              <span className="w-[34px] text-right">+/−</span>
+              {lastHeader ? <span className="w-[44px] text-right">{lastHeader}</span> : null}
+            </>}
             rows={d.players.map((p) => (
               <>
-                <span className="flex-1 flex items-center gap-2 min-w-0">
+                <span className="flex-1 flex items-center gap-2 min-w-0 whitespace-nowrap">
                   {p.playerId ? (
                     <Link href={entityHref("player", p.playerId)} onMouseEnter={() => prefetchPlayer(p.playerId!)} className="flex items-center gap-2 min-w-0 hover:underline underline-offset-2">
                       <InitialAvatar name={p.name} imageURL={p.imageURL} size={24} />
@@ -145,11 +169,17 @@ function Body({ d, game, teamName, teamLogo, isTeam1 }: { d: LiveTeamBreakdown; 
                   ) : (
                     <span className="flex items-center gap-2 min-w-0"><InitialAvatar name={p.name} imageURL={p.imageURL} size={24} /><span className="t-body-sm text-primary truncate">{p.name}</span></span>
                   )}
-                  {game !== "CS2" && p.agent ? <span className="t-label-sm text-muted truncate shrink-[2]">{p.agent}</span> : null}
+                  {game !== "CS2" && p.agent ? <span className="t-label-sm text-muted truncate shrink-[2] min-w-0">{p.agent}</span> : null}
                 </span>
-                <span className="w-[100px] text-center t-mono-sm text-primary whitespace-nowrap">{p.kills ?? 0} / {p.deaths ?? 0} / {p.assists ?? 0}</span>
-                <span className={clsx("w-10 text-center t-mono-sm", (p.plusMinus ?? 0) > 0 ? "text-success" : (p.plusMinus ?? 0) < 0 ? "text-error" : "text-secondary")}>{p.plusMinus == null ? "—" : signed(p.plusMinus)}</span>
-                {game === "VALORANT" ? <span className="w-11 text-center t-mono-sm text-secondary">{p.acs == null ? "—" : Math.round(p.acs)}</span> : game === "CS2" ? <span className="w-11 text-center t-mono-sm text-secondary">{p.adr == null ? "—" : Math.round(p.adr)}</span> : null}
+                <span className="w-[22px] shrink-0 text-right t-mono-sm text-primary">{p.kills ?? 0}</span>
+                <span className="w-[22px] shrink-0 text-right t-mono-sm text-primary">{p.deaths ?? 0}</span>
+                <span className="w-[22px] shrink-0 text-right t-mono-sm text-primary">{p.assists ?? 0}</span>
+                <span className={clsx("w-[34px] shrink-0 text-right t-mono-sm whitespace-nowrap", (p.plusMinus ?? 0) > 0 ? "text-success" : (p.plusMinus ?? 0) < 0 ? "text-error" : "text-secondary")}>{p.plusMinus == null ? "—" : signed(p.plusMinus)}</span>
+                {lastHeader ? (
+                  <span className="w-[44px] shrink-0 text-right t-mono-sm text-secondary whitespace-nowrap">
+                    {game === "VALORANT" ? (p.acs == null ? "—" : Math.round(p.acs)) : game === "CS2" ? (p.adr == null ? "—" : Math.round(p.adr)) : p.gold == null ? "—" : compactGold(p.gold)}
+                  </span>
+                ) : null}
               </>
             ))}
           />
@@ -170,10 +200,26 @@ function Body({ d, game, teamName, teamLogo, isTeam1 }: { d: LiveTeamBreakdown; 
   );
 }
 
-function PaceCell({ pace }: { pace: string | null }) {
+/** Pace: rev 2's `good` colours it (green good news, red not — ahead on deaths is red); without it, ahead = green. */
+function PaceCell({ pace, good }: { pace: string | null; good: boolean | null }) {
   const p = (pace ?? "").toLowerCase();
-  const [label, cls] = p === "ahead" ? ["AHEAD", "text-success"] : p === "behind" ? ["BEHIND", "text-error"] : p === "on pace" || p === "on_pace" ? ["ON PACE", "text-secondary"] : ["—", "text-muted"];
+  const label = p === "ahead" ? "AHEAD" : p === "behind" ? "BEHIND" : p === "on pace" || p === "on_pace" ? "ON PACE" : "—";
+  const cls = label === "—" ? "text-muted"
+    : good === true ? "text-success" : good === false ? "text-error"
+    : label === "AHEAD" ? "text-success" : label === "BEHIND" ? "text-error" : "text-secondary";
   return <span className={clsx("w-[68px] text-right t-label-sm font-semibold tracking-[0.04em]", cls)}>{label}</span>;
+}
+
+/** "12.4k" from 12,400 (League gold). */
+function compactGold(v: number): string {
+  return Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(Math.round(v));
+}
+/** A team-line value: +/− signed (the live value), gold compact, the rest the predictor's format. */
+function lineValue(stat: string, v: number | null, live = false): string {
+  if (v == null) return "—";
+  if (stat === "gold_earned") return compactGold(v);
+  if (stat === "plus_minus" && live) return signed(v);
+  return PredictionFormat.stat(v);
 }
 
 /** "8 to 5" → [8, 5]. */
@@ -203,29 +249,6 @@ function MapTile({ m }: { m: LiveTeamMap }) {
       <span className="t-label-sm text-muted">Map {m.number}</span>
       <span className="t-mono-md text-primary">{rounds ? `${rounds[0]}–${rounds[1]}` : "—"}</span>
       <span className={clsx("t-label-sm font-semibold tracking-[0.06em]", kind === "WON" ? "text-success" : kind === "LOST" ? "text-error" : kind === "LIVE" ? "text-violet" : "text-muted")}>{kind}</span>
-    </div>
-  );
-}
-
-function ScoreStrip({ d, name, logo, isTeam1, inSeries }: { d: LiveTeamBreakdown; name: string; logo: string | null; isTeam1: boolean; inSeries: boolean }) {
-  // Round score from the running map's rounds ("8 to 5", already from the
-  // team's side), falling back to context.score.
-  const running = d.series?.maps.find((m) => { const s = (m.status ?? "").toLowerCase(); return s === "running" || s === "live"; });
-  const fromMap = parseRounds(running?.rounds ?? null);
-  const sc = d.context?.score;
-  const [mine, theirs] = fromMap ?? (sc ? (isTeam1 ? [sc.team1, sc.team2] : [sc.team2, sc.team1]) : [0, 0]);
-  const state = mine > theirs ? "Leading" : mine < theirs ? "Trailing" : "Level";
-  return (
-    <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-[10px] bg-card border border-border-subtle min-w-0">
-      <TeamMark name={name} logoURL={logo} size={22} />
-      <span className="t-label-md text-primary">{abbr(name)}</span>
-      <span className="t-mono-md text-primary">{mine}</span>
-      <span className="t-mono-md text-muted">–</span>
-      <span className="t-mono-md text-primary">{theirs}</span>
-      <OpponentLink id={d.opponentId} name={abbr(d.opponentName)} logoURL={d.opponentLogoUrl} size={22} className="flex-row-reverse" textClassName="t-label-md text-secondary" />
-      <span className="flex-1" />
-      {inSeries && d.series ? <span className="t-label-sm text-muted shrink-0">{d.series.mapsWon}–{d.series.mapsLost} maps</span> : null}
-      <span className={clsx("t-label-sm shrink-0", state === "Leading" ? "text-success" : state === "Trailing" ? "text-error" : "text-secondary")}>{state}</span>
     </div>
   );
 }
@@ -265,5 +288,87 @@ function Matchup({ d, name }: { d: LiveTeamBreakdown; name: string }) {
         ) : null}
       </div>
     </Section>
+  );
+}
+
+// MARK: - MAP PROFILE (VALORANT / CS2)
+// The grid with the live map selected and dotted, then both teams on the
+// selected map against their usual: TEAM | WIN % | RECORD | VS USUAL. Picking
+// another map pins it; picking the live map follows it again (the series
+// moving on moves the card with it). GET /predictions/team-map/:teamId once
+// per team and map; the 20 s refresh doesn't refetch.
+interface CardTeam { id: string; name: string; logo: string | null }
+type MapEntry = { state: "loading" } | { state: "error" } | { state: "ok"; r: TeamMapProfile };
+
+function MapProfileCard({ game, liveMap, teams }: { game: string; liveMap: string | null; teams: CardTeam[] }) {
+  const [pinned, setPinned] = useState<string | null>(null);
+  const selected = pinned ?? liveMap;
+  const pool = mapPoolWith(game, liveMap);
+  const [cache, setCache] = useState<Record<string, MapEntry>>({});
+  const asked = useRef(new Set<string>());
+  const keyOf = (teamId: string, map: string) => `${teamId}|${game}|${map.toLowerCase()}`;
+
+  useEffect(() => {
+    if (!selected) return;
+    for (const t of teams) {
+      const key = keyOf(t.id, selected);
+      if (asked.current.has(key)) continue;
+      asked.current.add(key);
+      setCache((c) => ({ ...c, [key]: { state: "loading" } }));
+      api.get(endpoints.teamMapProfile(t.id, game, selected))
+        .then((raw) => setCache((c) => ({ ...c, [key]: { state: "ok", r: normalizeTeamMapProfile(raw) } })))
+        .catch(() => { asked.current.delete(key); setCache((c) => ({ ...c, [key]: { state: "error" } })); });
+    }
+    // keyOf is derived from game; teams by id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, game, teams.map((t) => t.id).join("|")]);
+
+  const pick = (m: string | null) => {
+    if (!m) return;
+    setPinned(liveMap && m.toLowerCase() === liveMap.toLowerCase() ? null : m);
+  };
+
+  return (
+    <Section title="MAP PROFILE">
+      <MapGrid maps={pool} selected={selected} liveMap={liveMap} onSelect={pick} />
+      {selected ? (
+        <div className="ledger mt-1">
+          <div className="flex items-center gap-1 px-3 py-1.5 t-label-sm text-muted uppercase">
+            <span className="flex-1">TEAM</span><span className="w-[52px] text-center">WIN %</span><span className="w-[52px] text-center">RECORD</span><span className="w-[64px] text-right">VS USUAL</span><span className="w-[11px]" />
+          </div>
+          {teams.map((t, i) => (
+            <MapProfileRow key={t.id} team={t} map={selected} liveMap={liveMap} game={game} entry={cache[keyOf(t.id, selected)]} striped={i % 2 === 1} />
+          ))}
+        </div>
+      ) : (
+        <span className="t-label-md text-muted">Pick a map to see both teams on it.</span>
+      )}
+      <span className="t-label-sm text-muted">Tap a team for its full map profile. Pick another map to look ahead to the next game.</span>
+    </Section>
+  );
+}
+
+function MapProfileRow({ team, map, liveMap, game, entry, striped }: { team: CardTeam; map: string; liveMap: string | null; game: string; entry: MapEntry | undefined; striped: boolean }) {
+  const href = flowHref.mapProfile({ game, targetId: team.id, targetName: team.name }, map, { liveMap, fromLive: true });
+  const r = entry?.state === "ok" ? entry.r : null;
+  const pending = !entry || entry.state === "loading";
+  const games = r?.gamesPlayed ?? 0;
+  const delta = r ? mapWinRateDelta(games, r.winRateValue, r.overall?.winRateValue ?? null) : null;
+  const call = mapCall(games, delta);
+  const wins = r?.wins ?? 0, losses = r?.losses ?? Math.max(0, games - wins);
+  const cell = (node: ReactNode) => (pending ? <SkeletonBar width={28} height={9} className="mx-auto" /> : node);
+  return (
+    <Link href={href} className={clsx("flex items-center gap-1 px-3 py-2.5 transition-colors hover:bg-surface", striped ? "bg-surface/50" : "bg-card")}>
+      <span className="flex-1 flex items-center gap-2 min-w-0">
+        <TeamMark name={team.name} logoURL={team.logo} size={20} />
+        <span className="t-body-sm text-primary truncate">{team.name}</span>
+      </span>
+      <span className="w-[52px] text-center t-mono-sm text-violet">{cell(games > 0 && r?.winRateValue != null ? `${Math.round(r.winRateValue)}%` : "—")}</span>
+      <span className="w-[52px] text-center t-mono-sm text-primary whitespace-nowrap">{cell(r ? `${wins}–${losses}` : "—")}</span>
+      <span className={clsx("w-[64px] text-right t-mono-sm", call === "too_few_games" ? "text-muted" : callTone(call))}>
+        {pending ? <SkeletonBar width={24} height={9} className="ml-auto" /> : call === "too_few_games" || delta == null ? "—" : mapDeltaText(delta)}
+      </span>
+      <ChevronRight size={11} className="w-[11px] text-muted shrink-0" />
+    </Link>
   );
 }

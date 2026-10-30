@@ -6,12 +6,15 @@
 // skeletons in the content's own silhouette. Dark only.
 "use client";
 
-import { useEffect, useState, type ReactNode, type CSSProperties, type InputHTMLAttributes, type ButtonHTMLAttributes } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode, type CSSProperties, type InputHTMLAttributes, type ButtonHTMLAttributes } from "react";
 import { AlertTriangle, Crown, WifiOff, X, Check, Search } from "lucide-react";
 import { clsx, initials as toInitials } from "@/lib/format";
 import { gamePillLabel, gameTint, GAMES, type GameId } from "@/lib/types";
 import { withBase } from "@/lib/base-path";
 import { socketHost } from "@/lib/socket";
+import { teamLetters, teamNameKey } from "@/lib/team-letters";
+import { isResting, logoSources, markLogoFailed, markLogoLoaded, rememberedLogo, rememberLogo, shouldRetryLogo, type LogoSource } from "@/lib/logo-memory";
+import { PLATE_FILL, PLATE_INSET, plateFor } from "@/lib/logo-plate";
 
 // ── Tab header ────────────────────────────────────────────────────────────
 /** Title + violet rule under the word (TabHeaderTitle). */
@@ -157,12 +160,29 @@ export function LiveBadge({ className }: { className?: string }) {
   );
 }
 
-export function TeamBadge({ abbreviation, color = "var(--violet)", size = 36, className }: { abbreviation: string; color?: string; size?: number; className?: string }) {
+/** A team with no logo: its letters (teamLetters) on a quiet tile — surface
+ *  fill, subtle border, secondary colour at 34% of the size, semibold.
+ *  `letters={false}` draws the plain tile alone (a logo still loading). */
+export function TeamLetterTile({ name, size = 28, letters = true, className }: { name: string; size?: number; letters?: boolean; className?: string }) {
+  const text = letters ? teamLetters(name) : "";
+  // 34% of the size; a 4-letter acronym ("MOUZ") shrinks just enough to fit
+  // inside the border (iOS minimumScaleFactor) instead of clipping.
+  const fontSize = text.length >= 4 ? Math.min(size * 0.34, (size - 6) / (text.length * 0.78)) : size * 0.34;
   return (
-    <span className={clsx("inline-grid place-items-center rounded-md text-white font-medium shrink-0", className)} style={{ width: size, height: size, background: color, opacity: 0.9, fontSize: Math.max(9, size * 0.3) }}>
-      {abbreviation.slice(0, 3).toUpperCase()}
+    <span
+      className={clsx("inline-grid place-items-center shrink-0 overflow-hidden bg-surface border border-border-subtle text-secondary font-semibold leading-none whitespace-nowrap select-none", className)}
+      style={{ width: size, height: size, borderRadius: size * 0.2, fontSize }}
+      role="img" aria-label={name}
+    >
+      {text || null}
     </span>
   );
+}
+
+/** @deprecated The old team-coloured badge is gone (§5): this is now the
+ *  quiet letters tile. Use TeamMark; `color` is ignored. */
+export function TeamBadge({ abbreviation, size = 36, className }: { abbreviation: string; color?: string; size?: number; className?: string }) {
+  return <TeamLetterTile name={abbreviation} size={size} className={className} />;
 }
 
 /** Image with a graceful fallback (CachedAsyncImage + placeholder). */
@@ -191,12 +211,89 @@ export function Img({ src: rawSrc, alt, fallback, className, style, fit = "conta
   return <img src={src} alt={alt} className={className} style={{ objectFit: fit, ...style }} loading={lazy ? "lazy" : "eager"} decoding="async" onError={() => setFailed(true)} referrerPolicy="no-referrer" />;
 }
 
-/** Team mark: the real logo when there is one, the colored abbreviation otherwise. */
-export function TeamMark({ name, logoURL, color = "var(--violet)", size = 28, className }: { name: string; logoURL?: string | null; color?: string; size?: number; className?: string }) {
-  const fallback = <TeamBadge abbreviation={name} color={color} size={size} />;
+const noSubscribe = () => () => {};
+/** false while server-rendering and hydrating, true after (and on every client-side mount). */
+function useHydrated(): boolean {
+  return useSyncExternalStore(noSubscribe, () => true, () => false);
+}
+
+/**
+ * Team mark (iOS TeamMark, §5): the real logo when one loads, otherwise the
+ * team's letters on a quiet tile (TeamLetterTile); while a logo is loading,
+ * just the plain tile — no letter flash.
+ *
+ * The logo goes through lib/logo-memory's chain: the /api/img mirror → the
+ * original (when the mirror errors or answers with its 1×1 placeholder) →
+ * the last logo that loaded for this team name. A dropped connection or a
+ * 5xx gets one more try; a failed URL rests 60 s. A purely black logo on a
+ * transparent ground sits on a 92% white plate, inset 12% (lib/logo-plate).
+ *
+ * `color` is accepted for backward compatibility and ignored: the old
+ * team-coloured fallback is gone.
+ */
+export function TeamMark({ name, logoURL, size = 28, className }: { name: string; logoURL?: string | null; color?: string; size?: number; className?: string }) {
+  // Memory lives in localStorage: only read once hydrated, so the server's
+  // markup and the client's first render agree.
+  const hydrated = useHydrated();
+  return <TeamMarkView key={`${hydrated ? 1 : 0}|${logoURL ?? ""}|${teamNameKey(name)}`} name={name} logoURL={logoURL ?? null} useMemory={hydrated} size={size} className={className} />;
+}
+
+type MarkState = { chain: LogoSource[]; idx: number; retried: boolean; attempt: number; shown: boolean; plate: boolean };
+
+/** The first step at or after `from` that isn't resting; -1 when none is left. */
+function nextLive(chain: LogoSource[], from: number): number {
+  for (let i = from; i < chain.length; i += 1) if (!isResting(chain[i].src)) return i;
+  return -1;
+}
+
+function TeamMarkView({ name, logoURL, useMemory, size, className }: { name: string; logoURL: string | null; useMemory: boolean; size: number; className?: string }) {
+  const [s, setS] = useState<MarkState>(() => {
+    const chain = logoSources(logoURL, imageSrc);
+    const remembered = useMemory ? rememberedLogo(name) : null;
+    if (remembered && remembered !== logoURL) {
+      for (const step of logoSources(remembered, imageSrc, true)) if (!chain.some((c) => c.src === step.src)) chain.push(step);
+    }
+    return { chain, idx: nextLive(chain, 0), retried: false, attempt: 0, shown: false, plate: false };
+  });
+  const cur = s.idx >= 0 ? s.chain[s.idx] : null;
+  const advance = (from: number) => setS((p) => (p.idx === from ? { ...p, idx: nextLive(p.chain, from + 1), retried: false, attempt: 0, shown: false, plate: false } : p));
+
+  const onLoad = (img: HTMLImageElement) => {
+    if (!cur) return;
+    // The backend's 1×1 transparent placeholder: "no image here".
+    if (img.naturalWidth <= 1 && img.naturalHeight <= 1) { markLogoFailed(cur.src); advance(s.idx); return; }
+    markLogoLoaded(cur.src);
+    if (!cur.remembered) rememberLogo(name, cur.raw);
+    const plate = cur.readable ? plateFor(img, cur.src) : false;
+    setS((p) => ({ ...p, shown: true, plate }));
+  };
+  const onError = () => {
+    if (!cur) return;
+    const at = s.idx, src = cur.src;
+    if (s.retried) { markLogoFailed(src); advance(at); return; }
+    void shouldRetryLogo(src).then((retry) => {
+      if (retry) setS((p) => (p.idx === at && !p.retried ? { ...p, retried: true, attempt: p.attempt + 1 } : p));
+      else { markLogoFailed(src); advance(at); }
+    });
+  };
+
+  const shown = !!cur && s.shown;
+  const inset = shown && s.plate ? size * PLATE_INSET : 0;
+  if (!cur) return <TeamLetterTile name={name} size={size} className={className} />;
   return (
-    <span className={clsx("inline-grid place-items-center shrink-0 overflow-hidden", className)} style={{ width: size, height: size, borderRadius: size * 0.2 }}>
-      <Img src={logoURL} alt={name} fallback={fallback} style={{ width: size, height: size }} />
+    <span
+      className={clsx("relative inline-block shrink-0 overflow-hidden", !shown && "bg-surface border border-border-subtle", className)}
+      style={{ width: size, height: size, borderRadius: size * 0.2, background: shown && s.plate ? PLATE_FILL : undefined }}
+      role="img" aria-label={name}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        key={`${s.idx}:${s.attempt}`}
+        src={cur.src} alt="" draggable={false} decoding="async" loading="eager" referrerPolicy="no-referrer"
+        className="absolute block max-w-none"
+        style={{ left: inset, top: inset, width: size - inset * 2, height: size - inset * 2, objectFit: "contain", opacity: shown ? 1 : 0 }}
+        onLoad={(e) => onLoad(e.currentTarget)} onError={onError}
+      />
     </span>
   );
 }

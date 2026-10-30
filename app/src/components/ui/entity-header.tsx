@@ -19,6 +19,7 @@
 // `LiveMatchLink`, `entityHref`, `liveScoreLine`.
 "use client";
 
+import { teamLetters } from "@/lib/team-letters";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
@@ -41,7 +42,7 @@ export function entityHref(type: EntityType, id: string): string {
 export function matchPageHref(id: string): string {
   return `/match/${encodeURIComponent(id)}`;
 }
-const abbr = (name: string) => name.slice(0, 3).toUpperCase();
+const abbr = (name: string) => teamLetters(name) || name.slice(0, 3).toUpperCase();
 
 /** "8 – 5 · leading" — a live match's round score from one team's side. */
 export function liveScoreLine(m: Match, teamId: string | null | undefined): string | null {
@@ -132,13 +133,13 @@ export function useLiveMatchLink({ matchId, teamId }: { matchId?: string | null;
 }
 
 /** "● LIVE  T1 12 – 9 GEN  Watch ›" → the live match; "Result ›" once it has ended. */
-export function LiveMatchLink({ state, className }: { state: LiveMatchLinkState; className?: string }) {
+export function LiveMatchLink({ state, className, from }: { state: LiveMatchLinkState; className?: string; /** Back target for the match page (e.g. a series path). */ from?: string | null }) {
   const { match, ended, matchId, lastSeen } = state;
   if (!matchId || (!match && !ended)) return null;
   const m = match ?? lastSeen;
   return (
     <Link
-      href={matchPageHref(matchId)}
+      href={from ? `${matchPageHref(matchId)}?from=${encodeURIComponent(from)}` : matchPageHref(matchId)}
       onClick={() => { if (m) rememberMatch(m); }}
       className={clsx("flex items-center gap-2 px-3.5 py-2.5 hover:bg-surface/50 transition-colors min-w-0", className)}
     >
@@ -147,9 +148,11 @@ export function LiveMatchLink({ state, className }: { state: LiveMatchLinkState;
           <span className="live-dot size-[7px] rounded-full bg-live shrink-0" />
           <span className="t-label-sm font-semibold tracking-[0.08em] text-live shrink-0">LIVE</span>
           <span className="w-1 shrink-0" />
+          <TeamMark name={match.team1Name} logoURL={match.team1LogoURL} size={20} />
           <span className="t-label-md text-primary shrink-0">{abbr(match.team1Name)}</span>
           <span className="t-mono-sm text-primary shrink-0">{match.team1Score} – {match.team2Score}</span>
           <span className="t-label-md text-primary shrink-0">{abbr(match.team2Name)}</span>
+          <TeamMark name={match.team2Name} logoURL={match.team2LogoURL} size={20} />
         </>
       ) : (
         <>

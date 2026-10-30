@@ -116,6 +116,43 @@ export interface Match {
    * on real PandaScore matches — may be empty before streams are listed.
    */
   streams: MatchStream[] | null;
+  /** A tournament game (sim tournaments): its series. Absent/null otherwise. */
+  series?: MatchSeries | null;
+}
+
+/** Match row `series` (tournamentSimService.withSeries). Wins are the series' team1 / team2. */
+export interface MatchSeries {
+  id: string;
+  tournamentId: string | null;
+  tournamentName: string | null;
+  round: number | null;
+  roundName: string | null;
+  bestOf: number;
+  /** This game's number in the series (1-based). */
+  gameNumber: number | null;
+  ifNecessary: boolean;
+  team1Wins: number;
+  team2Wins: number;
+  /** upcoming | live | completed (the series, not the game). */
+  status: string | null;
+  winnerId: string | null;
+}
+export function normalizeMatchSeries(raw: Json): MatchSeries | null {
+  if (!raw || typeof raw !== "object" || raw.id == null) return null;
+  return {
+    id: String(raw.id),
+    tournamentId: str(raw.tournament_id),
+    tournamentName: str(raw.tournament_name),
+    round: int(raw.round),
+    roundName: str(raw.round_name),
+    bestOf: int(raw.best_of) ?? 3,
+    gameNumber: int(raw.game_number),
+    ifNecessary: bool(raw.if_necessary),
+    team1Wins: int(raw.team1_wins) ?? 0,
+    team2Wins: int(raw.team2_wins) ?? 0,
+    status: str(raw.status),
+    winnerId: str(raw.winner_id),
+  };
 }
 
 /** Results show/group by completion time, upcoming by start. */
@@ -209,9 +246,12 @@ export function normalizeMatch(raw: Json): Match {
     team2Id: str(raw.team2_id),
     team1InhibitorsUp: int(raw.team1_inhibitors_up),
     team2InhibitorsUp: int(raw.team2_inhibitors_up),
-    team1WinProbability: num(raw.team1_win_probability),
-    team2WinProbability: num(raw.team2_win_probability),
+    // Stored pre-match odds ship as team1_win_prob / team2_win_prob (whole
+    // percents); the long name is a fallback no endpoint sends today.
+    team1WinProbability: num(raw.team1_win_prob) ?? num(raw.team1_win_probability),
+    team2WinProbability: num(raw.team2_win_prob) ?? num(raw.team2_win_probability),
     streams: normalizeStreams(raw.streams),
+    series: normalizeMatchSeries(raw.series),
   };
 }
 export function normalizeMatches(raw: Json): Match[] {
@@ -335,6 +375,30 @@ export interface Team {
   coach: TeamCoach | null;
   seasonWins: number | null;
   seasonLosses: number | null;
+  /** GET /teams/:id → honors (sim tournaments); absent on list rows. */
+  honors?: TeamHonors | null;
+}
+/** A team's tournament record (tournamentSimService.honorsFor). */
+export interface TeamHonors {
+  titles: number;
+  finals: number;
+  semifinals: number;
+  /** Tournaments played. */
+  tournaments: number;
+  /** Newest first, up to 5. placement: champion | runner_up | semifinalist | quarterfinalist | round_of_16. */
+  recent: { tournamentId: string; tournament: string; placement: string; seed: number | null; completedAt: string | null }[];
+}
+export function normalizeTeamHonors(raw: Json): TeamHonors | null {
+  if (!raw || typeof raw !== "object") return null;
+  return {
+    titles: int(raw.titles) ?? 0,
+    finals: int(raw.finals) ?? 0,
+    semifinals: int(raw.semifinals) ?? 0,
+    tournaments: int(raw.tournaments) ?? 0,
+    recent: (Array.isArray(raw.recent) ? raw.recent : [])
+      .filter((r: Json) => r && r.tournament_id != null)
+      .map((r: Json) => ({ tournamentId: String(r.tournament_id), tournament: str(r.tournament) ?? "", placement: str(r.placement) ?? "", seed: int(r.seed), completedAt: iso(r.completed_at) })),
+  };
 }
 export function teamRecord(t: Team): string {
   return `${t.wins}-${t.losses}`;
@@ -357,6 +421,7 @@ export function normalizeTeam(raw: Json): Team {
     coach: normalizeCoach(raw.coach),
     seasonWins: int(raw.season_wins),
     seasonLosses: int(raw.season_losses),
+    honors: normalizeTeamHonors(raw.honors),
   };
 }
 export function normalizeTeams(raw: Json): Team[] {

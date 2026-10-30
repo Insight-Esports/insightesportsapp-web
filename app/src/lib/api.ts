@@ -338,4 +338,12 @@ export const endpoints = {
     `/alerts/context?targetType=${q(targetType)}&targetId=${q(targetId)}${matchId ? `&matchId=${q(matchId)}` : ""}`,
   // Analytics (Events.swift): batched, fire-and-forget, always 202
   events: "/events",
+  // Tournament series (sim tournaments): one series with its games, and its odds
+  tournamentSeries: (id: string) => `/tournaments/series/${p(id)}`,
+  tournamentSeriesOdds: (id: string) => `/tournaments/series/${p(id)}/odds`,
+  // Sim tournaments: the active one per game (or the last while the break
+  // runs; 404 NO_TOURNAMENT before the first), past editions, a bracket.
+  tournamentCurrent: (game: string) => `/tournaments/sim/current?game=${q(game)}`,
+  tournamentsCompleted: (game: string) => `/tournaments/completed?game=${q(game)}&sim=true`,
+  tournamentBracket: (id: string) => `/tournaments/${p(id)}/bracket`,
 };

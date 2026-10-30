@@ -180,7 +180,7 @@ function TeamRow({ team, rank }: { team: Team; rank: number | null }) {
     >
       <span className="t-mono-md text-muted min-w-[30px] text-center shrink-0">{rank != null ? `#${rank}` : "—"}</span>
       <span className="flex items-center gap-3.5 md:gap-3 min-w-0 flex-1">
-        <TeamMark name={team.abbreviation} logoURL={team.logoURL} color="var(--surface)" size={44} />
+        <TeamMark name={team.name} logoURL={team.logoURL} size={44} />
         <span className="flex flex-col gap-1 min-w-0">
           <span className="t-headline-sm text-primary truncate">{team.name}</span>
           <span className="flex items-center gap-1.5 md:hidden">

@@ -1,29 +1,26 @@
 // predictions/LiveBreakdown.tsx — LivePlayerBreakdownView: the current-game
-// breakdown for a player who is LIVE right now. Match context (score +
-// whether their side leads), lobby rank, team impact, an evidence-built
-// summary (preferring the backend's /predictions/live-breakdown read).
+// breakdown for a player who is LIVE right now. Lobby rank, team impact,
+// an evidence-built summary (preferring the backend's /predictions/live-breakdown read).
 // Data: /matches/live → their match; /matches/:id + /matches/:id/stats on a
 // 20s refresh. Oct 28: the entity header (with the live match link) replaces
-// the old name + matchup line; the opponent's crest links to their page.
+// the old name + matchup line. Oct 29 §4: no score strip (the header's live
+// match link carries the score); the score still feeds the read.
 "use client";
 
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, Clock, Play } from "lucide-react";
 import { api, endpoints, errorMessage } from "@/lib/api";
-import { clsx } from "@/lib/format";
-import { int, normalizeMatches, str, team1Color, team2Color, type Json, type Match } from "@/lib/types";
+import { int, normalizeMatches, str, type Json, type Match } from "@/lib/types";
 import { useInterval } from "@/lib/use-fetch";
-import { TeamMark } from "@/components/ui";
 import { EntityHeader } from "@/components/ui/entity-header";
-import { OpponentLink } from "./links";
 import { SkeletonLiveBreakdown } from "@/components/ui/skeletons";
 import { PredictScreen } from "./PredictScreen";
 import { flowHref, readGame } from "./flow";
 import { Caps, Disclaimer, FlowError, Section, StatRow, StripedTable, type Cell } from "./shared";
 import { normalizeLiveBreakdown, normalizeStatRows, type MatchStatRow } from "./types";
 
-interface Score { playerTeamName: string; opponentName: string; playerTeamScore: number; opponentScore: number; playerTeamColor: string; opponentColor: string; playerTeamLogoURL: string | null; opponentLogoURL: string | null; opponentId: string | null }
+interface Score { playerTeamName: string; opponentName: string; playerTeamScore: number; opponentScore: number }
 interface Rank { killsRank: number; totalPlayers: number; secondaryLine: string | null }
 interface Metric extends Cell { highlight: boolean }
 interface LiveState {
@@ -31,7 +28,6 @@ interface LiveState {
   impact: [string, string][]; metrics: Metric[]; summary: string; historyWarning: string | null; disclaimer: string | null;
 }
 
-const stateLabel = (s: Score) => (s.playerTeamScore > s.opponentScore ? "Their team leads" : s.playerTeamScore < s.opponentScore ? "Their team trails" : "All tied");
 const goldText = (v: number) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v));
 const plusMinus = (v: number) => (v > 0 ? `+${v}` : String(v));
 
@@ -77,15 +73,12 @@ export function LiveBreakdownScreen() {
       const kp = game === "League" && teamKills > 0 ? ((kills + assists) / teamKills) * 100 : null;
       const gpm = game === "League" && row.goldEarned != null && gameTimeSeconds > 60 ? Math.trunc(row.goldEarned / (gameTimeSeconds / 60)) : null;
 
-      // Score strip from the player's perspective.
+      // The score from the player's side (feeds the read).
       const onTeam1 = row.teamId === (str(detail?.team1_id ?? detail?.team1Id) ?? current.team1Id);
       const t1 = int(detail?.team1_score ?? detail?.team1Score) ?? current.team1Score, t2 = int(detail?.team2_score ?? detail?.team2Score) ?? current.team2Score;
       const score: Score = {
         playerTeamName: onTeam1 ? current.team1Name : current.team2Name, opponentName: onTeam1 ? current.team2Name : current.team1Name,
         playerTeamScore: onTeam1 ? t1 : t2, opponentScore: onTeam1 ? t2 : t1,
-        playerTeamColor: onTeam1 ? team1Color(current) : team2Color(current), opponentColor: onTeam1 ? team2Color(current) : team1Color(current),
-        playerTeamLogoURL: onTeam1 ? current.team1LogoURL : current.team2LogoURL, opponentLogoURL: onTeam1 ? current.team2LogoURL : current.team1LogoURL,
-        opponentId: onTeam1 ? current.team2Id : current.team1Id,
       };
 
       // Lobby rank.
@@ -192,7 +185,6 @@ export function LiveBreakdownScreen() {
             <FlowError title={error} />
           ) : state?.row ? (
             <>
-              {state.score ? <ScoreStrip s={state.score} /> : null}
               <div className="flex flex-col gap-2 p-3.5 rounded-xl bg-card border border-border-subtle">
                 <span className="flex items-center gap-1.5"><Activity size={14} className="text-violet" /><Caps>HOW THEY&apos;RE PLAYING</Caps></span>
                 <span className="t-body-md text-secondary">{state.summary}</span>
@@ -233,18 +225,3 @@ export function LiveBreakdownScreen() {
 
 const toCell = (m: Metric): Cell => ({ label: m.label, value: m.value, marquee: m.highlight });
 function chunk<T>(arr: T[], n: number): T[][] { const out: T[][] = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; }
-
-function ScoreStrip({ s }: { s: Score }) {
-  return (
-    <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-[10px] bg-card border border-border-subtle">
-      <TeamMark name={s.playerTeamName} logoURL={s.playerTeamLogoURL} color={s.playerTeamColor} size={22} />
-      <span className="t-label-md" style={{ color: s.playerTeamColor }}>{s.playerTeamName.slice(0, 3).toUpperCase()}</span>
-      <span className="t-mono-md text-primary">{s.playerTeamScore}</span>
-      <span className="t-mono-md text-muted">–</span>
-      <span className="t-mono-md text-primary">{s.opponentScore}</span>
-      <OpponentLink id={s.opponentId} name={s.opponentName.slice(0, 3).toUpperCase()} logoURL={s.opponentLogoURL} size={22} className="flex-row-reverse" textClassName="t-label-md text-secondary" />
-      <span className="flex-1" />
-      <span className={clsx("t-label-sm", s.playerTeamScore >= s.opponentScore ? "text-primary" : "text-muted")}>{stateLabel(s)}</span>
-    </div>
-  );
-}

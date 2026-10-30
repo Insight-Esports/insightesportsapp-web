@@ -11,7 +11,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowUpRight, Clock, Image as ImageIcon, Link2, MessageSquareText, Music2, Play, SquarePlay, Tv, Video, X, RotateCw } from "lucide-react";
+import { ArrowUpRight, Clock, Download, Image as ImageIcon, Link2, MessageSquareText, Music2, Play, SquarePlay, Tv, Video, X, RotateCw } from "lucide-react";
 import { clsx } from "@/lib/format";
 import { imageSrc, Spinner } from "@/components/ui";
 import { FlairAvatar, ringBox, type FlairUser } from "@/components/ui/premium-flair";
@@ -283,6 +283,36 @@ export function MediaBubble({ message, onOpen, onRetry }: {
 }
 
 // ── Full-screen viewer ────────────────────────────────────────────────────
+const EXTENSIONS: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "image/heic": "heic", "video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm" };
+
+/** "Insight photo 2026-10-29 at 21.04.17.jpg" — the message's own time, the blob's type. */
+function mediaFileName(message: DMMessage, kind: DMMedia["kind"], type: string): string {
+  const d = new Date(message.createdAt);
+  const at = Number.isNaN(d.getTime()) ? new Date() : d;
+  const p = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${at.getFullYear()}-${p(at.getMonth() + 1)}-${p(at.getDate())} at ${p(at.getHours())}.${p(at.getMinutes())}.${p(at.getSeconds())}`;
+  const ext = EXTENSIONS[type.toLowerCase()] ?? (kind === "image" ? "jpg" : "mp4");
+  return `Insight ${kind === "image" ? "photo" : "video"} ${stamp}.${ext}`;
+}
+
+/** Saves the decrypted bytes behind an object URL: an anchor download of a fresh object URL. */
+async function saveDecrypted(src: string, filename: string): Promise<void> {
+  const r = await fetch(src);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const blob = await r.blob();
+  if (!blob.size) throw new Error("empty");
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
 export function MediaViewer({ message, onClose }: { message: DMMessage; onClose: () => void }) {
   const media = message.media;
   const image = useMediaImage(message);
@@ -294,6 +324,27 @@ export function MediaViewer({ message, onClose }: { message: DMMessage; onClose:
   waitingRef.current = waiting;
   const [attempt, setAttempt] = useState(0);
   const [zoomed, setZoomed] = useState(false);
+  // Download: the decrypted photo or video; "Couldn't save" when it fails.
+  const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(0);
+  useEffect(() => {
+    if (!saveFailed) return;
+    const t = setTimeout(() => setSaveFailed(0), 1800);
+    return () => clearTimeout(t);
+  }, [saveFailed]);
+  const saveSrc = media?.kind === "video" ? video : image.kind === "ready" ? image.src : null;
+  const download = async () => {
+    if (!media || !saveSrc || saving) return;
+    setSaving(true);
+    try {
+      const type = media.kind === "video" ? (media.mime || "video/mp4") : "image/jpeg";
+      await saveDecrypted(saveSrc, mediaFileName(message, media.kind, type));
+    } catch {
+      setSaveFailed((n) => n + 1);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -354,7 +405,21 @@ export function MediaViewer({ message, onClose }: { message: DMMessage; onClose:
       ) : (
         <span className="t-body-md text-muted">{image.kind === "expired" ? "Photo expired" : "Photo unavailable"}</span>
       )}
+      {saveSrc ? (
+        <button
+          type="button" onClick={(e) => { e.stopPropagation(); void download(); }} disabled={saving}
+          aria-label="Download" title="Download"
+          className="absolute top-4 right-[60px] grid place-items-center size-9 rounded-full bg-white/15 text-white hover:bg-white/25 disabled:opacity-50"
+        >
+          {saving ? <Spinner size={14} className="border-white/40 border-t-white" /> : <Download size={16} strokeWidth={2.5} />}
+        </button>
+      ) : null}
       <button type="button" onClick={onClose} aria-label="Close" className="absolute top-4 right-4 grid place-items-center size-9 rounded-full bg-white/15 text-white hover:bg-white/25"><X size={16} strokeWidth={2.5} /></button>
+      {saveFailed ? (
+        <div key={saveFailed} role="alert" className="absolute bottom-[max(32px,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 pointer-events-none">
+          <div className="dm-toast-in px-4 py-2.5 rounded-full bg-surface border border-border-subtle shadow-[0_8px_28px_rgb(0_0_0/0.5)] t-label-md text-primary whitespace-nowrap">Couldn&apos;t save</div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -12,7 +12,7 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { EmptyState, Img, LoadFailure, Page, SkeletonBar, SkeletonLedger, TeamMark } from "@/components/ui";
+import { EmptyState, LoadFailure, Page, SkeletonBar, SkeletonLedger, TeamMark } from "@/components/ui";
 import { NavBar } from "@/components/shell/NavBar";
 import { api, endpoints } from "@/lib/api";
 import { clsx, fmt1, fmt2 } from "@/lib/format";
@@ -186,7 +186,7 @@ function PlayerArchiveRow({ match: m, game, showChar }: { match: ArchiveMatch; g
     <Link href={matchHref(m.id)} className="flex items-center gap-1 px-3 py-2.5 hover:bg-surface/70 transition-colors">
       <span className="w-10 shrink-0 t-label-sm text-muted">{formatUtc(m.playedAt, { month: "short", day: "numeric" })}</span>
       <span className="flex-1 min-w-0 flex items-center gap-1.5">
-        {onTeam1 !== null ? (opponentLogo ? <Img src={opponentLogo} alt="" fallback={<TeamMark name={opponent} size={20} />} className="size-5 rounded" /> : <TeamMark name={opponent} size={20} />) : null}
+        {onTeam1 !== null ? <TeamMark name={opponent} logoURL={opponentLogo} size={20} /> : null}
         <span className="t-body-sm text-primary truncate">{opponent}</span>
       </span>
       <span className={clsx("w-6 shrink-0 text-center t-label-md", won === null ? "text-muted" : won ? "text-success" : "text-error")}>{won === null ? "—" : won ? "W" : "L"}</span>

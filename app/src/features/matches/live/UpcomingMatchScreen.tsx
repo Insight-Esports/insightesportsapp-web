@@ -3,11 +3,17 @@
 // both rosters with a player to watch, recent form, map pools and any
 // previous meetings — all free-tier data. One locked row points premium
 // at the full head-to-head breakdown.
+//
+// A tournament game (match.series): one game ahead — until the game before
+// it is over only the hero, a "Preview opens after Game 2" card and Match
+// Info show, and nothing else loads. Once open: the series context line,
+// Round / Format / Game / Series rows, "GAME 2" on the odds, the series
+// effects, the chance to win the series and the disclaimer.
 "use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowLeftRight, ChevronRight, Target } from "lucide-react";
+import { ArrowLeftRight, ChevronRight, Clock, Target } from "lucide-react";
 import { AssetIcon, InitialAvatar, Page, SectionHeader, SplitLayout, TeamMark } from "@/components/ui";
 import { api, endpoints } from "@/lib/api";
 import { clsx, formatDate, formatTime, relativeDayLabel } from "@/lib/format";
@@ -21,6 +27,9 @@ import { MatchCommentsSection } from "./MatchComments";
 import { MatchMainSkeleton, MatchRailSkeleton } from "./MatchSkeleton";
 import { playerHref, teamHref } from "./sections";
 import { withFromMatch } from "../from-match";
+import { fetchSeriesOdds, type SeriesOdds } from "@/features/tournaments/series/series-data";
+import { SeriesWinLine } from "@/features/tournaments/series/SeriesOddsCard";
+import { adjustmentsSentence, gameOfText, isGameOpen, previewOpensAfter, readableSides, seriesLeadText } from "@/features/tournaments/series/series-logic";
 
 interface PreviewState {
   loading: boolean;
@@ -37,6 +46,8 @@ interface PreviewState {
   winProb2: number | null;
   team1Id: string;
   team2Id: string;
+  /** GET /tournaments/series/:id/odds (tournament games only). */
+  seriesOdds: SeriesOdds | null;
 }
 
 function ordered(roster: Player[]): Player[] {
@@ -57,10 +68,12 @@ function form(ms: Match[], id: string, name: string): [boolean[], string] {
   return [outcomes, `${w}–${outcomes.length - w}`];
 }
 
-function usePreview(match: Match): PreviewState {
-  const [st, setSt] = useState<PreviewState>({ loading: true, team1Roster: [], team2Roster: [], team1Form: [], team2Form: [], team1Record: "", team2Record: "", meetings: [], team1Rank: null, team2Rank: null, winProb1: null, winProb2: null, team1Id: match.team1Id ?? "", team2Id: match.team2Id ?? "" });
+function usePreview(match: Match, open: boolean): PreviewState {
+  const [st, setSt] = useState<PreviewState>({ loading: open, team1Roster: [], team2Roster: [], team1Form: [], team2Form: [], team1Record: "", team2Record: "", meetings: [], team1Rank: null, team2Rank: null, winProb1: null, winProb2: null, team1Id: match.team1Id ?? "", team2Id: match.team2Id ?? "", seriesOdds: null });
 
   useEffect(() => {
+    // A locked tournament game loads nothing.
+    if (!open) return;
     let active = true;
     (async () => {
       const safe = async <T,>(p: Promise<T>): Promise<T | null> => { try { return await p; } catch { return null; } };
@@ -77,12 +90,13 @@ function usePreview(match: Match): PreviewState {
 
       // Phase 2 — everything else, in parallel, on resolved ids.
       const storedOdds = match.team1WinProbability !== null && match.team2WinProbability !== null && match.team1WinProbability + match.team2WinProbability > 0;
-      const [r1, r2, m1, m2, h2h] = await Promise.all([
+      const [r1, r2, m1, m2, h2h, seriesOdds] = await Promise.all([
         t1 ? safe(api.get<Json>(endpoints.teamPlayers(t1)).then(normalizePlayers)) : null,
         t2 ? safe(api.get<Json>(endpoints.teamPlayers(t2)).then(normalizePlayers)) : null,
         t1 ? safe(api.get<Json>(endpoints.completedMatches(match.game, 50, 0, t1)).then(normalizeMatches)) : null,
         t2 ? safe(api.get<Json>(endpoints.completedMatches(match.game, 50, 0, t2)).then(normalizeMatches)) : null,
         !t1 || !t2 || storedOdds ? null : safe(api.post<Json>(endpoints.headToHead, { game: match.game, team1Id: t1, team2Id: t2 })),
+        match.series ? fetchSeriesOdds(match.series.id) : null,
       ]);
       if (!active) return;
       const matches1 = (m1 ?? []).filter((m) => m.status === "completed");
@@ -114,11 +128,11 @@ function usePreview(match: Match): PreviewState {
         team1Roster: ordered(r1 ?? []), team2Roster: ordered(r2 ?? []),
         team1Form: f1, team2Form: f2, team1Record: rec1, team2Record: rec2,
         meetings, team1Rank: found1?.ranking ?? null, team2Rank: found2?.ranking ?? null,
-        winProb1, winProb2, team1Id: t1, team2Id: t2,
+        winProb1, winProb2, team1Id: t1, team2Id: t2, seriesOdds,
       });
     })();
     return () => { active = false; };
-  }, [match]);
+  }, [match, open]);
   return st;
 }
 
@@ -137,9 +151,11 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function UpcomingMatchScreen({ match }: { match: Match }) {
+export function UpcomingMatchScreen({ match, back }: { match: Match; /** A series page (`?from=`): Back returns there. */ back?: string }) {
   const { isPremium } = useAppState();
-  const vm = usePreview(match);
+  const series = match.series ?? null;
+  const open = isGameOpen(match);
+  const vm = usePreview(match, open);
   // "Everything loads, THEN everything appears" — plus the crests and the
   // rosters' faces, so the hero and both line-ups arrive complete.
   const revealed = useReveal(vm.loading, () => [
@@ -150,7 +166,21 @@ export function UpcomingMatchScreen({ match }: { match: Match }) {
   const c1 = team1Color(match);
   const c2 = team2Color(match);
   const kickoff = kickoffLabel(match.scheduledAt);
-  const context = [match.game.toUpperCase(), ...(match.tournamentName ? [match.tournamentName.toUpperCase()] : []), `BO${match.bestOf}`].join("  ·  ");
+  const tournamentName = match.tournamentName ?? series?.tournamentName ?? null;
+  // Series format: "VALORANT · INSIGHT VALORANT CUP 3 · BO3" (the series' best of).
+  const context = [match.game.toUpperCase(), ...(tournamentName ? [tournamentName.toUpperCase()] : []), `BO${series ? series.bestOf : match.bestOf}`].join("  ·  ");
+  // Series odds sides → this match's sides (flip when the match seats the series' team2 first).
+  const so = vm.seriesOdds && vm.seriesOdds.available && !vm.seriesOdds.decided ? vm.seriesOdds : null;
+  const flipped = !!so && !!so.team1Id && match.team2Id === so.team1Id;
+  const seriesT1Name = flipped ? match.team2Name : match.team1Name;
+  const seriesT2Name = flipped ? match.team1Name : match.team2Name;
+  const adjust = so && series && so.nextGame && so.nextGame.number === series.gameNumber ? adjustmentsSentence(so.nextGame.adjustments, seriesT1Name, seriesT2Name) : null;
+  const series1 = so ? (flipped ? so.team2Series : so.team1Series) : null;
+  const series2 = so ? (flipped ? so.team1Series : so.team2Series) : null;
+  const disclaimer = vm.seriesOdds?.disclaimer ?? null;
+  const hasGameOdds = vm.winProb1 !== null && vm.winProb2 !== null && vm.winProb1 + vm.winProb2 > 0;
+  // Odds colours that read on the dark card (a near-black team colour shows light).
+  const [o1, o2] = readableSides(c1, c2);
   const star1 = vm.team1Roster.reduce<Player | null>((b, p) => (!b || (p.rating ?? 0) > (b.rating ?? 0) ? p : b), null);
   const star2 = vm.team2Roster.reduce<Player | null>((b, p) => (!b || (p.rating ?? 0) > (b.rating ?? 0) ? p : b), null);
 
@@ -204,52 +234,80 @@ export function UpcomingMatchScreen({ match }: { match: Match }) {
   const q = (v: string) => encodeURIComponent(v);
   const iconBox = (node: React.ReactNode) => <span className="grid place-items-center size-[30px] rounded-lg bg-surface text-violet shrink-0">{node}</span>;
 
+  const lead = series ? seriesLeadText(series, match.team1Name, match.team2Name) : null;
+  const matchInfo = (
+    <div className="flex flex-col gap-2.5">
+      <SectionHeader title="Match Info" className="!px-0" />
+      <div className="ledger [&>*+*]:border-t [&>*+*]:border-border-subtle">
+        {series ? (
+          <>
+            {series.roundName ? <InfoRow label="Round" value={series.roundName} /> : null}
+            <InfoRow label="Format" value={`Best of ${series.bestOf}`} />
+            <InfoRow label="Game" value={gameOfText(series)} />
+            {lead ? <InfoRow label="Series" value={lead} /> : null}
+          </>
+        ) : (
+          <>
+            <InfoRow label="Format" value={`Best of ${match.bestOf}`} />
+            {match.stage ? <InfoRow label="Stage" value={match.stage} /> : null}
+            {match.mapName ? <InfoRow label="Map" value={match.mapName} /> : null}
+          </>
+        )}
+        <InfoRow label="Kickoff" value={kickoff} />
+      </div>
+    </div>
+  );
+
+  const hero = (
+    <div className="flex flex-col gap-3.5">
+      <div className="flex items-start">
+        {teamColumn(match.team1Name, match.team1LogoURL, vm.team1Id, vm.team1Rank)}
+        <div className="w-14 flex flex-col items-center gap-1.5 pt-[26px]">
+          <span className="font-rounded text-[13px] font-black text-muted">VS</span>
+          <span className="w-[22px] h-0.5 bg-violet" />
+        </div>
+        {teamColumn(match.team2Name, match.team2LogoURL, vm.team2Id, vm.team2Rank)}
+      </div>
+      <div className="flex flex-col items-center gap-1">
+        <span className="t-label-md text-primary">{kickoff}</span>
+        <span className="text-[10px] font-semibold tracking-[1.2px] text-muted text-center">{context}</span>
+      </div>
+      {open ? <FollowTeamsRow match={match} team1Id={vm.team1Id || null} team2Id={vm.team2Id || null} /> : null}
+    </div>
+  );
+
   const main = (
     <div className="flex flex-col gap-6 pt-2">
-      {/* Hero */}
-      <div className="flex flex-col gap-3.5">
-        <div className="flex items-start">
-          {teamColumn(match.team1Name, match.team1LogoURL, vm.team1Id, vm.team1Rank)}
-          <div className="w-14 flex flex-col items-center gap-1.5 pt-[26px]">
-            <span className="font-rounded text-[13px] font-black text-muted">VS</span>
-            <span className="w-[22px] h-0.5 bg-violet" />
-          </div>
-          {teamColumn(match.team2Name, match.team2LogoURL, vm.team2Id, vm.team2Rank)}
-        </div>
-        <div className="flex flex-col items-center gap-1">
-          <span className="t-label-md text-primary">{kickoff}</span>
-          <span className="text-[10px] font-semibold tracking-[1.2px] text-muted text-center">{context}</span>
-        </div>
-        <FollowTeamsRow match={match} team1Id={vm.team1Id || null} team2Id={vm.team2Id || null} />
-      </div>
+      {hero}
 
-      {/* Odds */}
-      {vm.winProb1 !== null && vm.winProb2 !== null && vm.winProb1 + vm.winProb2 > 0 ? (
+      {/* Odds (a tournament game: "GAME 2" between the numbers, then the series) */}
+      {hasGameOdds || so ? (
         <div className="flex flex-col gap-2.5">
           <SectionHeader title="Win Probability" className="!px-0" />
-          <div className="flex flex-col gap-2">
-            <div className="flex justify-between">
-              <span className="t-mono-md" style={{ color: c1 }}>{Math.round(vm.winProb1)}%</span>
-              <span className="t-mono-md" style={{ color: c2 }}>{Math.round(vm.winProb2)}%</span>
+          {hasGameOdds ? (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="t-mono-md" style={{ color: o1 }}>{Math.round(vm.winProb1!)}%</span>
+                {series?.gameNumber != null ? <span className="text-[11px] font-semibold tracking-[0.14em] text-muted">GAME {series.gameNumber}</span> : null}
+                <span className="t-mono-md" style={{ color: o2 }}>{Math.round(vm.winProb2!)}%</span>
+              </div>
+              <div className="flex h-2.5 rounded-[5px] overflow-hidden" role="meter" aria-valuenow={Math.round(vm.winProb1!)} aria-valuemin={0} aria-valuemax={100} aria-label={`${match.team1Name} win probability`}>
+                <span style={{ width: `${(vm.winProb1! / Math.max(1, vm.winProb1! + vm.winProb2!)) * 100}%`, background: o1 }} />
+                <span className="flex-1" style={{ background: o2, opacity: 0.85 }} />
+              </div>
             </div>
-            <div className="flex h-2.5 rounded-[5px] overflow-hidden" role="meter" aria-valuenow={Math.round(vm.winProb1)} aria-valuemin={0} aria-valuemax={100} aria-label={`${match.team1Name} win probability`}>
-              <span style={{ width: `${(vm.winProb1 / Math.max(1, vm.winProb1 + vm.winProb2)) * 100}%`, background: c1 }} />
-              <span className="flex-1" style={{ background: c2, opacity: 0.85 }} />
+          ) : null}
+          {adjust ? <span className="t-body-sm text-secondary">{adjust}</span> : null}
+          {so && series1 != null && series2 != null ? (
+            <div className={clsx(hasGameOdds && "pt-2")}>
+              <SeriesWinLine label="TO WIN THE SERIES" left={series1} right={series2} c1={o1} c2={o2} />
             </div>
-          </div>
+          ) : null}
+          {so && disclaimer ? <span className="t-label-sm text-muted">{disclaimer}</span> : null}
         </div>
       ) : null}
 
-      {/* Match info */}
-      <div className="flex flex-col gap-2.5">
-        <SectionHeader title="Match Info" className="!px-0" />
-        <div className="ledger [&>*+*]:border-t [&>*+*]:border-border-subtle">
-          <InfoRow label="Format" value={`Best of ${match.bestOf}`} />
-          {match.stage ? <InfoRow label="Stage" value={match.stage} /> : null}
-          {match.mapName ? <InfoRow label="Map" value={match.mapName} /> : null}
-          <InfoRow label="Kickoff" value={kickoff} />
-        </div>
-      </div>
+      {matchInfo}
 
       {/* Recent form */}
       {vm.team1Form.length || vm.team2Form.length ? (
@@ -301,6 +359,21 @@ export function UpcomingMatchScreen({ match }: { match: Match }) {
     </div>
   );
 
+  // One game ahead: only the hero, the "opens after" card and Match Info.
+  const locked = (
+    <div className="flex flex-col gap-6 pt-2 max-w-[760px]">
+      {hero}
+      <div className="flex items-start gap-3 p-4 rounded-xl bg-card border border-border-subtle">
+        <span className="grid place-items-center size-[30px] rounded-lg bg-surface text-muted shrink-0"><Clock size={15} /></span>
+        <span className="flex flex-col gap-0.5 min-w-0">
+          <span className="t-body-md text-primary">{series ? previewOpensAfter(series) : "Preview opens soon"}</span>
+          <span className="t-label-md text-muted">Odds, form and lineups once that game is over.</span>
+        </span>
+      </div>
+      {matchInfo}
+    </div>
+  );
+
   const rail = (
     <div className="flex flex-col gap-4 lg:pt-2">
       {/* Predictions Pro — the ONLY premium surface on this screen */}
@@ -335,8 +408,10 @@ export function UpcomingMatchScreen({ match }: { match: Match }) {
 
   return (
     <Page wide>
-      <NavBar title="Match Preview" />
-      {revealed
+      <NavBar title="Match Preview" back={back} />
+      {!open ? (
+        revealed ? <SplitLayout main={locked} /> : <SplitLayout main={<MatchMainSkeleton variant="upcoming" />} />
+      ) : revealed
         ? <SplitLayout main={main} rail={rail} />
         : <SplitLayout main={<MatchMainSkeleton variant="upcoming" />} rail={<MatchRailSkeleton variant="upcoming" />} />}
     </Page>

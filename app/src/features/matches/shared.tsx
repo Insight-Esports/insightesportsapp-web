@@ -1,7 +1,7 @@
 // features/matches/shared.tsx — bits the Live, Schedule and Results screens
 // share: the ?game= URL filter, local-day math + the app's day labels, the
-// sticky date header, and the Schedule · Results segment that makes the two
-// routes feel like the one Schedule tab they are in the app.
+// sticky date header, and the Upcoming · Tournaments · Results segment that
+// makes the three routes feel like the one Schedule tab they are in the app.
 "use client";
 
 import { useCallback, type ReactNode } from "react";
@@ -9,6 +9,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { FilterSegment } from "@/components/ui";
 import { clsx } from "@/lib/format";
 import { GAMES, type GameId, type Match, matchResultTime } from "@/lib/types";
+import { tournamentsHref } from "@/features/tournaments/routes";
 
 // ── ?game= ────────────────────────────────────────────────────────────────
 export function parseGameParam(v: string | null | undefined): GameId {
@@ -150,7 +151,7 @@ export function DateSectionHeader({ label, className }: { label: string; classNa
   );
 }
 
-export type ScheduleSegment = "schedule" | "results";
+export type ScheduleSegment = "schedule" | "tournaments" | "results";
 
 /** The segment under the Schedule header: the app's one Schedule tab has
  *  two faces, so /schedule and /results share this control and carry the
@@ -159,12 +160,12 @@ export function ScheduleTabs({ value, game, className }: { value: ScheduleSegmen
   const router = useRouter();
   const go = (v: ScheduleSegment) => {
     if (v === value) return;
-    router.push(v === "schedule" ? `/schedule${gameQuery(game)}` : `/results${gameQuery(game)}`);
+    router.push(v === "schedule" ? `/schedule${gameQuery(game)}` : v === "tournaments" ? tournamentsHref(game) : `/results${gameQuery(game)}`);
   };
   return (
     <div className={clsx("px-4 pt-2 pb-1", className)}>
       <FilterSegment<ScheduleSegment>
-        options={[{ label: "Upcoming", value: "schedule" }, { label: "Results", value: "results" }]}
+        options={[{ label: "Upcoming", value: "schedule" }, { label: "Tournaments", value: "tournaments" }, { label: "Results", value: "results" }]}
         value={value}
         onChange={go}
       />

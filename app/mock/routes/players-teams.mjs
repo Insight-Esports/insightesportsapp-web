@@ -4,6 +4,7 @@
 // the real backend uses them). Deterministic via h.rand(seed).
 
 import { mockSearchFeatures } from "./_search-features.mjs";
+import { honorsFor } from "./_tournaments-data.mjs";
 
 // ── Seed data ─────────────────────────────────────────────────────────────
 const NAT = { NA: ["USA", "Canada"], EMEA: ["Sweden", "Denmark", "Russia", "Turkey", "France", "UK"], Europe: ["Sweden", "Denmark", "France", "Ukraine", "Bosnia"], CIS: ["Russia", "Kazakhstan", "Ukraine"], APAC: ["Japan", "Korea", "Philippines", "Thailand"], Asia: ["Mongolia", "China", "Australia"], Brazil: ["Brazil"], LCK: ["Korea"], LEC: ["Germany", "Spain", "Slovenia", "Denmark"], LCS: ["USA", "Canada"], LPL: ["China"] };
@@ -392,7 +393,8 @@ export function register(app, h) {
   app.get("/api/teams/:id", (req, res) => {
     const t = findTeam(res, req.params.id);
     if (!t) return;
-    res.json(publicTeam(t));
+    // Tournament honors (simulated cups, _tournaments-data.mjs).
+    res.json({ ...publicTeam(t), honors: honorsFor(t.id) });
   });
 
   app.get("/api/coaches/:id", (req, res) => {

@@ -11,7 +11,8 @@
 //   /premium/predict/live-team       game, id, name, match             → live team breakdown
 //   /premium/predict/h2h             game, id, name[, opponent, opponentName, map]
 //   /premium/predict/h2h/result      game, id, name, opponent, opponentName[, map]
-//   /premium/predict/map             game, id, name[, map]             → team map profile
+//   /premium/predict/map             game, id, name[, map, liveMap, from=live]  → team map profile
+//                                    (liveMap: the map being played, dotted; from=live: back = history)
 
 import { SELECTABLE_GAMES } from "@/lib/types";
 import type { PredictionDirection, PredictionTargetType } from "./types";
@@ -84,5 +85,6 @@ export const flowHref = {
     `${PREDICT_BASE}/h2h${qs({ game: t.game, id: t.targetId, name: t.targetName, opponent: opponentId, opponentName, map })}`,
   h2hResult: (t: FlowTarget, opponentId: string, opponentName: string, map?: string | null) =>
     `${PREDICT_BASE}/h2h/result${qs({ game: t.game, id: t.targetId, name: t.targetName, opponent: opponentId, opponentName, map })}`,
-  mapProfile: (t: FlowTarget, map?: string | null) => `${PREDICT_BASE}/map${qs({ game: t.game, id: t.targetId, name: t.targetName, map })}`,
+  mapProfile: (t: Pick<FlowTarget, "game" | "targetId" | "targetName">, map?: string | null, opts?: { liveMap?: string | null; fromLive?: boolean }) =>
+    `${PREDICT_BASE}/map${qs({ game: t.game, type: "team", id: t.targetId, name: t.targetName, map, liveMap: opts?.liveMap, from: opts?.fromLive ? "live" : null })}`,
 };

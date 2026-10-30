@@ -1,6 +1,6 @@
 // features/matches/home.tsx — HomeView.swift: the Live tab.
-// Game tabs (with live dots from the UNFILTERED live feed) → Live Now →
-// Upcoming. A 20s silent auto-refresh keeps live matches appearing and
+// Game tabs (with live dots from the UNFILTERED live feed) → Live Now
+// (tournament / series matches first) → Upcoming. A 20s silent auto-refresh keeps live matches appearing and
 // disappearing on their own; explicit loads show skeletons, silent ones
 // never touch what's on screen.
 "use client";
@@ -19,6 +19,17 @@ import { LiveMatchCard, UpcomingMatchCard } from "./cards";
 import { filterByGame, gameQuery, sortUpcomingAsc, useGameParam } from "./shared";
 
 const AUTO_REFRESH_MS = 20_000;
+
+/** A live match that belongs to a real tournament or series (not blank / "Unknown"). */
+function inTournament(m: Match): boolean {
+  if (m.series) return true;
+  const name = (m.tournamentName ?? "").trim().toLowerCase();
+  return name !== "" && name !== "unknown" && name !== "unknown tournament" && name !== "null";
+}
+/** Live Now: tournament / series matches first; everything else keeps its order after them. */
+function tournamentFirst(list: Match[]): Match[] {
+  return [...list.filter(inTournament), ...list.filter((m) => !inTournament(m))];
+}
 
 export function HomeScreen() {
   const router = useRouter();
@@ -58,7 +69,7 @@ export function HomeScreen() {
 
   const liveAll = live.data ?? [];
   const liveGames = new Set(liveAll.map((m) => m.game));
-  const liveMatches = filterByGame(liveAll, game);
+  const liveMatches = tournamentFirst(filterByGame(liveAll, game));
   const upcomingMatches = filterByGame(upcoming.data ?? [], game).slice().sort(sortUpcomingAsc);
 
   // HomeView keeps both sections on skeletons until `hasLoaded` — the whole

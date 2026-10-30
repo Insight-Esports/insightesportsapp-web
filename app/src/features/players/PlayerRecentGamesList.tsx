@@ -12,7 +12,7 @@ import Link from "next/link";
 import { ChevronRight, History } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { clsx, fmt1, fmt2, formatDate } from "@/lib/format";
-import { EmptyState, Img, SectionHeader, SkeletonLedger, Spinner } from "@/components/ui";
+import { EmptyState, SectionHeader, SkeletonLedger, Spinner, TeamMark } from "@/components/ui";
 import { normalizePlayerGameRows, rowKDA, rowWhen, type PlayerGameRow } from "./types";
 import { useLoadMore } from "./useLoadMore";
 import { StripedTable } from "./StatTable";
@@ -139,7 +139,7 @@ function RecentMatchRow({ row, game }: { row: PlayerGameRow; game: string }) {
     <>
       <span className="w-12 shrink-0 t-label-sm text-muted">{formatDate(rowWhen(row))}</span>
       <span className="flex-1 min-w-0 flex items-center gap-1.5 pl-2">
-        {row.opponentLogoURL ? <Img src={row.opponentLogoURL} alt="" fallback={null} className="size-5 rounded" /> : null}
+        {row.opponentLogoURL ? <TeamMark name={row.opponentName ?? ""} logoURL={row.opponentLogoURL} size={20} /> : null}
         <span className="t-body-sm text-primary truncate">{row.opponentName ?? "—"}</span>
       </span>
       <span className={clsx("w-[50px] shrink-0 t-label-sm truncate", isLeague ? (row.side === "Red" ? "text-error" : "text-team1") : "text-muted")}>

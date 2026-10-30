@@ -111,7 +111,7 @@ function useCompletedMatch(match: Match): CompletedState {
   return st;
 }
 
-export function CompletedMatchScreen({ match }: { match: Match }) {
+export function CompletedMatchScreen({ match, back }: { match: Match; /** A series page (`?from=`): Back returns there. */ back?: string }) {
   const vm = useCompletedMatch(match);
   const isRoundBased = isRoundBasedGame(match.game);
   const c1 = team1Color(match);
@@ -154,7 +154,7 @@ export function CompletedMatchScreen({ match }: { match: Match }) {
 
   return (
     <Page wide>
-      <MatchTitleStrip match={match} isComplete />
+      <MatchTitleStrip match={match} isComplete back={back} />
       {revealed
         ? <SplitLayout main={main} rail={<MatchCommentsSection matchId={match.id} />} />
         : <SplitLayout main={<MatchMainSkeleton variant="completed" />} rail={<MatchRailSkeleton variant="completed" />} />}

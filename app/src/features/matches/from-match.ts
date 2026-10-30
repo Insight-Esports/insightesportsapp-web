@@ -14,13 +14,23 @@ export function withFromMatch(href: string, matchId: string | null | undefined):
   return `${base}${sep}from=${encodeURIComponent(`match:${matchId}`)}${hash}`;
 }
 
-/** Where a detail screen's back chevron goes: the match named by `from`, else the tab. */
+/** Where a detail screen's back chevron goes: the match named by `from`, a
+ *  series page path (`/tournaments/series/<id>?from=…`, so match → series →
+ *  bracket unwinds in order), else the tab. */
 export function backHrefFrom(from: string | null | undefined, fallback: string): string {
   if (from && from.startsWith("match:")) {
     const id = from.slice("match:".length);
     if (id) return `/match/${encodeURIComponent(id)}`;
   }
+  const series = seriesPathFrom(from);
+  if (series) return series;
   return fallback;
+}
+
+/** The series page a `from` names (an in-app `/tournaments/series/…` path), or null. */
+export function seriesPathFrom(from: string | null | undefined): string | null {
+  const path = pagePathFrom(from);
+  return path && path.startsWith("/tournaments/series/") ? path : null;
 }
 
 /** The in-app path a calendar `from` names, or null (never another origin). */

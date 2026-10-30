@@ -9,12 +9,13 @@
 import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BadgeCheck, Calendar, ChevronDown, ChevronRight, Eye, Flag, ListOrdered } from "lucide-react";
+import { BadgeCheck, Calendar, ChevronDown, ChevronRight, CircleHelp, Clock, Eye, Flag, ListOrdered } from "lucide-react";
 import { GamePill, LiveBadge, StagePill, TeamMark } from "@/components/ui";
 import { clsx, formatTime } from "@/lib/format";
 import { matchResultTime, team1Color, team2Color, teamStub, type Match } from "@/lib/types";
 import { rememberMatch } from "./match-cache";
 import { prefetchTeam, rememberTeam } from "@/features/entity-cache";
+import { isGameOpen, previewOpensAfter, seriesLine, TAG_TEXT } from "@/features/tournaments/series/series-logic";
 
 /** The one door to a match, whatever its state (CompletedMatchLoaderView routes by status server-side). */
 export function matchHref(id: string): string {
@@ -89,7 +90,11 @@ function LiveTeamRow({ name, logo, color, score, leads }: { name: string; logo: 
 }
 
 // ── Upcoming (expandable) ─────────────────────────────────────────────────
-export function UpcomingMatchCard({ match, className, defaultExpanded = false }: { match: Match; className?: string; defaultExpanded?: boolean }) {
+// A tournament game (match.series) adds the series line under the header
+// ("QUARTERFINAL · GAME 3 OF 3 · DECIDER"), the series wins on the team rows
+// once the series has started, and — one game ahead — a locked preview row
+// until the game before it is over.
+export function UpcomingMatchCard({ match, className, defaultExpanded = false, previewHref }: { match: Match; className?: string; defaultExpanded?: boolean; /** Where "Match preview" goes (a series page passes its own `from`). */ previewHref?: string }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const toggle = () => setExpanded((v) => !v);
   const time = formatTime(match.scheduledAt);
@@ -103,21 +108,37 @@ export function UpcomingMatchCard({ match, className, defaultExpanded = false }:
   const c1 = team1Color(match);
   const c2 = team2Color(match);
 
+  const series = match.series ?? null;
+  const line = series ? seriesLine(series) : null;
+  const open = isGameOpen(match);
+  const played = series ? series.team1Wins + series.team2Wins : 0;
+  // Series wins once the series has started: the leader (both when level) bright.
+  const wins = series && played > 0 ? [series.team1Wins, series.team2Wins] as const : null;
+  const fullTournamentName = match.tournamentName ?? series?.tournamentName ?? "Unknown Tournament";
+
   return (
     <div className={clsx(CARD, className)}>
       {/* Header (tap to expand) */}
-      <button type="button" onClick={toggle} aria-expanded={expanded} className="w-full flex items-center gap-2 px-4 pt-4 pb-2.5 text-left min-w-0 hover:bg-surface/40 rounded-t-xl transition-colors">
-        <span className="t-label-sm text-muted truncate min-w-0">{match.tournamentName ?? "Unknown Tournament"}</span>
-        {match.stage ? <StagePill stage={match.stage} className="shrink-0" /> : null}
-        <span className="flex-1" />
-        <GamePill game={match.game} />
-        <span className="t-label-lg text-violet whitespace-nowrap">{time}</span>
+      <button type="button" onClick={toggle} aria-expanded={expanded} className="w-full flex flex-col gap-1 px-4 pt-4 pb-2.5 text-left min-w-0 hover:bg-surface/40 rounded-t-xl transition-colors">
+        <span className="w-full flex items-center gap-2 min-w-0">
+          <span className="t-label-sm text-muted truncate min-w-0">{fullTournamentName}</span>
+          {match.stage && !series ? <StagePill stage={match.stage} className="shrink-0" /> : null}
+          <span className="flex-1" />
+          <GamePill game={match.game} />
+          <span className="t-label-lg text-violet whitespace-nowrap">{time}</span>
+        </span>
+        {line && line.text ? (
+          <span className="block w-full text-[10px] font-semibold tracking-[0.8px] uppercase whitespace-nowrap overflow-hidden text-ellipsis">
+            <span className="text-secondary">{line.text}</span>
+            {line.tag ? <span className={line.tag === "decider" ? "text-violet" : "text-muted"}> · {TAG_TEXT[line.tag]}</span> : null}
+          </span>
+        ) : null}
       </button>
 
       {/* Team rows — the row hops to the team's page; a hairline between. */}
-      <UpcomingTeamRow name={match.team1Name} logo={match.team1LogoURL} id={match.team1Id} game={match.game} />
+      <UpcomingTeamRow name={match.team1Name} logo={match.team1LogoURL} id={match.team1Id} game={match.game} wins={wins ? wins[0] : null} leads={!!wins && wins[0] >= wins[1]} />
       <div className="ml-[54px] hairline-b" />
-      <UpcomingTeamRow name={match.team2Name} logo={match.team2LogoURL} id={match.team2Id} game={match.game} />
+      <UpcomingTeamRow name={match.team2Name} logo={match.team2LogoURL} id={match.team2Id} game={match.game} wins={wins ? wins[1] : null} leads={!!wins && wins[1] >= wins[0]} />
 
       {/* Dedicated expand affordance */}
       <button type="button" onClick={toggle} aria-label={expanded ? "Hide details" : "Show details"} aria-expanded={expanded} className="w-full flex justify-center py-1.5 text-muted hover:text-primary transition-colors">
@@ -129,17 +150,26 @@ export function UpcomingMatchCard({ match, className, defaultExpanded = false }:
           <div className="mx-4 hairline-t" />
           <div className="flex flex-col gap-2.5 p-4">
             <DetailRow icon={<Calendar size={12} />} text={fullDate} />
-            <DetailRow icon={<ListOrdered size={12} />} text={`Best of ${match.bestOf}`} />
-            {match.stage ? <DetailRow icon={<Flag size={12} />} text={match.stage} /> : null}
+            <DetailRow icon={<ListOrdered size={12} />} text={series ? `Best of ${series.bestOf} series · Game ${series.gameNumber ?? "?"}` : `Best of ${match.bestOf}`} />
+            {line?.tag === "if_necessary" ? <DetailRow icon={<CircleHelp size={12} />} text="Played only if the series isn't decided by then" /> : null}
+            {match.stage && !series ? <DetailRow icon={<Flag size={12} />} text={match.stage} /> : null}
 
-            {/* The door to the pre-match hub. */}
-            <Link href={matchHref(match.id)} onClick={() => rememberMatch(match)} className="flex items-center gap-2 px-3 py-2.5 rounded-[10px] bg-surface hover:bg-surface/70 transition-colors">
-              <span className="t-label-md text-violet">Match preview</span>
-              <span className="flex-1" />
-              <ChevronRight size={12} className="text-violet" />
-            </Link>
+            {open ? (
+              /* The door to the pre-match hub. */
+              <Link href={previewHref ?? matchHref(match.id)} onClick={() => rememberMatch(match)} className="flex items-center gap-2 px-3 py-2.5 rounded-[10px] bg-surface hover:bg-surface/70 transition-colors">
+                <span className="t-label-md text-violet">Match preview</span>
+                <span className="flex-1" />
+                <ChevronRight size={12} className="text-violet" />
+              </Link>
+            ) : (
+              /* One game ahead: the preview opens once the game before is over. */
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-[10px] bg-surface" aria-disabled="true">
+                <Clock size={12} className="text-muted shrink-0" />
+                <span className="t-label-md text-muted">{previewOpensAfter(series!)}</span>
+              </div>
+            )}
 
-            {hasOdds ? (
+            {open && hasOdds ? (
               <div className="flex flex-col gap-1.5 pt-0.5">
                 <div className="flex items-center">
                   <span className="t-label-md" style={{ color: c1 }}>{Math.round(p1)}%</span>
@@ -161,11 +191,17 @@ export function UpcomingMatchCard({ match, className, defaultExpanded = false }:
   );
 }
 
-function UpcomingTeamRow({ name, logo, id, game }: { name: string; logo: string | null; id: string | null; game: string }) {
+function UpcomingTeamRow({ name, logo, id, game, wins = null, leads = false }: { name: string; logo: string | null; id: string | null; game: string; /** Series wins (tournament games, once the series has started). */ wins?: number | null; leads?: boolean }) {
   return (
     <Link href={teamHref(id, name)} onClick={() => rememberTeam(teamStub(name, game, logo, id))} onMouseEnter={() => prefetchTeam(id)} className="flex items-center gap-2.5 px-4 py-1.5 min-w-0 hover:bg-surface/60 transition-colors">
       <TeamMark name={name} logoURL={logo} size={28} />
       <span className="t-body-md text-primary truncate">{name}</span>
+      {wins != null ? (
+        <>
+          <span className="flex-1" />
+          <span className={clsx("t-mono-md w-6 text-right shrink-0", leads ? "text-primary" : "text-muted")}>{wins}</span>
+        </>
+      ) : null}
     </Link>
   );
 }

@@ -4,10 +4,13 @@
 // two crests warm) the page is the match screen's own silhouette; the
 // screen it routes to keeps that silhouette up until ITS first requests
 // have landed, so the reveal is one step, not two.
+//
+// `?from=/tournaments/series/<id>?from=…` (a game opened from a series page)
+// makes the back chevron return to that series, which returns to its bracket.
 "use client";
 
 import { useMemo } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { WifiOff } from "lucide-react";
 import { Page } from "@/components/ui";
 import { api, endpoints } from "@/lib/api";
@@ -19,6 +22,7 @@ import { LiveMatchScreen } from "@/features/matches/live/LiveMatchScreen";
 import { CompletedMatchScreen } from "@/features/matches/live/CompletedMatchScreen";
 import { UpcomingMatchScreen } from "@/features/matches/live/UpcomingMatchScreen";
 import { MatchScreenSkeleton } from "@/features/matches/live/MatchSkeleton";
+import { seriesPathFrom } from "@/features/matches/from-match";
 
 // GET /matches/:id doesn't join the teams' logo_url (the app never notices:
 // it carries the Match from the list card into the screen). Until the
@@ -37,6 +41,8 @@ async function withTeamLogos(m: Match, signal: AbortSignal): Promise<Match> {
 export default function MatchPage() {
   const params = useParams<{ id: string }>();
   const id = typeof params?.id === "string" ? decodeURIComponent(params.id) : "";
+  // Opened from a series page: Back returns there (else history back).
+  const back = seriesPathFrom(useSearchParams().get("from")) ?? undefined;
   // The card's Match (crests included) renders the screen immediately; the
   // detail fetch refreshes it underneath.
   const cached = useMemo(() => (id ? recallMatch(id) : null), [id]);
@@ -65,8 +71,8 @@ export default function MatchPage() {
   }
 
   switch (match.status) {
-    case "live": return <LiveMatchScreen key={match.id} match={match} />;
-    case "upcoming": return <UpcomingMatchScreen key={match.id} match={match} />;
-    default: return <CompletedMatchScreen key={match.id} match={match} />;
+    case "live": return <LiveMatchScreen key={match.id} match={match} back={back} />;
+    case "upcoming": return <UpcomingMatchScreen key={match.id} match={match} back={back} />;
+    default: return <CompletedMatchScreen key={match.id} match={match} back={back} />;
   }
 }

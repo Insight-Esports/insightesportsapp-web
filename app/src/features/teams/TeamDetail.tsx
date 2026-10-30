@@ -1,6 +1,7 @@
 // TeamDetail — TeamDetailView.swift.
 //
 // Spec order: header (logo · name · tier · region · game · rank) → Season →
+// Honors (once the team has played a tournament) →
 // Map Pool (VAL/CS2) or Side Record (League) → Roster → Upcoming → Recent
 // Games. Titles, team statistics, sides and the coach render only when the
 // backend has rows for them (the app keeps those structs unplugged).
@@ -31,6 +32,8 @@ import { TeamMapPool, useTeamMapPool } from "./TeamMapPool";
 import { TeamRecentGamesList, useTeamRecentGames } from "./RecentGamesList";
 import { UpcomingGamesList } from "./UpcomingGamesList";
 import { normalizeCoachHistory, normalizeTeamSides, normalizeTeamStats, normalizeTeamTitles, type TeamSide, type TeamTitle } from "./types";
+import { bracketHref } from "@/features/tournaments/routes";
+import { placementWord } from "@/features/tournaments/data";
 
 // ResolvedTeam (entity-cache.ts): the team the page shows, plus whether the
 // backend knows it by this id (a stub built from a bare name can't load
@@ -74,7 +77,7 @@ async function resolveTeam(id: string, gameHint: string | null, signal: AbortSig
   if (!stub && team.wins === 0 && team.losses === 0 && team.game) {
     try {
       const full = normalizeTeams(await api.get(endpoints.teams(team.game, team.name, 10, 0), { signal })).find((t) => t.id === team!.id);
-      if (full) team = full;
+      if (full) team = { ...full, honors: team.honors };   // list rows carry no honors
     } catch { /* keep what we have */ }
   }
   return { team, stub };
@@ -163,7 +166,7 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
 
   const header = (
     <div className="flex flex-col items-center gap-3 px-4 pt-4 text-center">
-      <TeamMark name={team.abbreviation} logoURL={team.logoURL} color="var(--surface)" size={80} />
+      <TeamMark name={team.name} logoURL={team.logoURL} size={80} />
       <span className="t-headline-lg text-primary">{team.name}</span>
       <div className="flex items-center gap-2">
         {team.tier === 1 ? <TierBadge tier={1} /> : null}
@@ -194,6 +197,38 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
       </div>
     </section>
   );
+
+  // Honors (sim tournaments, GET /teams/:id → honors): only once the team has played one.
+  const honors = team.honors && team.honors.tournaments > 0 ? team.honors : null;
+  const honorsSection = honors ? (
+    <section className="flex flex-col gap-3">
+      <SectionHeader title="Honors" />
+      <div className="mx-4 rounded-xl border border-border-subtle overflow-hidden">
+        <div className="grid grid-cols-4 gap-1 px-3 py-1.5 t-label-sm text-muted uppercase">
+          <span>Titles</span><span className="text-right">Finals</span><span className="text-right">Semis</span><span className="text-right">Played</span>
+        </div>
+        <div className="grid grid-cols-4 gap-1 px-3 py-3 bg-card">
+          <span className={clsx("flex items-center gap-1.5 t-mono-md", honors.titles > 0 ? "text-gold" : "text-primary")}>
+            {honors.titles > 0 ? <Trophy size={14} className="text-gold shrink-0" /> : null}{honors.titles}
+          </span>
+          <span className="text-right t-mono-md text-primary">{honors.finals}</span>
+          <span className="text-right t-mono-md text-primary">{honors.semifinals}</span>
+          <span className="text-right t-mono-md text-primary">{honors.tournaments}</span>
+        </div>
+      </div>
+      {honors.recent.length > 0 ? (
+        <div className="mx-4 rounded-xl border border-border-subtle bg-card overflow-hidden [&>*+*]:border-t [&>*+*]:border-border-subtle [&>*:nth-child(even)]:bg-surface/50">
+          {honors.recent.slice(0, 5).map((r) => (
+            <Link key={r.tournamentId} href={`${bracketHref(r.tournamentId)}?from=${encodeURIComponent(`/teams/${team.id}`)}`} className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-surface/70 transition-colors">
+              <span className="flex-1 min-w-0 t-body-sm text-primary truncate">{r.tournament}</span>
+              {r.seed != null ? <span className="shrink-0 t-label-sm text-muted">Seed {r.seed}</span> : null}
+              <span className={clsx("shrink-0 w-[88px] text-right t-label-md", r.placement === "champion" ? "text-gold" : "text-secondary")}>{placementWord(r.placement)}</span>
+            </Link>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  ) : null;
 
   const rosterLedger = (list: Player[], dim?: boolean) => (
     <StripedTable className={dim ? "opacity-60" : undefined}
@@ -323,7 +358,8 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
       {header}
       {/* Phones: the iOS order. Desktop: Upcoming + the extra sections form a rail beside Season / Map Pool / Roster / Recent Games. */}
       <div className="pt-5 grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:pr-4">
-        {season}
+        {/* Honors shares Season's grid cell so the desktop rail's row span stays as it was. */}
+        {honorsSection ? <div className="flex flex-col gap-5 min-w-0">{season}{honorsSection}</div> : season}
         {mapPool.loading && !mapPool.data ? (
           <SkeletonSection title={game === "League" ? "Side Record" : "Map Pool"}><SkeletonLedger rows={3} avatar={0} /></SkeletonSection>
         ) : (

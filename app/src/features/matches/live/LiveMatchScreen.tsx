@@ -10,7 +10,7 @@ import { AssetIcon, LiveBadge, Page, SplitLayout } from "@/components/ui";
 import { team1Color, team2Color, type Match } from "@/lib/types";
 import { useReveal } from "@/lib/use-reveal";
 import { useAppState } from "@/store/app-state";
-import { NavBar } from "@/components/shell/NavBar";
+import { BackButton, NavBar } from "@/components/shell/NavBar";
 import { ProfileToolbarButton } from "@/components/shell/AppShell";
 import { useHideTabBar } from "@/components/shell/tab-bar";
 import { featureState } from "./feature-status";
@@ -23,9 +23,12 @@ import { WatchPill } from "./StreamPlayer";
 import { isRoundBasedGame } from "./types";
 import { useLiveMatch } from "./use-live-match";
 import { SkeletonScoreboard } from "@/components/ui/skeletons";
+import { liveSeriesInfo } from "@/features/tournaments/series/series-logic";
+import { seriesFactorLine, useSeriesFactor } from "@/features/tournaments/series/series-data";
 
-/** Title strip above the HUD: Live/Final + tournament (the iOS principal toolbar). */
-export function MatchTitleStrip({ match, isComplete, children }: { match: Match; isComplete: boolean; children?: React.ReactNode }) {
+/** Title strip above the HUD: Live/Final + tournament (the iOS principal toolbar).
+ *  `back` (a series page, from `?from=`) is where the chevron goes; otherwise history back. */
+export function MatchTitleStrip({ match, isComplete, back, children }: { match: Match; isComplete: boolean; back?: string; children?: React.ReactNode }) {
   const principal = (
     <span className="flex items-center gap-1.5 min-w-0">
       {isComplete ? (
@@ -39,8 +42,9 @@ export function MatchTitleStrip({ match, isComplete, children }: { match: Match;
   return (
     <>
       {/* Phones: LiveMatchView's navigation bar — chevron · [Live · tournament] · avatar */}
-      <NavBar principal={principal} trailing={isComplete ? undefined : <ProfileToolbarButton />} phoneOnly />
-      <div className="hidden md:flex items-center gap-1.5 px-4 pt-3 pb-2 min-w-0">
+      <NavBar principal={principal} trailing={isComplete ? undefined : <ProfileToolbarButton />} phoneOnly back={back} />
+      <div className={`hidden md:flex items-center gap-1.5 ${back ? "px-3" : "px-4"} pt-3 pb-2 min-w-0`}>
+        {back ? <BackButton href={back} /> : null}
         {principal}
         <span className="flex-1" />
         {children}
@@ -49,11 +53,21 @@ export function MatchTitleStrip({ match, isComplete, children }: { match: Match;
   );
 }
 
-export function LiveMatchScreen({ match }: { match: Match }) {
+export function LiveMatchScreen({ match, back }: { match: Match; /** A series page (`?from=`): Back returns there. */ back?: string }) {
   const { isPremium, status } = useAppState();
   // LiveMatchView hides the tab bar so the chat composer is reachable.
   useHideTabBar();
   const vm = useLiveMatch(match);
+  // A tournament game: the header reads the series ("Quarterfinal · Game 2
+  // of 3 • Spirit leads 1-0"), each side's dots = max(series wins, maps won),
+  // and the series effects show under Win Probability.
+  const series = match.series ?? null;
+  const hudMatch = series ? { ...match, bestOf: series.bestOf } : match;
+  const team1Maps = series ? Math.max(series.team1Wins, vm.team1Maps) : vm.team1Maps;
+  const team2Maps = series ? Math.max(series.team2Wins, vm.team2Maps) : vm.team2Maps;
+  const seriesInfo = series ? liveSeriesInfo(series, match.team1Name, match.team2Name) : vm.seriesInfo;
+  const factor = useSeriesFactor(match.id, !!series && !vm.isMatchComplete);
+  const factorNote = factor ? seriesFactorLine(factor, match.team1Name, match.team2Name) : null;
   const isRoundBased = isRoundBasedGame(match.game);
   const c1 = team1Color(match);
   const c2 = team2Color(match);
@@ -95,14 +109,14 @@ export function LiveMatchScreen({ match }: { match: Match }) {
     <div className="flex flex-col gap-4">
       <div ref={hudRef}>
         <ScoreHUD
-          match={match}
+          match={hudMatch}
           isRoundBased={isRoundBased}
           team1Score={vm.team1Rounds}
           team2Score={vm.team2Rounds}
-          team1Maps={vm.team1Maps}
-          team2Maps={vm.team2Maps}
+          team1Maps={team1Maps}
+          team2Maps={team2Maps}
           gameTime={vm.gameTime}
-          seriesInfo={vm.seriesInfo}
+          seriesInfo={seriesInfo}
           viewerCount={vm.viewerCount}
           team1Side={vm.team1Side}
           team2Side={vm.team2Side}
@@ -144,7 +158,7 @@ export function LiveMatchScreen({ match }: { match: Match }) {
         </>
       )}
 
-      <WinProbabilityBar team1Color={c1} team2Color={c2} team1Name={match.team1Name} team2Name={match.team2Name} team1Probability={vm.team1WinProbability} />
+      <WinProbabilityBar team1Color={c1} team2Color={c2} team1Name={match.team1Name} team2Name={match.team2Name} team1Probability={vm.team1WinProbability} note={factorNote} />
 
       {!vm.statsLoaded ? <SkeletonScoreboard columns={5} /> : (
       <StatsTableSection team1Color={c1} team2Color={c2} game={match.game} team1Name={match.team1Name} team2Name={match.team2Name} team1Stats={vm.team1Stats} team2Stats={vm.team2Stats} matchId={match.id} />
@@ -206,7 +220,7 @@ export function LiveMatchScreen({ match }: { match: Match }) {
 
   return (
     <Page wide className="max-md:pb-6">
-      <MatchTitleStrip match={match} isComplete={vm.isMatchComplete}>
+      <MatchTitleStrip match={match} isComplete={vm.isMatchComplete} back={back}>
         {!vm.socketConnected && !vm.isMatchComplete ? <span className="t-label-sm text-muted" title="Live socket not connected — updating every few seconds">polling</span> : null}
       </MatchTitleStrip>
       <div className={`sticky top-0 z-20 px-4 pb-2 bg-bg transition-opacity ${collapsed && revealed ? "opacity-100" : "opacity-0 pointer-events-none h-0 pb-0 overflow-hidden"}`} aria-hidden={!collapsed}>

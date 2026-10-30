@@ -1,6 +1,8 @@
-// mock/routes/premium-links.mjs — live TEAM predictions (parity doc
-// 2026-10-28 §11, backend/premium-link-payloads.md § 4). Shapes follow
-// predictionService.js analyzeLiveTeamPrediction / analyzeLiveTeamBreakdown:
+// mock/routes/premium-links.mjs — live TEAM predictions (parity docs
+// 2026-10-28 §11, 2026-10-29 §4; backend/premium-link-payloads.md § 4 and
+// live-team-breakdown rev 2: `good` on stats, gold on League roster lines,
+// mapComparison, opponent, mapPool). Shapes follow predictionService.js
+// analyzeLiveTeamPrediction / analyzeLiveTeamBreakdown:
 //   POST /api/predictions/live-team            {matchId, teamId, stat, baseline, direction}
 //   POST /api/predictions/live-team-breakdown  {matchId, teamId}
 // Live matches come from _matches-data.mjs (ids "m-live-N", team ids
@@ -64,9 +66,54 @@ function roster(h, ctx) {
       kills: k, deaths: d, assists: Math.round(h.rand(i * 7) * 8), plusMinus: k - d,
       acs: ctx.game === "VALORANT" ? Math.round(160 + h.rand(i * 11) * 140) : null,
       adr: ctx.game === "CS2" ? round1(60 + h.rand(i * 11) * 45) : null,
+      // League gold once the feed has it (rev 2: `gold`).
+      gold: ctx.game === "League" ? Math.round(7000 + h.rand(i * 13 + 1) * 7500) : null,
       agent: ctx.game === "CS2" ? null : agent,
     };
   }).sort((a, b) => b.plusMinus - a.plusMinus || b.kills - a.kills);
+}
+
+const MAP_POOL = { VALORANT: ["Ascent", "Lotus", "Bind", "Haven", "Split", "Icebox", "Sunset"], CS2: ["Mirage", "Inferno", "Nuke", "Ancient", "Anubis", "Overpass", "Vertigo"], League: [] };
+// Rev 2 team line: every stat that matters for the game, with `good` (is the
+// pace good news — ahead on deaths isn't).
+const TEAM_AVG = {
+  VALORANT: { kills: 68, deaths: 62, assists: 24, plus_minus: 5, acs: 214, adr: 141, headshots: 27 },
+  CS2: { kills: 72, deaths: 66, assists: 20, plus_minus: 4, adr: 80, headshots: 34 },
+  League: { kills: 15, deaths: 11, assists: 34, plus_minus: 3, gold_earned: 61000 },
+};
+const AVERAGE_STATS = ["acs", "adr"];
+function teamLines(ctx, players) {
+  const sum = (k) => players.reduce((a, p) => a + (p[k] ?? 0), 0);
+  const mean = (k) => (players.length ? sum(k) / players.length : 0);
+  const live = {
+    kills: sum("kills"), deaths: sum("deaths"), assists: sum("assists"), plus_minus: sum("plusMinus"),
+    acs: ctx.game === "VALORANT" ? Math.round(mean("acs")) : undefined, adr: ctx.game === "CS2" ? round1(mean("adr")) : ctx.game === "VALORANT" ? 138 : undefined,
+    headshots: ctx.game === "League" ? undefined : Math.round(sum("kills") * 0.38), gold_earned: ctx.game === "League" ? sum("gold") : undefined,
+  };
+  return Object.entries(TEAM_AVG[ctx.game]).flatMap(([stat, avg]) => {
+    const current = live[stat];
+    if (current === undefined) return [];
+    const isAvg = AVERAGE_STATS.includes(stat);
+    const paceExpected = isAvg ? avg : round1(avg * ctx.fractionDone);
+    let vsPace;
+    if (stat === "plus_minus") vsPace = current >= paceExpected + 2 ? "ahead" : current <= paceExpected - 2 ? "behind" : "on pace";
+    else vsPace = current >= paceExpected * 1.1 ? "ahead" : current <= paceExpected * 0.9 ? "behind" : "on pace";
+    const good = vsPace === "ahead" ? stat !== "deaths" : vsPace === "behind" ? stat === "deaths" : null;
+    const r = (v) => (stat === "gold_earned" ? Math.round(v) : round1(v));
+    return [{ stat, label: stat, current: r(current), careerAverage: r(avg), paceExpected: r(paceExpected), projectedFinal: r(isAvg ? current : current + avg * (1 - ctx.fractionDone)), vsPace, good }];
+  });
+}
+// mapComparison (backend): ≥ 3 games on the map, then ±5 win-rate points.
+function mapCmp(h, ctx, teamId, teamName) {
+  const map = ctx.m.map_name;
+  if (!map || ctx.game === "League") return null;
+  const seed = [...String(teamId) + map].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 1000003, 7);
+  const gp = 2 + Math.floor(h.rand(seed) * 12), wins = Math.round(gp * (0.3 + h.rand(seed + 1) * 0.5));
+  const onRate = Math.round((wins / gp) * 1000) / 10, allRate = 52.4;
+  const delta = round1(onRate - allRate);
+  const verdict = gp < 3 ? "too_few_games" : delta >= 5 ? "better" : delta <= -5 ? "worse" : "usual";
+  const label = verdict === "better" ? `${teamName} play better on ${map}` : verdict === "worse" ? `${teamName} play worse on ${map}` : verdict === "usual" ? `No real difference on ${map}` : `Only ${gp} games on ${map}, not enough to tell`;
+  return { map, verdict, label, winRateDelta: delta, onMap: { gamesPlayed: gp, wins, losses: gp - wins, winRate: `${Math.round(onRate)}%`, winRateValue: onRate }, overall: { gamesPlayed: 50, wins: 26, losses: 24, winRate: "52%", winRateValue: allRate }, statDeltas: {} };
 }
 
 export function register(app, h) {
@@ -77,12 +124,9 @@ export function register(app, h) {
     if (!ctx) return;
     const players = roster(h, ctx);
     const kills = players.reduce((a, p) => a + (p.kills ?? 0), 0);
-    const pm = players.reduce((a, p) => a + (p.plusMinus ?? 0), 0);
     const avgKills = TEAM_KILLS[ctx.game];
     const paceK = round1(avgKills * ctx.fractionDone);
     const vsPaceK = kills >= paceK * 1.1 ? "ahead" : kills <= paceK * 0.9 ? "behind" : "on pace";
-    const paceP = round1(5 * ctx.fractionDone);
-    const vsPaceP = pm >= paceP + 2 ? "ahead" : pm <= paceP - 2 ? "behind" : "on pace";
     const bestOf = ctx.m.best_of ?? 3;
     const maps = [];
     if (bestOf > 1) {
@@ -98,10 +142,7 @@ export function register(app, h) {
     res.json({
       targetType: "team", live: true, matchId: ctx.m.id, teamId: req.body.teamId, team: ctx.teamName, game: ctx.game,
       summary: `${ctx.teamName} are ${scoreNote} vs ${ctx.opponentName} (${Math.round(ctx.fractionDone * 100)}% done, around the midpoint) and are ${vsPaceK === "ahead" ? "ahead of their usual pace" : vsPaceK === "behind" ? "below their usual pace" : "playing roughly to their usual level"}.${bestOf > 1 ? ` The series stands ${mapsWon} to ${mapsLost} in maps (best of ${bestOf}).` : ""} They are ${h2h.wins} and ${h2h.losses} against ${ctx.opponentName} all time.`,
-      stats: [
-        { stat: "kills", current: kills, careerAverage: avgKills, paceExpected: paceK, projectedFinal: round1(kills + avgKills * (1 - ctx.fractionDone)), vsPace: vsPaceK },
-        { stat: "plus_minus", current: pm, careerAverage: 5, paceExpected: paceP, projectedFinal: round1(pm + 5 * (1 - ctx.fractionDone)), vsPace: vsPaceP },
-      ],
+      stats: teamLines(ctx, players),
       players,
       last10Games: gameRows(h, ctx, 10),
       opponentName: ctx.opponentName, opponentId: ctx.opponentId, opponentLogoUrl: ctx.opponentLogoUrl,
@@ -109,6 +150,9 @@ export function register(app, h) {
       headToHead: h2h,
       strength: { team: 72, opponent: 61 },
       series: { bestOf, mapsWon, mapsLost, maps },
+      mapComparison: mapCmp(h, ctx, req.body.teamId, ctx.teamName),
+      opponent: { teamId: ctx.opponentId, name: ctx.opponentName, logoUrl: ctx.opponentLogoUrl, stats: [], players: [], form: null, mapComparison: mapCmp(h, ctx, ctx.opponentId, ctx.opponentName) },
+      mapPool: MAP_POOL[ctx.game] ?? [],
       context: { map: ctx.m.map_name ?? null, score: { team1: ctx.m.team1_score, team2: ctx.m.team2_score }, gameTimeDisplay: ctx.game === "League" ? "22:14" : null, fractionDone: round1(ctx.fractionDone) },
       disclaimer: DISCLAIMER,
       cached: false,

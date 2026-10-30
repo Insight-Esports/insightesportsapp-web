@@ -100,6 +100,13 @@ function ThreadView({ row }: { row: DMConversationRow }) {
   const [editing, setEditing] = useState<DMMessage | null>(null);
   const [toDelete, setToDelete] = useState<DMMessage | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // "Message deleted": springs in near the bottom of the thread, gone after 1.8 s.
+  const [deletedToast, setDeletedToast] = useState(0);
+  useEffect(() => {
+    if (!deletedToast) return;
+    const t = setTimeout(() => setDeletedToast(0), 1800);
+    return () => clearTimeout(t);
+  }, [deletedToast]);
   const actionsFor = (m: DMMessage): MenuAction[] => {
     const sent = !isPendingId(m.id);
     const list: MenuAction[] = [];
@@ -119,6 +126,7 @@ function ThreadView({ row }: { row: DMConversationRow }) {
     if (editing?.id === m.id) cancelEdit();
     const err = await remove(m);
     if (err) setDeleteError(err);
+    else setDeletedToast((n) => n + 1);
   };
 
   const [draft, setDraft] = useState("");
@@ -149,9 +157,13 @@ function ThreadView({ row }: { row: DMConversationRow }) {
   // ── Scrolling: bottom-anchored; a single append animates, loads jump;
   //    paging upward keeps the viewport where it was. Their message while
   //    you're reading older ones stays below the fold (Instagram) behind a
-  //    "New messages" chip; yours always pins. ──────────────────────────────
+  //    "New messages" chip; yours always pins.
+  //    Oct 29: keyed on the NEWEST message's id, not the count, so deleting
+  //    one mid-thread keeps your place: unchanged newest → nothing; the old
+  //    newest gone (deleted, or a pending send swapped for its server id) →
+  //    nothing; a newer one arrived → the pill or the scroll. ──────────────
   const list = useRef<HTMLDivElement>(null);
-  const prevCount = useRef(0);
+  const prevNewest = useRef<string | null>(null);
   const prepend = useRef<{ height: number; top: number } | null>(null);
   const atBottom = useRef(true);
   const [newBelow, setNewBelow] = useState(false);
@@ -166,17 +178,21 @@ function ThreadView({ row }: { row: DMConversationRow }) {
   useLayoutEffect(() => {
     const el = list.current;
     if (!el) return;
-    const count = messages.length;
+    const newest = messages.length ? messages[messages.length - 1] : null;
+    const before = prevNewest.current;
+    prevNewest.current = newest?.id ?? null;
     if (prepend.current) {
       el.scrollTop = el.scrollHeight - prepend.current.height + prepend.current.top;
       prepend.current = null;
-    } else if (count !== prevCount.current) {
-      const append = count > prevCount.current && prevCount.current > 0;
-      const newestIsMine = messages[count - 1]?.isMine === true;
-      if (append && !atBottom.current && !newestIsMine) setNewBelow(true);
-      else scrollToBottom(append ? "smooth" : "auto");
+      return;
     }
-    prevCount.current = count;
+    if (!newest || newest.id === before) return;              // unchanged
+    if (before === null) { scrollToBottom("auto"); return; }   // the first page
+    const at = messages.findIndex((m) => m.id === before);
+    if (at < 0) return;                                        // the old newest is gone
+    const added = messages.length - 1 - at;
+    if (!atBottom.current && !newest.isMine) setNewBelow(true);
+    else scrollToBottom(added === 1 ? "smooth" : "auto");
   }, [messages, scrollToBottom]);
   useEffect(() => {
     if (!otherIsTyping || !atBottom.current) return;
@@ -361,15 +377,28 @@ function ThreadView({ row }: { row: DMConversationRow }) {
         )}
       </div>
 
-      {/* Their message landed while you were reading older ones */}
-      {newBelow ? (
+      {/* Their message landed while you were reading older ones; the "Message deleted" toast */}
+      {newBelow || deletedToast ? (
         <div className="relative h-0 shrink-0">
-          <button
-            type="button" onClick={() => scrollToBottom("smooth")}
-            className="absolute left-1/2 -translate-x-1/2 -top-11 z-10 flex items-center gap-1 px-3 py-1.5 rounded-full bg-violet text-white t-label-sm shadow-lg hover:brightness-110"
-          >
-            New messages<ArrowDown size={12} strokeWidth={2.5} />
-          </button>
+          {newBelow ? (
+            <button
+              type="button" onClick={() => scrollToBottom("smooth")}
+              className="absolute left-1/2 -translate-x-1/2 -top-11 z-10 flex items-center gap-1 px-3 py-1.5 rounded-full bg-violet text-white t-label-sm shadow-lg hover:brightness-110"
+            >
+              New messages<ArrowDown size={12} strokeWidth={2.5} />
+            </button>
+          ) : null}
+          {deletedToast ? (
+            <div key={deletedToast} className="absolute left-1/2 -translate-x-1/2 z-10 pointer-events-none" style={{ bottom: newBelow ? 56 : 14 }} role="status" aria-live="polite">
+              <div className="dm-toast-in flex items-center gap-2 pl-3 pr-4 py-2.5 rounded-full bg-surface border border-border-subtle shadow-[0_8px_28px_rgb(0_0_0/0.5)] t-label-md text-primary whitespace-nowrap">
+                <svg width={17} height={17} viewBox="0 0 24 24" aria-hidden className="shrink-0">
+                  <circle cx="12" cy="12" r="11" fill="var(--violet)" />
+                  <path d="m7.4 12.4 3.1 3.1 6.1-6.6" fill="none" stroke="var(--surface)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                Message deleted
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

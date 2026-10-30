@@ -1,9 +1,10 @@
 // predictions/Options.tsx — PredictionOptionsView (flow step 3): what to do
 // with the selected target, under the entity header (with the live match
 // link while they play). Players: breakdown (live or full) + Pick a Stat.
-// Teams: Head-to-Head, Map Profile (not League), Full Breakdown — and, for a
-// team playing right now (Oct 28 §11), Current Game Breakdown + Pick a Stat
-// on top.
+// Teams not playing: Head-to-Head, Map Profile (not League), Full Breakdown.
+// A team playing right now (Oct 29 §4): Current Game Breakdown, Pick a Stat,
+// Full Breakdown — no Head-to-Head or Map Profile (the breakdown carries the
+// map profile for the live map).
 "use client";
 
 import { useSearchParams } from "next/navigation";
@@ -38,14 +39,22 @@ export function OptionsScreen() {
             <>
               {liveTeam ? (
                 <>
-                  <OptionRow href={flowHref.liveTeam(t)} icon={<Activity />} title="Current Game Breakdown" blurb="Rounds, maps, the roster's live lines and the pace they're on" />
+                  <OptionRow
+                    href={flowHref.liveTeam(t)}
+                    icon={<Activity />}
+                    title="Current Game Breakdown"
+                    blurb={t.game === "League" ? "The roster's live lines and the pace they're on" : "Rounds, the roster's live lines and pace, and both teams on this map"}
+                  />
                   <OptionRow href={flowHref.stat(t)} icon={<Target />} title="Pick a Stat" blurb="Team kills or +/− for this series, factoring in the live game" />
                 </>
-              ) : null}
-              <OptionRow href={flowHref.h2h(t)} icon={<Flag />} title="Head-to-Head" blurb="Pick an opponent (and optionally a map) for win odds with the reasoning behind them" />
-              {t.game !== "League" ? (
-                <OptionRow href={flowHref.mapProfile(t)} icon={<Map />} title="Map Profile" blurb="Win rate and average stats on a specific map" />
-              ) : null}
+              ) : (
+                <>
+                  <OptionRow href={flowHref.h2h(t)} icon={<Flag />} title="Head-to-Head" blurb="Pick an opponent (and optionally a map) for win odds with the reasoning behind them" />
+                  {t.game !== "League" ? (
+                    <OptionRow href={flowHref.mapProfile(t)} icon={<Map />} title="Map Profile" blurb="Each map against their usual, with their recent form there" />
+                  ) : null}
+                </>
+              )}
               <OptionRow href={flowHref.breakdown(t)} icon={<BarChartHorizontal />} title="Full Breakdown" blurb="Record, win rate, +/−, and map performance over time" />
             </>
           )}

@@ -2,7 +2,7 @@
 // iPhone app lays it out (ScheduleView.swift + CalendarScheduleView.swift):
 //
 //   TabHeader "Schedule" [calendar · avatar]
-//   segmented picker  Upcoming | Results
+//   segmented picker  Upcoming | Tournaments | Results
 //   GameTabBar
 //   fixtures grouped by day under sticky date headers (UpcomingMatchCard)
 //
@@ -29,6 +29,7 @@ import { useReveal } from "@/lib/use-reveal";
 import { useAppState } from "@/store/app-state";
 import { isUUID } from "@/features/entity-cache";
 import { pagePathFrom } from "./from-match";
+import { tournamentsHref } from "@/features/tournaments/routes";
 import { dayLoadOf, useCalendarData } from "./calendar-data";
 import { CompletedMatchRow, UpcomingMatchCard } from "./cards";
 import { DateSectionHeader, addDays, addMonths, calendarDayTitle, cleanUpcoming, dayKey, filterByGame, gameQuery, groupByDay, isSameLocalDay, parseDayKey, parseGameParam, scheduleDayLabel, sortUpcomingAsc, startOfDay, startOfMonth } from "./shared";
@@ -58,15 +59,15 @@ export function CloudSegment<T extends string>({ options, value, onChange, class
   );
 }
 
-/** The picker under the Schedule header (Upcoming | Results). */
-export function ScheduleSegmentPicker({ value, game }: { value: "schedule" | "results"; game: GameId }) {
+/** The picker under the Schedule header (Upcoming | Tournaments | Results). */
+export function ScheduleSegmentPicker({ value, game }: { value: "schedule" | "tournaments" | "results"; game: GameId }) {
   const router = useRouter();
   return (
     <div className="px-4 pt-3 pb-2 md:pt-2 md:pb-1">
-      <CloudSegment<"schedule" | "results">
-        options={[{ label: "Upcoming", value: "schedule" }, { label: "Results", value: "results" }]}
+      <CloudSegment<"schedule" | "tournaments" | "results">
+        options={[{ label: "Upcoming", value: "schedule" }, { label: "Tournaments", value: "tournaments" }, { label: "Results", value: "results" }]}
         value={value}
-        onChange={(v) => router.push(v === "schedule" ? `/schedule${gameQuery(game)}` : `/results${gameQuery(game)}`)}
+        onChange={(v) => router.push(v === "schedule" ? `/schedule${gameQuery(game)}` : v === "tournaments" ? tournamentsHref(game) : `/results${gameQuery(game)}`)}
       />
     </div>
   );
@@ -74,10 +75,10 @@ export function ScheduleSegmentPicker({ value, game }: { value: "schedule" | "re
 
 /** The header's calendar door — NavigationLink(destination: CalendarScheduleView()).
  *  `from` tells the calendar which face of the Schedule tab to return to. */
-export function CalendarTool({ game, from = "schedule" }: { game: GameId; from?: "schedule" | "results" }) {
+export function CalendarTool({ game, from = "schedule" }: { game: GameId; from?: "schedule" | "tournaments" | "results" }) {
   const router = useRouter();
   return (
-    <ToolButton label="Calendar" onClick={() => router.push(`/schedule${gameQuery(game, { view: "calendar", from: from === "results" ? "results" : null })}`)} className="text-violet hover:text-violet">
+    <ToolButton label="Calendar" onClick={() => router.push(`/schedule${gameQuery(game, { view: "calendar", from: from === "schedule" ? null : from })}`)} className="text-violet hover:text-violet">
       <CalendarDays size={16} strokeWidth={2.5} />
     </ToolButton>
   );
@@ -231,7 +232,7 @@ export function CalendarPhone({ game }: { game: GameId }) {
   // Back returns to where the calendar was opened from: a team / player page,
   // or the face of the Schedule tab.
   const from = params.get("from");
-  const backHref = pagePathFrom(from) ?? (from === "results" ? `/results${gameQuery(game)}` : `/schedule${gameQuery(game)}`);
+  const backHref = pagePathFrom(from) ?? (from === "results" ? `/results${gameQuery(game)}` : from === "tournaments" ? tournamentsHref(game) : `/schedule${gameQuery(game)}`);
 
   return (
     <Page>

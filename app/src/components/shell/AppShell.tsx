@@ -22,7 +22,7 @@ import { FlairAvatar, FlairName } from "@/components/ui/premium-flair";
 
 const TABS: { href: string; label: string; icon: ReactNode; match: (p: string) => boolean }[] = [
   { href: "/", label: "Live", icon: <Radio size={18} />, match: (p) => p === "/" || p.startsWith("/match") },
-  { href: "/schedule", label: "Schedule", icon: <CalendarDays size={18} />, match: (p) => p.startsWith("/schedule") || p.startsWith("/results") || p.startsWith("/archive") },
+  { href: "/schedule", label: "Schedule", icon: <CalendarDays size={18} />, match: (p) => p.startsWith("/schedule") || p.startsWith("/tournaments") || p.startsWith("/results") || p.startsWith("/archive") },
   { href: "/players", label: "Players", icon: <User size={18} />, match: (p) => p.startsWith("/players") },
   { href: "/teams", label: "Teams", icon: <Users size={18} />, match: (p) => p.startsWith("/teams") },
   { href: "/news", label: "News", icon: <Newspaper size={18} />, match: (p) => p.startsWith("/news") },

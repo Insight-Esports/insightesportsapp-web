@@ -164,10 +164,16 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
   // ── Load / page / receive ──────────────────────────────────────────────
   const dec = useCallback((r: DMMessageRow) => decrypt(r, row.otherId, otherKey.current.pub, otherKey.current.ver), [row.otherId]);
 
+  // Ids removed from this thread (deleted here, on another device or by
+  // them): a poll page or socket echo that raced the delete never brings
+  // them back.
+  const removedIds = useRef(new Set<string>());
+
   const receive = useCallback(async (r: DMMessageRow) => {
+    if (removedIds.current.has(r.id)) return;
     if (messagesRef.current.some((m) => m.id === r.id)) return;
     const m = await dec(r);
-    if (messagesRef.current.some((x) => x.id === r.id)) return;
+    if (removedIds.current.has(r.id) || messagesRef.current.some((x) => x.id === r.id)) return;
     if (m.isMine) {
       const i = messagesRef.current.findIndex((x) => isPendingId(x.id) && !x.failed && x.text === m.text && x.media === null && m.media === null);
       if (i >= 0) {
@@ -185,6 +191,7 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
 
   /** A message left the thread (unsent here, on another device, or by them). */
   const dropMessage = useCallback((messageId: string) => {
+    removedIds.current.add(messageId);
     const list = messagesRef.current;
     const i = list.findIndex((m) => m.id === messageId);
     if (i < 0) return;
@@ -420,6 +427,7 @@ export function useThread(row: DMConversationRow, visible: boolean, onRemoved: (
       await deleteMessage(id, m);
       return null;
     } catch (e) {
+      removedIds.current.delete(m.id);
       setMessages((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev.slice(0, at), m, ...prev.slice(at)]));
       const last = [...messagesRef.current].reverse().find((x) => !isPendingId(x.id));
       if (last) noteLocalMessage(id, last);

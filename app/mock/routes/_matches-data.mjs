@@ -10,6 +10,8 @@
 // to "now" so Today / Live states always show. Keep the export names and
 // the id patterns stable — other mock modules depend on them.
 
+import { tournamentMatchRows } from "./_tournaments-data.mjs";
+
 // Deterministic pseudo-random in [0,1) (same formula as server.mjs).
 const rand = (seed) => { const x = Math.sin(seed * 9301 + 49297) * 233280; return x - Math.floor(x); };
 const H = 3600e3;
@@ -179,6 +181,10 @@ export function allMatches() {
     });
     out.push(m);
   }
+
+  // ── Tournament games (the simulated cups, _tournaments-data.mjs): series
+  // stamped rows, ids "m-t-<key>-<round><pos>-g<n>".
+  out.push(...tournamentMatchRows());
 
   return out;
 }

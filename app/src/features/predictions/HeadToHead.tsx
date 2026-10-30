@@ -1,5 +1,6 @@
 // predictions/HeadToHead.tsx — PredictionTeamViews.swift, head-to-head half:
-//   setup  — pick the opponent (+ optional map) → Get Odds
+//   setup  — pick the opponent (+ optional map: the two-row grid, "Any map"
+//            first, Oct 29 §3) → Get Odds
 //   result — POST /predictions/head-to-head { game, team1Id, team2Id, map? }
 // The result never shows a bare percentage: the split bar, the strength
 // table, the actual H2H record ("FACTORED IN"), map records, side win rates.
@@ -14,10 +15,11 @@ import { clsx } from "@/lib/format";
 import { gameLabel, normalizeTeams } from "@/lib/types";
 import { useFetch } from "@/lib/use-fetch";
 import { useReveal } from "@/lib/use-reveal";
-import { FilterChip, LoadFailure, SearchField, SkeletonLedger, TeamMark } from "@/components/ui";
+import { LoadFailure, SearchField, SkeletonLedger, TeamMark } from "@/components/ui";
 import { SkeletonHeadToHead } from "@/components/ui/skeletons";
 import { PredictScreen } from "./PredictScreen";
 import { flowHref, readTarget } from "./flow";
+import { MapGrid } from "./MapGrid";
 import { Disclaimer, FlowError, Section, StripedTable, WarningCard } from "./shared";
 import { gameMaps, normalizeHeadToHead, type HeadToHeadResponse, type PredictionTargetItem, type SideStats } from "./types";
 
@@ -64,10 +66,7 @@ export function HeadToHeadSetupScreen() {
         {maps.length ? (
           <div className="flex flex-col gap-2 px-4">
             <span className="t-label-sm text-muted">MAP (OPTIONAL)</span>
-            <div className="flex items-end gap-[22px] overflow-x-auto no-scrollbar">
-              <FilterChip label="Any map" selected={map === null} onClick={() => setMap(null)} />
-              {maps.map((m) => <FilterChip key={m} label={m} selected={map === m} onClick={() => setMap(m)} />)}
-            </div>
+            <MapGrid maps={maps} selected={map} onSelect={setMap} anyLabel="Any map" />
           </div>
         ) : null}
 
