@@ -139,23 +139,18 @@ export function ProfileToolbarButton() {
   );
 }
 
-/** The tab headers' tools cluster. On phones only the Live tab carries the
- *  bell and the search (HomeView's cluster: bell · search · avatar); every
- *  other tab shows its own extra tool and the profile door, as the app does.
- *  On desktop every tab header carries search and the bell next to the
- *  avatar; the bell opens its popover in place instead of navigating. */
-export function HeaderTools({ extra, home }: { extra?: ReactNode; home?: boolean }) {
+/** The tab headers' tools cluster on phones, as the iOS tabs now have it on
+ *  every tab: bell · search · the tab's own tool · avatar. On desktop the
+ *  bell, search and avatar live in the top bar, so only the tab's own tool
+ *  shows here. */
+export function HeaderTools({ extra }: { extra?: ReactNode; home?: boolean }) {
   const router = useRouter();
   const { unreadNotifications } = useAppState();
   return (
     <>
+      <ToolButton label="Notifications" onClick={() => router.push("/notifications")} badge={unreadNotifications || undefined} className="md:hidden"><Bell size={17} strokeWidth={2.25} fill="currentColor" /></ToolButton>
+      <ToolButton label="Search" onClick={() => router.push("/search")} className="md:hidden"><Search size={17} strokeWidth={2.5} /></ToolButton>
       {extra}
-      {home ? (
-        <>
-          <ToolButton label="Notifications" onClick={() => router.push("/notifications")} badge={unreadNotifications || undefined} className="md:hidden"><Bell size={17} strokeWidth={2.25} fill="currentColor" /></ToolButton>
-          <ToolButton label="Search" onClick={() => router.push("/search")} className="md:hidden"><Search size={17} strokeWidth={2.5} /></ToolButton>
-        </>
-      ) : null}
       <ProfileToolbarButton />
     </>
   );
