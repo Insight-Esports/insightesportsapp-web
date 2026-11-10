@@ -2,6 +2,7 @@
 // Drop-in for any screen: <FollowButton targetType="team" targetId={team.id} />
 "use client";
 
+import { MorphText } from "@/components/ui";
 import { clsx } from "@/lib/format";
 import { useFollow, type FollowTargetType } from "./useFollow";
 
@@ -20,7 +21,8 @@ export function FollowButton({ targetType, targetId, compact = false, className,
         className,
       )}
     >
-      {isFollowing ? "Following" : "Follow"}
+      {/* The word morphs (crossfade + width) between Follow and Following. */}
+      <MorphText text={isFollowing ? "Following" : "Follow"} />
     </button>
   );
 }

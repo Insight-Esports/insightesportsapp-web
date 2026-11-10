@@ -19,6 +19,7 @@ import { useAppState } from "@/store/app-state";
 import { AssetIcon, BrandMark, InitialAvatar, SidePanel, Spinner, ToolButton } from "@/components/ui";
 import { withBase } from "@/lib/base-path";
 import { FlairAvatar, FlairName } from "@/components/ui/premium-flair";
+import { DrawerSocials } from "./socials";
 
 const TABS: { href: string; label: string; icon: ReactNode; match: (p: string) => boolean }[] = [
   { href: "/", label: "Live", icon: <Radio size={18} />, match: (p) => p === "/" || p.startsWith("/match") },
@@ -201,32 +202,39 @@ function ProfilePanel({ open, onClose }: { open: boolean; onClose: () => void })
   }, [open, user, isPremium]);
   return (
     <SidePanel open={open} onClose={onClose}>
-      <div className="flex justify-end pt-3 pr-2">
-        <button type="button" onClick={onClose} aria-label="Close" className="p-2 text-muted hover:text-primary"><X size={15} strokeWidth={2.5} /></button>
-      </div>
-      {user ? (
-        <div className="flex flex-col gap-3 px-3.5 pb-4">
-          {/* DrawerHeader: the person is the subject, so the flair moves. */}
-          <FlairAvatar user={user} size={50} moving pad className="self-start" />
-          <div className="flex flex-col gap-[3px] min-w-0">
-            <FlairName user={user} moving className="text-[16px] font-bold self-start" nameClassName="text-primary" />
-            {rank ? <span className="t-label-sm text-gold">{rank}</span> : null}
-            <span className="flex items-center gap-1 t-label-sm text-violet"><Star size={11} className="fill-violet" />{user.tokenBalance.toLocaleString()} pts</span>
-          </div>
+      {/* A column at least the drawer's height: the socials row sits at the foot. */}
+      <div className="flex flex-col min-h-full">
+        <div className="flex justify-end pt-3 pr-2">
+          <button type="button" onClick={onClose} aria-label="Close" className="p-2 text-muted hover:text-primary"><X size={15} strokeWidth={2.5} /></button>
         </div>
-      ) : null}
-      <div className="hairline-b" />
-      <div className="flex flex-col gap-1 px-2.5 pt-2">
-        <Row icon={<UserCircle size={16} />} title="Profile" onClick={() => go("/profile")} />
-        <Row icon={<AssetIcon name="messages" height={18} />} title="Messages" badge={unreadDMs} onClick={() => go("/messages")} />
-        <Row icon={<Trophy size={16} />} title="Leaderboard" tint="text-gold" onClick={() => go("/leaderboard")} />
-        <Row icon={<SettingsIcon size={16} />} title="Settings" onClick={() => go("/settings")} />
-        {!isPremium ? (
-          <>
-            <div className="my-2 mx-1.5 hairline-b" />
-            <Row icon={<AssetIcon name="premium" height={18} />} title="Upgrade to Pro" onClick={() => go("/premium/upgrade")} />
-          </>
+        {user ? (
+          <div className="flex flex-col gap-3 px-3.5 pb-4">
+            {/* DrawerHeader: the person is the subject, so the flair moves. */}
+            <FlairAvatar user={user} size={50} moving pad className="self-start" />
+            <div className="flex flex-col gap-[3px] min-w-0">
+              <FlairName user={user} moving className="text-[16px] font-bold self-start" nameClassName="text-primary" />
+              {rank ? <span className="t-label-sm text-gold">{rank}</span> : null}
+              <span className="flex items-center gap-1 t-label-sm text-violet"><Star size={11} className="fill-violet" />{user.tokenBalance.toLocaleString()} pts</span>
+            </div>
+          </div>
         ) : null}
+        <div className="hairline-b" />
+        <div className="flex flex-col gap-1 px-2.5 pt-2">
+          <Row icon={<UserCircle size={16} />} title="Profile" onClick={() => go("/profile")} />
+          <Row icon={<AssetIcon name="messages" height={18} />} title="Messages" badge={unreadDMs} onClick={() => go("/messages")} />
+          <Row icon={<Trophy size={16} />} title="Leaderboard" tint="text-gold" onClick={() => go("/leaderboard")} />
+          <Row icon={<SettingsIcon size={16} />} title="Settings" onClick={() => go("/settings")} />
+          {!isPremium ? (
+            <>
+              <div className="my-2 mx-1.5 hairline-b" />
+              <Row icon={<AssetIcon name="premium" height={18} />} title="Upgrade to Pro" onClick={() => go("/premium/upgrade")} />
+            </>
+          ) : null}
+        </div>
+        {/* Insight's own accounts close the drawer. */}
+        <div className="mt-auto px-2.5 pt-6 pb-3">
+          <DrawerSocials />
+        </div>
       </div>
     </SidePanel>
   );

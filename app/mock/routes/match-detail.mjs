@@ -7,7 +7,17 @@
 //   GET  /api/polls/match/:id   ·   POST /api/polls/:id/vote
 //   POST /api/predictions/live       (win probability)
 // plus registerSockets(): round_update / game_time_update / odds_update /
-// gold_update / match_update / new_message / poll_update to match:<id> rooms.
+// gold_update / match_update / stats_update / new_message / poll_update to
+// match:<id> rooms. Payloads follow backend/services/socketService.js +
+// liveDataWriter.js: match_update {team1Maps, team2Maps, team1InhibitorsUp,
+// team2InhibitorsUp, team1Gold, team2Gold} (no matchId; 2 s gold tick),
+// stats_update {matchId, stats} (the GET /stats rows). /progress carries no
+// team gold. A cup game (the row's `series`): the pushes' maps are THIS
+// game's score (0 until it's won); /progress's are the series score while
+// live and this game's once completed.
+//
+// Mock switch (no backend twin): POST /api/mock/matches/:id/complete?in=ms
+// ends a live sim (now, or after `in` ms) — the live screen's Final state.
 //
 // Match rows come from ./_matches-data.mjs (agent A1) when it exists; a
 // small fixture with the same id patterns ("m-live-1", "m-up-3",
@@ -83,7 +93,10 @@ function sim(m, h) {
   }));
   const s = {
     id: m.id, game: m.game, isLeague, startedAt: Date.now() - 14 * 60e3,
-    t1: Number(m.team1_score) || 0, t2: Number(m.team2_score) || 0, maps1: 1, maps2: 0,
+    t1: Number(m.team1_score) || 0, t2: Number(m.team2_score) || 0,
+    // Maps: a cup game's = this game's score (0 until won); a standalone Bo3/Bo5 is on map 2 (1–0); a Bo1 0–0.
+    series: m.series ?? null, bestOf: Number(m.best_of) || 1,
+    maps1: !m.series && Number(m.best_of) > 1 ? 1 : 0, maps2: 0,
     history: [], side1: m.game === "CS2" ? "CT" : "defense", side2: m.game === "CS2" ? "T" : "attack",
     alive1: 5, alive2: 5, lastRoundAt: Date.now(), roundLen: 24e3 + h.rand(seed) * 16e3,
     players, odds: 52 + Math.floor(h.rand(seed + 1) * 20), decided: false, completed: false,
@@ -99,6 +112,11 @@ function sim(m, h) {
   } else {
     let diff = 0;
     for (let min = 0; min <= 14; min += 1 / 6) { diff += Math.round((h.rand(seed + min * 37) - 0.47) * 260); s.gold.push({ minute: +min.toFixed(3), diff }); }
+    // Roster gold_earned ≈ 14 minutes' worth, team1 − team2 = the curve's last diff.
+    for (const [i, p] of s.players.entries()) p.gold_earned = 5200 + Math.floor(h.rand(seed + i + 400) * 900);
+    const [g1, g2] = teamGold(s);
+    const shift = Math.round((diff - (g1 - g2)) / 5);
+    for (const p of s.players.slice(0, 5)) p.gold_earned += shift;
   }
   const names = ["fragzilla", "ivan", "karlo", "mapcontrol", "ctside", "vctfan99", "baronsteal", "jettmain"];
   const lines = ["LETS GO", "that clutch was insane", "eco round incoming", "who's taking this?", "ref ace pls", "they need this round", "gold lead growing", "dragon soul next", "classic", "nice pick", "this map is a coinflip", "pistol round decides it"];
@@ -112,6 +130,31 @@ function sim(m, h) {
 }
 
 function gameSeconds(s) { return Math.floor((Date.now() - s.startedAt) / 1000); }
+/** Each team's total gold: its roster's gold_earned summed (the sim's team1Gold / team2Gold). */
+function teamGold(s) {
+  let a = 0, b = 0;
+  s.players.forEach((p, i) => { if (i < 5) a += p.gold_earned; else b += p.gold_earned; });
+  return [a, b];
+}
+/** The match_update push (liveDataWriter.emitMatchUpdate): no matchId, gold null outside League. */
+function matchUpdate(s) {
+  const [g1, g2] = s.isLeague ? teamGold(s) : [null, null];
+  return ["match_update", { team1Maps: s.maps1, team2Maps: s.maps2, team1InhibitorsUp: s.isLeague ? s.inh[0] : null, team2InhibitorsUp: s.isLeague ? s.inh[1] : null, team1Gold: g1, team2Gold: g2 }];
+}
+/** The game ends: the winner takes this game (a cup game: 1–0; standalone: the series), odds decided. */
+function finish(s) {
+  if (s.completed) return [];
+  if (s.isLeague && s.t1 === s.t2) s.t1 += 1;
+  const w = s.t1 >= s.t2 ? 1 : 2;
+  s.completed = true; s.decided = true; s.odds = w === 1 ? 100 : 0;
+  const take = s.series ? 1 : s.bestOf > 1 ? Math.floor(s.bestOf / 2) + 1 : 1;
+  if (w === 1) s.maps1 = take; else s.maps2 = take;
+  return [
+    ["odds_update", { matchId: s.id, team1WinProbability: s.odds, team2WinProbability: 100 - s.odds, decided: true }],
+    matchUpdate(s),
+    ["match_completed", { matchId: s.id, team1MapScore: s.maps1, team2MapScore: s.maps2, team1RoundScore: s.t1, team2RoundScore: s.t2 }],
+  ];
+}
 
 // Advance the sim; returns the list of events it produced (for sockets).
 function tick(s, h) {
@@ -120,19 +163,23 @@ function tick(s, h) {
   const now = Date.now();
   if (s.isLeague) {
     const minute = gameSeconds(s) / 60;
+    // Every 2 s tick: gold accrues and the match_update tick carries the team totals.
+    s.players.forEach((p, i) => { p.gold_earned += 6 + Math.floor(h.rand(now / 1000 + i * 3.7) * 12); });   // ~6 g/s a player
+    events.push(matchUpdate(s));
     const last = s.gold[s.gold.length - 1];
     if (!last || minute - last.minute >= 1 / 6) {
-      const diff = last.diff + Math.round((h.rand(now / 1000) - 0.46) * 320);
+      // Every ~10 s: a scoreboard write (stats_update with the rows) and a gold point.
+      for (const p of s.players) { p.damage_dealt += Math.floor(h.rand(now / 7) * 400); if (h.rand(now + 3) < 0.12) { p.kills += 1; } }
+      const [g1, g2] = teamGold(s);
+      const diff = g1 - g2;
       s.gold.push({ minute: +minute.toFixed(3), diff });
       events.push(["gold_update", { matchId: s.id }]);
+      events.push(["stats_update", { matchId: s.id, stats: statsRows(s) }]);
       s.odds = Math.max(5, Math.min(95, 50 + Math.round(diff / 120)));
       events.push(["odds_update", { matchId: s.id, team1WinProbability: s.odds, team2WinProbability: 100 - s.odds, decided: false, model: "live-v2" }]);
-      const g1 = 30000 + Math.round(minute * 1200), g2 = g1 - diff;
-      events.push(["match_update", { matchId: s.id, team1Maps: s.maps1, team2Maps: s.maps2, team1Gold: g1, team2Gold: g2, team1InhibitorsUp: s.inh[0], team2InhibitorsUp: s.inh[1] }]);
-      for (const p of s.players) { p.gold_earned += 180 + Math.floor(h.rand(now + p.player_id.length) * 120); p.damage_dealt += Math.floor(h.rand(now / 7) * 400); if (h.rand(now + 3) < 0.12) { p.kills += 1; } }
       if (h.rand(now / 3) < 0.08) { const side = h.rand(now / 5) < 0.5 ? 0 : 1; s.dragons[side]++; }
       if (h.rand(now / 11) < 0.05) { const side = h.rand(now / 13) < 0.5 ? 0 : 1; s.towers[side]++; }
-      if (gameSeconds(s) >= 40 * 60) { s.completed = true; s.t1 = 1; s.t2 = 0; s.decided = true; events.push(["odds_update", { matchId: s.id, team1WinProbability: 100, team2WinProbability: 0, decided: true }], ["match_completed", { matchId: s.id }]); }
+      if (gameSeconds(s) >= 40 * 60) events.push(...finish(s));
     }
     events.push(["game_time_update", { matchId: s.id, gameTimeSeconds: gameSeconds(s) }]);
     return events;
@@ -147,10 +194,10 @@ function tick(s, h) {
     for (const p of s.players) p.is_alive = true;
     if (s.t1 + s.t2 === 12) { [s.side1, s.side2] = [s.side2, s.side1]; }
     s.odds = Math.max(5, Math.min(95, 50 + (s.t1 - s.t2) * 6));
-    if (s.t1 >= 13 || s.t2 >= 13) { s.completed = true; s.decided = true; s.odds = s.t1 > s.t2 ? 100 : 0; }
+    const ended = s.t1 >= 13 || s.t2 >= 13 ? finish(s) : [];
     events.push(["round_update", { matchId: s.id, team1Rounds: s.t1, team2Rounds: s.t2, currentRound: s.t1 + s.t2 + 1, team1Maps: s.maps1, team2Maps: s.maps2, roundHistory: s.history, team1Alive: 5, team2Alive: 5 }]);
     events.push(["odds_update", { matchId: s.id, team1WinProbability: s.odds, team2WinProbability: 100 - s.odds, decided: s.decided, model: "live-v2" }]);
-    if (s.completed) events.push(["match_completed", { matchId: s.id }]);
+    events.push(...ended);
   } else if (h.rand(now / 1000) < 0.45) {
     const side = h.rand(now / 999) < 0.5 ? 1 : 2;
     const alive = s.players.filter((p, i) => (i < 5) === (side === 1) && p.is_alive);
@@ -174,14 +221,16 @@ function statsRows(s) {
 }
 
 function detailRow(m, s) {
-  const d = { ...m, team1_map_score: s?.maps1 ?? m.team1_map_score ?? 0, team2_map_score: s?.maps2 ?? m.team2_map_score ?? 0 };
+  // A cup game's row shows the series score as the map score while it's on (withSeries).
+  const live = s && !s.completed;
+  const d = { ...m, team1_map_score: live && s.series ? s.series.team1_wins : s?.maps1 ?? m.team1_map_score ?? 0, team2_map_score: live && s.series ? s.series.team2_wins : s?.maps2 ?? m.team2_map_score ?? 0 };
   if (s) {
     d.team1_score = s.t1; d.team2_score = s.t2;
     if (s.completed) d.status = "completed";
     d.game_time_seconds = gameSeconds(s);
     if (s.isLeague) {
       Object.assign(d, { team1_dragon_kills: s.dragons[0], team2_dragon_kills: s.dragons[1], team1_baron_kills: s.barons[0], team2_baron_kills: s.barons[1], team1_tower_kills: s.towers[0], team2_tower_kills: s.towers[1], team1_inhibitors_up: s.inh[0], team2_inhibitors_up: s.inh[1], gold_timeline: s.gold });
-      const last = s.gold[s.gold.length - 1]; d.team1_gold = 30000 + last.diff; d.team2_gold = 30000;
+      [d.team1_gold, d.team2_gold] = teamGold(s);
     } else d.round_history = s.history;
   } else if (m.status === "completed") {
     const t1 = Number(m.team1_score) || 0, t2 = Number(m.team2_score) || 0;
@@ -209,9 +258,12 @@ function completedStats(m, h) {
 }
 
 function progress(m, s) {
-  const r = { matchId: m.id, game: m.game, status: s.completed ? "completed" : "live", score: { team1Maps: s.maps1, team2Maps: s.maps2, team1Rounds: s.t1, team2Rounds: s.t2 }, playersAlive: { team1: s.alive1, team2: s.alive2 }, team1_id: m.team1_id, team2_id: m.team2_id };
+  // getLiveMatchProgress: a cup game's maps = the series score while live, this game's once completed.
+  const seriesLive = s.series && !s.completed;
+  const r = { matchId: m.id, game: m.game, status: s.completed ? "completed" : "live", series: s.series, score: { team1Maps: seriesLive ? s.series.team1_wins : s.maps1, team2Maps: seriesLive ? s.series.team2_wins : s.maps2, team1Rounds: s.t1, team2Rounds: s.t2 }, playersAlive: { team1: s.alive1, team2: s.alive2 }, team1_id: m.team1_id, team2_id: m.team2_id };
   if (!s.isLeague) { r.currentRound = s.t1 + s.t2 + 1; r.round_history = s.history; r.sides = { team1: s.side1, team2: s.side2 }; r.team1_side = s.side1; r.team2_side = s.side2; }
-  else { r.gameTimeSeconds = gameSeconds(s); r.gold_timeline = s.gold; const last = s.gold[s.gold.length - 1]; r.team1_gold = 30000 + last.diff; r.team2_gold = 30000; r.team1_inhibitors_up = s.inh[0]; r.team2_inhibitors_up = s.inh[1]; }
+  // League: clock + gold_timeline (no team gold — the backend's /progress doesn't carry it).
+  else { r.gameTimeSeconds = gameSeconds(s); r.gold_timeline = s.gold; r.team1_inhibitors_up = s.inh[0]; r.team2_inhibitors_up = s.inh[1]; }
   return r;
 }
 
@@ -241,6 +293,16 @@ export function register(app, h) {
     const m = await find(req.params.id);
     if (!m) return res.status(404).json({ error: "Match not found" });
     res.json(detailRow(m, liveSim(m)));
+  });
+
+  app.post("/api/mock/matches/:id/complete", async (req, res) => {
+    const m = await find(req.params.id);
+    if (!m || m.status !== "live") return res.status(404).json({ error: "No live match with that id" });
+    const s = sim(m, h);
+    const ms = Math.max(0, Number(req.query.in) || 0);
+    const end = () => { for (const [event, payload] of finish(s)) h.io?.to(`match:${m.id}`).emit(event, payload); };
+    if (ms) setTimeout(end, ms); else end();
+    res.json({ matchId: m.id, completesIn: ms });
   });
 
   app.get("/api/matches/:id/stats", async (req, res) => {

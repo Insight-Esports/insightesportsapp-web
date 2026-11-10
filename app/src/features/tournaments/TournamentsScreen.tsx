@@ -111,11 +111,11 @@ function TournamentCard({ children }: { children: React.ReactNode }) {
   return <div className="rounded-2xl border border-border-subtle bg-card overflow-hidden [&>*+*]:border-t [&>*+*]:border-border-subtle">{children}</div>;
 }
 
-/** The line under an ON NOW row: "Quarterfinals · Bo3 live", "Semifinals next", "Champion: Spirit". */
-function currentLine(b: Bracket): { text: string; gold?: boolean } | null {
+/** The line under an ON NOW row: "Quarterfinals · Bo3 live", "Semifinals next", "Champion: Spirit" (muted, not gold). */
+function currentLine(b: Bracket): { text: string; muted?: boolean } | null {
   const t = b.tournament;
   if (t.status === "completed") {
-    if (t.champion) return { text: `Champion: ${t.champion.name}`, gold: true };
+    if (t.champion) return { text: `Champion: ${t.champion.name}`, muted: true };
     return t.endDate ? { text: endDate(t.endDate) } : null;
   }
   const s = findSeries(b, b.currentSeriesId);
@@ -127,16 +127,16 @@ function endDate(isoTime: string): string {
   return new Date(isoTime).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
-function RowShell({ href, lead, name, live, line, gold }: { href: string; lead: React.ReactNode; name: string; live: boolean; line: string | null; gold?: boolean }) {
+function RowShell({ href, lead, name, live, line, muted }: { href: string; lead: React.ReactNode; name: string; live: boolean; line: string | null; muted?: boolean }) {
   return (
-    <Link href={href} className="flex items-center gap-3 px-4 py-3.5 min-h-[68px] hover:bg-surface/50 transition-colors">
+    <Link href={href} className="pressable flex items-center gap-3 px-4 py-3.5 min-h-[68px] hover:bg-surface/50 transition-colors">
       <span className="w-10 shrink-0 grid place-items-center">{lead}</span>
       <span className="flex flex-col gap-0.5 min-w-0 flex-1">
         <span className="flex items-center gap-2 min-w-0">
           <span className="text-[16px] font-medium leading-tight text-primary truncate">{name}</span>
           {live ? <LiveBadge className="shrink-0" /> : null}
         </span>
-        {line ? <span className={clsx("t-body-sm truncate", gold ? "text-gold" : "text-secondary")}>{line}</span> : null}
+        {line ? <span className={clsx("t-body-sm truncate", muted ? "text-muted" : "text-secondary")}>{line}</span> : null}
       </span>
       <ChevronRight size={16} className="text-muted shrink-0" />
     </Link>
@@ -150,7 +150,7 @@ function CurrentRow({ bracket: b, from }: { bracket: Bracket; from: string }) {
   const t = b.tournament;
   const line = currentLine(b);
   const lead = t.champion ? <TeamMark name={t.champion.name} logoURL={t.champion.logoURL} size={32} /> : <GamePill game={t.game} className="!text-[12px]" />;
-  return <RowShell href={bracketFrom(t.id, from)} lead={lead} name={t.name} live={t.status === "live"} line={line?.text ?? null} gold={line?.gold} />;
+  return <RowShell href={bracketFrom(t.id, from)} lead={lead} name={t.name} live={t.status === "live"} line={line?.text ?? null} muted={line?.muted} />;
 }
 
 function PastRow({ row, from }: { row: TournamentRow; from: string }) {

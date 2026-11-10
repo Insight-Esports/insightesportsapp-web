@@ -102,7 +102,7 @@ export function BracketTree({ bracket, wide }: { bracket: Bracket; /** Desktop: 
   const labels = Array.from({ length: cols }, (_, c) => {
     const r = c < R ? c + 1 : cols - c;
     const round = bracket.rounds.find((x) => x.round === r);
-    return { c, text: roundShort(round?.name, r, R), bo: round ? `Bo${round.bestOf}` : "", final: r === R };
+    return { c, text: roundShort(round?.name, r, R), bo: round ? `Bo${round.bestOf}` : "" };
   });
 
   return (
@@ -115,7 +115,7 @@ export function BracketTree({ bracket, wide }: { bracket: Bracket; /** Desktop: 
             <div className="flex" style={{ height: 34 }}>
               {labels.map((l) => (
                 <div key={l.c} className="flex flex-col items-center justify-start gap-0.5" style={{ width: colW }}>
-                  <span className={clsx("text-[11px] font-semibold tracking-[0.14em] leading-none", l.final ? "text-gold" : "text-secondary")}>{l.text}</span>
+                  <span className="text-[11px] font-semibold tracking-[0.14em] leading-none text-secondary">{l.text}</span>
                   <span className="text-[10px] text-muted leading-none mt-1">{l.bo}</span>
                 </div>
               ))}
@@ -133,7 +133,6 @@ export function BracketTree({ bracket, wide }: { bracket: Bracket; /** Desktop: 
                   y={p.cy - CARD_H / 2}
                   w={cardW}
                   names={names}
-                  final={p.s.round === R}
                   next={p.s.id === bracket.currentSeriesId}
                   href={seriesHref(p.s.id, from)}
                 />
@@ -146,11 +145,11 @@ export function BracketTree({ bracket, wide }: { bracket: Bracket; /** Desktop: 
   );
 }
 
-function SeriesCard({ s, x, y, w, names, final, next, href }: { s: BracketSeries; x: number; y: number; w: number; names: boolean; final: boolean; next: boolean; href: string }) {
+function SeriesCard({ s, x, y, w, names, next, href }: { s: BracketSeries; x: number; y: number; w: number; names: boolean; next: boolean; href: string }) {
   const live = seriesIsLive(s);
   const decided = seriesDecided(s);
-  // Edge: live red · next series violet · the final gold until decided · else subtle.
-  const edge = live ? "border-[1.5px] border-live" : next ? "border-[1.5px] border-violet" : final && !decided ? "border border-gold/45" : "border border-border-subtle";
+  // Edge: live red · next series violet · else subtle (the final too — no gold).
+  const edge = live ? "border-[1.5px] border-live" : next ? "border-[1.5px] border-violet" : "border border-border-subtle";
   const fav = !decided && s.team1 && s.team2 && s.odds ? (s.odds.team1 >= s.odds.team2 ? { t: s.team1, p: s.odds.team1 } : { t: s.team2, p: s.odds.team2 }) : null;
   return (
     <>

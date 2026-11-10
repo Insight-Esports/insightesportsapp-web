@@ -176,7 +176,7 @@ function TeamRow({ team, rank }: { team: Team; rank: number | null }) {
       href={`/teams/${encodeURIComponent(team.id)}`}
       onClick={() => rememberTeam(team)}
       onMouseEnter={() => prefetchTeam(team.id)}
-      className={clsx("ledger-row hover:bg-surface/60 transition-colors", "md:grid md:grid-cols-[44px_minmax(0,2fr)_120px_90px_110px_90px] md:gap-3")}
+      className={clsx("ledger-row pressable hover:bg-surface/60 transition-colors", "md:grid md:grid-cols-[44px_minmax(0,2fr)_120px_90px_110px_90px] md:gap-3")}
     >
       <span className="t-mono-md text-muted min-w-[30px] text-center shrink-0">{rank != null ? `#${rank}` : "—"}</span>
       <span className="flex items-center gap-3.5 md:gap-3 min-w-0 flex-1">

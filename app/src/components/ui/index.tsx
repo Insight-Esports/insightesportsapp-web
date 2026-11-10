@@ -6,7 +6,7 @@
 // skeletons in the content's own silhouette. Dark only.
 "use client";
 
-import { useEffect, useState, useSyncExternalStore, type ReactNode, type CSSProperties, type InputHTMLAttributes, type ButtonHTMLAttributes } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode, type CSSProperties, type InputHTMLAttributes, type ButtonHTMLAttributes } from "react";
 import { AlertTriangle, Crown, WifiOff, X, Check, Search } from "lucide-react";
 import { clsx, initials as toInitials } from "@/lib/format";
 import { gamePillLabel, gameTint, GAMES, type GameId } from "@/lib/types";
@@ -63,35 +63,88 @@ export function ToolButton({ label, badge, className, children, ...rest }: Butto
 }
 
 // ── Selection: underline tabs (GameTabBar / FilterSegment / FilterChip) ───
-export function FilterChip({ label, selected, onClick, live, className }: { label: string; selected: boolean; onClick: () => void; live?: boolean; className?: string }) {
+/** `rule={false}` leaves the 2pt slot empty: a row's one sliding underline
+ *  (useSlidingRule) draws it instead. */
+export function FilterChip({ label, selected, onClick, live, className, rule = true }: { label: string; selected: boolean; onClick: () => void; live?: boolean; className?: string; rule?: boolean }) {
   return (
     <button type="button" onClick={onClick} className={clsx("flex flex-col items-center gap-1.5 shrink-0", className)} aria-pressed={selected}>
       <span className={clsx("flex items-start gap-1 whitespace-nowrap leading-tight", selected ? "t-label-lg text-primary" : "t-body-md text-muted")}>
         {label}
         {live ? <span className="size-[5px] rounded-full bg-live mt-[3px]" /> : null}
       </span>
-      <span className={clsx("violet-rule w-full", !selected && "opacity-0")} />
+      <span className={clsx("violet-rule w-full", (!selected || !rule) && "opacity-0")} />
     </button>
   );
 }
 
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+type RuleBox = { x: number; y: number; w: number };
+
+/** One underline per row that slides between options (the iOS matched
+ *  underline): measures the pressed chip's offset/width inside `ref` and
+ *  moves a single 2pt rule there. Until the first measurement (server
+ *  render, hydration) the selected chip draws its own rule, so nothing
+ *  flashes; after that the chips leave their slot empty. */
+function useSlidingRule<T extends HTMLElement>(activeKey: string) {
+  const ref = useRef<T>(null);
+  const [box, setBox] = useState<RuleBox | null>(null);
+  const [settled, setSettled] = useState(false);
+  useIsoLayoutEffect(() => {
+    const host = ref.current;
+    if (!host) return;
+    const measure = () => {
+      const chip = host.querySelector<HTMLElement>(':scope > [aria-pressed="true"]');
+      if (!chip) { setBox(null); return; }
+      const next = { x: chip.offsetLeft, y: chip.offsetTop + chip.offsetHeight - 2, w: chip.offsetWidth };
+      setBox((p) => (p && p.x === next.x && p.y === next.y && p.w === next.w ? p : next));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    // Fonts arriving, a live dot appearing, the row reflowing: follow along.
+    const ro = new ResizeObserver(measure);
+    ro.observe(host);
+    host.querySelectorAll(":scope > button").forEach((b) => ro.observe(b));
+    return () => ro.disconnect();
+  }, [activeKey]);
+  // The first placement lands without a slide; every change after that glides.
+  useEffect(() => {
+    if (!box || settled) return;
+    const id = requestAnimationFrame(() => setSettled(true));
+    return () => cancelAnimationFrame(id);
+  }, [box, settled]);
+  const indicator = box ? (
+    <span
+      aria-hidden
+      data-sliding-rule=""
+      className={clsx("violet-rule absolute left-0 top-0 pointer-events-none", settled && "sliding-rule-glide")}
+      style={{ width: box.w, transform: `translate3d(${box.x}px, ${box.y}px, 0)` }}
+    />
+  ) : null;
+  return { ref, indicator, measured: box !== null };
+}
+
 export function FilterSegment<T extends string | number>({ options, value, onChange, className, gap = "gap-[22px]" }: { options: { label: string; value: T }[]; value: T; onChange: (v: T) => void; className?: string; gap?: string }) {
+  const { ref, indicator, measured } = useSlidingRule<HTMLDivElement>(String(value));
   return (
-    <div className={clsx("flex items-end", gap, className)}>
+    <div ref={ref} className={clsx("relative flex items-end", gap, className)}>
       {options.map((o) => (
-        <FilterChip key={String(o.value)} label={o.label} selected={o.value === value} onClick={() => onChange(o.value)} />
+        <FilterChip key={String(o.value)} label={o.label} selected={o.value === value} onClick={() => onChange(o.value)} rule={!measured} />
       ))}
+      {indicator}
     </div>
   );
 }
 
 /** The per-tab game bar: All · VALORANT · CS2 · LoL with live dots. */
 export function GameTabBar({ selected, onChange, games = GAMES, liveGames, className }: { selected: GameId; onChange: (g: GameId) => void; games?: { id: GameId; label: string }[]; liveGames?: Set<string>; className?: string }) {
+  const { ref, indicator, measured } = useSlidingRule<HTMLDivElement>(selected);
   return (
-    <div className={clsx("flex items-end gap-6 px-4 overflow-x-auto no-scrollbar", className)}>
+    <div ref={ref} className={clsx("relative flex items-end gap-6 px-4 overflow-x-auto no-scrollbar", className)}>
       {games.map((g) => (
-        <FilterChip key={g.id} label={g.label} selected={selected === g.id} onClick={() => onChange(g.id)} live={g.id !== "all" && !!liveGames?.has(g.id)} />
+        <FilterChip key={g.id} label={g.label} selected={selected === g.id} onClick={() => onChange(g.id)} live={g.id !== "all" && !!liveGames?.has(g.id)} rule={!measured} />
       ))}
+      {indicator}
     </div>
   );
 }
@@ -132,14 +185,53 @@ export function Kicker({ children, className }: { children: ReactNode; className
   return <span className={clsx("t-kicker", className)}>{children}</span>;
 }
 
+/** A word that morphs when it changes (Follow ↔ Following): the new word
+ *  rises in as the old one fades up and out, and the box eases between
+ *  their widths so the pill around it resizes smoothly. */
+export function MorphText({ text, className }: { text: string; className?: string }) {
+  const measurer = useRef<HTMLSpanElement>(null);
+  const [width, setWidth] = useState<number | null>(null);
+  const [outgoing, setOutgoing] = useState<{ text: string; n: number } | null>(null);
+  // Off for the first render, so a word that's simply there doesn't animate.
+  const [animated, setAnimated] = useState(false);
+  const shown = useRef(text);
+  useIsoLayoutEffect(() => {
+    if (shown.current !== text) {
+      const old = shown.current;
+      shown.current = text;
+      setOutgoing((o) => ({ text: old, n: (o?.n ?? 0) + 1 }));
+      setAnimated(true);
+    }
+    const el = measurer.current;
+    if (!el) return;
+    const measure = () => setWidth(el.offsetWidth);
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [text]);
+  return (
+    <span className={clsx("relative inline-grid place-items-center whitespace-nowrap", width != null && "morph-width", className)} style={{ width: width ?? undefined }}>
+      <span ref={measurer} aria-hidden className="absolute left-0 top-0 invisible whitespace-nowrap">{text}</span>
+      <span key={text} className={clsx("[grid-area:1/1] whitespace-nowrap", animated && "morph-in")}>{text}</span>
+      {outgoing && outgoing.text !== text ? (
+        <span key={`out-${outgoing.n}`} aria-hidden className="[grid-area:1/1] whitespace-nowrap morph-out pointer-events-none" onAnimationEnd={() => setOutgoing((o) => (o && o.n === outgoing.n ? null : o))}>{outgoing.text}</span>
+      ) : null}
+    </span>
+  );
+}
+
 // ── Ledger ────────────────────────────────────────────────────────────────
 /** The app's one container. Children are rows; striping + hairlines are automatic. */
 export function Ledger({ children, className, striped = true }: { children: ReactNode; className?: string; striped?: boolean }) {
   return <div className={clsx("ledger", striped && "ledger-stripe", className)}>{children}</div>;
 }
 
-export function LedgerRow({ children, className, onClick, href, style }: { children: ReactNode; className?: string; onClick?: () => void; href?: string; style?: CSSProperties }) {
-  const cls = clsx("ledger-row", (onClick || href) && "hover:bg-surface/60 transition-colors cursor-pointer", className);
+/** `pressable`: a list row you open (players, teams, a picker's targets)
+ *  sinks to 0.97 under the pointer. Stat-table rows stay still. */
+export function LedgerRow({ children, className, onClick, href, style, pressable }: { children: ReactNode; className?: string; onClick?: () => void; href?: string; style?: CSSProperties; pressable?: boolean }) {
+  const cls = clsx("ledger-row", (onClick || href) && "hover:bg-surface/60 transition-colors cursor-pointer", pressable && (onClick || href) && "pressable", className);
   if (href) return <a href={href} className={cls} style={style}>{children}</a>;
   if (onClick) return <button type="button" onClick={onClick} className={clsx(cls, "w-full text-left")} style={style}>{children}</button>;
   return <div className={cls} style={style}>{children}</div>;
@@ -538,8 +630,10 @@ export function SidePanel({ open, onClose, children, side = "right", width = 320
   }, [open, onClose]);
   return (
     <div className={clsx("fixed inset-0 z-50", !open && "pointer-events-none")} aria-hidden={!open}>
-      <div className={clsx("absolute inset-0 bg-black/60 max-md:bg-black/40 transition-opacity duration-200", open ? "opacity-100" : "opacity-0")} onClick={onClose} />
-      <div className={clsx("absolute top-0 bottom-0 bg-card border-hairline max-md:bg-bg max-md:border-border-subtle max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)] transition-transform duration-200 ease-out overflow-y-auto", side === "right" ? "right-0 border-l" : "left-0 border-r", open ? "translate-x-0" : side === "right" ? "translate-x-full" : "-translate-x-full")} style={{ width: `min(${width}px, var(--side-panel-max, 88vw))` }} role="dialog">
+      {/* Enters on a soft 280 ms glide, leaves quicker (180 ms, easing in):
+          the timing class follows the state being entered. */}
+      <div className={clsx("absolute inset-0 bg-black/60 max-md:bg-black/40 transition-opacity", open ? "opacity-100 duration-[260ms] ease-out" : "opacity-0 duration-[180ms] ease-in")} onClick={onClose} />
+      <div className={clsx("absolute top-0 bottom-0 bg-card border-hairline max-md:bg-bg max-md:border-border-subtle max-md:pt-[env(safe-area-inset-top)] max-md:pb-[env(safe-area-inset-bottom)] transition-transform overflow-y-auto", side === "right" ? "right-0 border-l" : "left-0 border-r", open ? "translate-x-0 duration-[280ms] ease-[cubic-bezier(0.32,0.72,0,1)]" : clsx("duration-[180ms] ease-in", side === "right" ? "translate-x-full" : "-translate-x-full"))} style={{ width: `min(${width}px, var(--side-panel-max, 88vw))` }} role="dialog">
         {children}
       </div>
     </div>

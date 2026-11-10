@@ -5,6 +5,11 @@
 // "⋯", from the keyboard. Arrow keys move, Enter picks, Esc closes and
 // hands focus back. Portaled to <body> so a sheet or a scroller never
 // clips it.
+//
+// `rise` (the DM bubble menu): the menu grows out of the held bubble —
+// transform-origin at the press point / the "⋯" — in 0.26 s and sinks back
+// into it on dismiss in 0.2 s. A "copy" action shows a "Copied" toast (the
+// DM toast's look) unless the screen shows its own (`copyToast={false}`).
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
@@ -33,15 +38,32 @@ export function Portal({ children }: { children: ReactNode }) {
   return client ? createPortal(children, document.body) : null;
 }
 
-export function ActionMenu({ anchor, actions, onClose, label = "Actions" }: { anchor: MenuAnchor | null; actions: MenuAction[]; onClose: () => void; label?: string }) {
+type Placed = { left: number; top: number; origin: string };
+type Snapshot = { actions: MenuAction[]; placed: Placed };
+
+/** The menu's lifetime after dismiss when it sinks back (`.menu-fall`). */
+const FALL_MS = 200;
+
+export function ActionMenu({ anchor, actions, onClose, label = "Actions", rise = false, copyToast = true }: { anchor: MenuAnchor | null; actions: MenuAction[]; onClose: () => void; label?: string; rise?: boolean; copyToast?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [placed, setPlaced] = useState<Placed | null>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const open = !!anchor && actions.length > 0;
+  // What the menu showed last, so it can sink back after the screen has
+  // already cleared its target (actions → []).
+  const last = useRef<Snapshot | null>(null);
+  const [leaving, setLeaving] = useState<Snapshot | null>(null);
+  const [copied, setCopied] = useState(0);
 
   // Place it at the pointer, or under the "⋯" (right edges aligned), kept on screen.
   useLayoutEffect(() => {
-    if (!open || !anchor) { setPos(null); return; }
+    if (!open || !anchor) {
+      if (rise && last.current) setLeaving(last.current);
+      last.current = null;
+      setPlaced(null);
+      return;
+    }
+    setLeaving(null);
     const el = ref.current;
     const w = el?.offsetWidth ?? 200, h = el?.offsetHeight ?? 160;
     const vw = window.innerWidth, vh = window.innerHeight, m = 8;
@@ -54,8 +76,31 @@ export function ActionMenu({ anchor, actions, onClose, label = "Actions" }: { an
     }
     if (left + w > vw - m) left = vw - m - w;
     if (top + h > vh - m) top = vh - m - h;
-    setPos({ left: Math.max(m, left), top: Math.max(m, top) });
-  }, [open, anchor]);
+    left = Math.max(m, left); top = Math.max(m, top);
+    // The point it grows from, in the menu's own box (clamped to its edges).
+    const ax = anchor.kind === "point" ? anchor.x : anchor.rect.left + anchor.rect.width / 2;
+    const ay = anchor.kind === "point" ? anchor.y : anchor.rect.top + anchor.rect.height / 2;
+    const ox = Math.min(w, Math.max(0, ax - left)), oy = Math.min(h, Math.max(0, ay - top));
+    setPlaced({ left, top, origin: `${Math.round(ox)}px ${Math.round(oy)}px` });
+  }, [open, anchor, rise]);
+
+  useEffect(() => {
+    if (open && placed) last.current = { actions, placed };
+  });
+
+  // The sinking copy goes once its 0.2 s is up.
+  useEffect(() => {
+    if (!leaving) return;
+    const t = setTimeout(() => setLeaving(null), FALL_MS);
+    return () => clearTimeout(t);
+  }, [leaving]);
+
+  // "Copied" stays 1.8 s, like the DM "Message deleted" toast.
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(0), 1800);
+    return () => clearTimeout(t);
+  }, [copied]);
 
   // Focus the first item; give focus back on close.
   useEffect(() => {
@@ -103,25 +148,33 @@ export function ActionMenu({ anchor, actions, onClose, label = "Actions" }: { an
     }
   };
 
-  if (!open) return null;
+  const toast = copied && copyToast ? <CopiedToast key={copied} /> : null;
+  const shown: Snapshot | null = open ? { actions, placed: placed ?? { left: -9999, top: -9999, origin: "50% 50%" } } : leaving;
+  if (!shown) return toast ? <Portal>{toast}</Portal> : null;
+  const falling = !open;
   return (
     <Portal>
       <div
-        ref={ref}
+        ref={falling ? undefined : ref}
         role="menu"
         aria-label={label}
-        onKeyDown={onKeyDown}
+        aria-hidden={falling || undefined}
+        onKeyDown={falling ? undefined : onKeyDown}
         onContextMenu={(e) => e.preventDefault()}
-        className="fixed z-[70] min-w-48 max-w-[min(280px,calc(100vw-16px))] py-1 rounded-xl bg-card border border-hairline shadow-2xl"
-        style={{ left: pos?.left ?? -9999, top: pos?.top ?? -9999, visibility: pos ? "visible" : "hidden" }}
+        className={clsx(
+          "fixed z-[70] min-w-48 max-w-[min(280px,calc(100vw-16px))] py-1 rounded-xl bg-card border border-hairline shadow-2xl",
+          rise && (falling ? "menu-fall" : placed ? "menu-rise" : null),
+        )}
+        style={{ left: shown.placed.left, top: shown.placed.top, visibility: open && !placed ? "hidden" : "visible", transformOrigin: shown.placed.origin }}
       >
-        {actions.map((a) => (
+        {shown.actions.map((a) => (
           <div key={a.key}>
             {a.dividerBefore ? <div role="separator" className="my-1 h-px bg-border-subtle" /> : null}
             <button
               type="button"
               role="menuitem"
-              onClick={() => { onClose(); a.onSelect(); }}
+              tabIndex={falling ? -1 : undefined}
+              onClick={() => { if (falling) return; onClose(); a.onSelect(); if (a.key === "copy") setCopied((n) => n + 1); }}
               className={clsx(
                 "flex items-center gap-2.5 w-full px-3 py-2 t-body-md text-left whitespace-nowrap outline-none hover:bg-surface/70 focus-visible:bg-surface/70",
                 a.destructive ? "text-error" : "text-primary",
@@ -133,7 +186,31 @@ export function ActionMenu({ anchor, actions, onClose, label = "Actions" }: { an
           </div>
         ))}
       </div>
+      {toast}
     </Portal>
+  );
+}
+
+/** The violet check of the DM toasts ("Message deleted", "Copied"). */
+export function ToastCheck() {
+  return (
+    <svg width={17} height={17} viewBox="0 0 24 24" aria-hidden className="shrink-0">
+      <circle cx="12" cy="12" r="11" fill="var(--violet)" />
+      <path d="m7.4 12.4 3.1 3.1 6.1-6.6" fill="none" stroke="var(--surface)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** "Copied", in the DM "Message deleted" toast's look: springs in near the
+ *  bottom of the screen (above the phone tab bar), gone after 1.8 s. */
+function CopiedToast() {
+  return (
+    <div className="fixed left-1/2 -translate-x-1/2 bottom-[calc(var(--tabbar-h)+16px)] md:bottom-6 z-[70] pointer-events-none" role="status" aria-live="polite">
+      <div className="dm-toast-in flex items-center gap-2 pl-3 pr-4 py-2.5 rounded-full bg-surface border border-border-subtle shadow-[0_8px_28px_rgb(0_0_0/0.5)] t-label-md text-primary whitespace-nowrap">
+        <ToastCheck />
+        Copied
+      </div>
+    </div>
   );
 }
 

@@ -150,7 +150,7 @@ export function FlowError({ title, detail, icon, className }: { title: string; d
 /** Outlined option row with an icon tile (optionCard / breakdownRow). */
 export function OptionRow({ href, icon, title, blurb }: { href: string; icon: ReactNode; title: string; blurb: string }) {
   return (
-    <Link href={href} className="flex items-center gap-3 p-3.5 rounded-xl bg-card border border-border-subtle hover:border-border-strong hover:bg-surface/40 transition-colors">
+    <Link href={href} className="pressable flex items-center gap-3 p-3.5 rounded-xl bg-card border border-border-subtle hover:border-border-strong hover:bg-surface/40 transition-colors">
       <span className="grid place-items-center size-[34px] rounded-[9px] bg-surface text-violet shrink-0 [&>svg]:size-4">{icon}</span>
       <span className="flex flex-col gap-0.5 min-w-0">
         <span className="t-headline-sm text-primary">{title}</span>

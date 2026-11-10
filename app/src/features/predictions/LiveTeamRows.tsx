@@ -33,7 +33,7 @@ export function LiveTeamPredictRows({ game, matchId, team1, team2, active = true
           <Link
             key={s.id}
             href={flowHref.options({ game, targetType: "team", targetId: s.id, targetName: s.name, isLive: true, matchId })}
-            className="flex items-center gap-2.5 p-2.5 rounded-lg bg-surface hover:bg-surface/70 transition-colors"
+            className="pressable flex items-center gap-2.5 p-2.5 rounded-lg bg-surface hover:bg-surface/70 transition-colors"
           >
             <TeamMark name={s.name} logoURL={s.logoURL} color={s.color} size={22} />
             <span className="flex flex-col min-w-0">

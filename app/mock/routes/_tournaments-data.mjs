@@ -16,11 +16,14 @@
 //                                 appends them, so /matches/live, /upcoming,
 //                                 /completed and /matches/:id serve them
 //   honorsFor(teamId)             GET /teams/:id → honors
+//   setCupBreak(game, on)         mock switch: the game's live cup steps aside
+//                                 so /sim/current serves its last completed one
+//                                 (the break: "Champion: X" on the list)
 //
 // What is in it (times relative to now, deterministic otherwise):
 //   Insight VALORANT Cup 3  live: QFs done, Semifinal 1 game 3 live (decider)
 //   Insight CS2 Cup 2       live: Quarterfinal 1 game 2 live (Spirit lead 1–0)
-//   Insight LoL Cup 1       live: nothing on, Quarterfinal 1 next (in 12 min)
+//   Insight LoL Cup 1       live: Quarterfinal 1 game 2 live (Gen.G lead 1–0, Bo5)
 //   Insight VALORANT Cup 2  completed ~6 h ago, champion Fnatic
 //   Insight CS2 Cup 1       completed ~5 h ago, champion Team Spirit
 // Ids: tournaments 5e1a0000-0000-4000-a000-000000<key>00, series
@@ -85,7 +88,7 @@ const SPECS = [
   { key: "c202", game: "CS2", edition: 2, status: "live", seeds: ["spirit", "mouz", "vit", "navi", "mgz", "g2", "faze", "furia"],
     played: { "1.1": "1" }, live: { "1.1": [5, 3] }, anchor: { liveAgoMin: 11 } },
   { key: "1e01", game: "League", edition: 1, status: "live", seeds: ["gen", "t1", "hle", "blg", "jdg", "tes", "g2", "fnc"],
-    played: {}, live: {}, anchor: { nextInMin: 12 } },
+    played: { "1.1": "1" }, live: { "1.1": [9, 5] }, anchor: { liveAgoMin: 15 } },
   { key: "a102", game: "VALORANT", edition: 2, status: "completed", seeds: ["sen", "fnc", "g2", "prx", "loud", "gen", "th", "drx"],
     played: { "1.1": "11", "1.2": "121", "1.3": "11", "1.4": "212", "2.1": "212", "2.2": "11", "3.1": "2122" }, live: {}, anchor: { endAgoMin: 6 * 60 + 10 } },
   { key: "c201", game: "CS2", edition: 1, status: "completed", seeds: ["vit", "spirit", "furia", "mouz", "navi", "faze", "g2", "mgz"],
@@ -440,9 +443,13 @@ export function bracketFor(id) {
   };
 }
 
+const onBreak = new Set();
+/** Mock switch (POST /api/mock/cup-break): the game's active cup steps aside, as between editions. */
+export function setCupBreak(game, on) { if (on) onBreak.add(game); else onBreak.delete(game); }
+
 export function currentForGame(game) {
   const list = built().filter((b) => b.tournament.game === game);
-  const active = list.find((b) => b.tournament.status === "live" || b.tournament.status === "upcoming");
+  const active = onBreak.has(game) ? null : list.find((b) => b.tournament.status === "live" || b.tournament.status === "upcoming");
   if (active) return bracketFor(active.tournament.id);
   const last = list.filter((b) => b.tournament.status === "completed").sort((a, c) => (a.tournament.end_date < c.tournament.end_date ? 1 : -1))[0];
   return last ? bracketFor(last.tournament.id) : null;

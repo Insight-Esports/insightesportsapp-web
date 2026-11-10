@@ -121,10 +121,11 @@ export function LabeledField({ label, children }: { label: string; children: Rea
   );
 }
 
-/** Full-width gradient primary (primaryButton in the email/password screens). */
+/** Full-width primary (primaryButton in the email/password screens): flat
+ *  Insight violet, no gradient. */
 export function WideButton({ children, disabled, loading, type = "button", onClick }: { children: ReactNode; disabled?: boolean; loading?: boolean; type?: "button" | "submit"; onClick?: () => void }) {
   return (
-    <button type={type} onClick={onClick} disabled={disabled || loading} className={clsx("w-full py-3.5 rounded-xl t-label-lg text-white transition-opacity", disabled ? "bg-surface" : "bg-violet-gradient", "disabled:cursor-not-allowed")}>
+    <button type={type} onClick={onClick} disabled={disabled || loading} className={clsx("w-full py-3.5 rounded-xl t-label-lg text-white transition-opacity", disabled ? "bg-surface" : "bg-violet", "disabled:cursor-not-allowed")}>
       {loading ? "…" : children}
     </button>
   );

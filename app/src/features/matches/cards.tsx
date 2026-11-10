@@ -27,7 +27,8 @@ export function teamHref(id: string | null | undefined, name: string): string {
 }
 
 const CARD = "rounded-xl bg-card border border-border-subtle";
-const CARD_LINK = clsx(CARD, "block hover:border-border-strong transition-colors");
+// Live and result cards open the match: they sink to 0.97 under the pointer (.pressable).
+const CARD_LINK = clsx(CARD, "pressable block hover:border-border-strong transition-colors");
 
 function viewerLabel(count: number | null): string | null {
   if (count == null) return null;
@@ -117,7 +118,8 @@ export function UpcomingMatchCard({ match, className, defaultExpanded = false, p
   const fullTournamentName = match.tournamentName ?? series?.tournamentName ?? "Unknown Tournament";
 
   return (
-    <div className={clsx(CARD, className)}>
+    // The whole card sinks while any part of it is pressed (:active reaches the card).
+    <div className={clsx(CARD, "pressable", className)}>
       {/* Header (tap to expand) */}
       <button type="button" onClick={toggle} aria-expanded={expanded} className="w-full flex flex-col gap-1 px-4 pt-4 pb-2.5 text-left min-w-0 hover:bg-surface/40 rounded-t-xl transition-colors">
         <span className="w-full flex items-center gap-2 min-w-0">

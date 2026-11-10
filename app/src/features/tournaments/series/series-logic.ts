@@ -68,12 +68,9 @@ export function seriesLeadText(s: Pick<SeriesState, "team1Wins" | "team2Wins">, 
   return a > b ? `${team1Name} lead ${a}–${b}` : `${team2Name} lead ${b}–${a}`;
 }
 
-/** Live header: "Quarterfinal · Game 2 of 3 • Spirit leads 1-0" (or "Series tied 1-1"). */
-export function liveSeriesInfo(s: MatchSeries, team1Name: string, team2Name: string): string {
-  const { team1Wins: a, team2Wins: b } = s;
-  const lead = a === b ? `Series tied ${a}-${b}` : a > b ? `${team1Name} leads ${a}-${b}` : `${team2Name} leads ${b}-${a}`;
-  const head = [s.roundName, s.gameNumber != null ? `Game ${s.gameNumber} of ${s.bestOf}` : `Best of ${s.bestOf}`].filter(Boolean).join(" · ");
-  return `${head} • ${lead}`;
+/** Live HUD's bottom line: "Quarterfinal · Game 2 of 3" — context only; the series dots say who leads. */
+export function liveSeriesInfo(s: Pick<MatchSeries, "roundName" | "gameNumber" | "bestOf">): string {
+  return [s.roundName, s.gameNumber != null ? `Game ${s.gameNumber} of ${s.bestOf}` : `Best of ${s.bestOf}`].filter(Boolean).join(" · ");
 }
 
 // ── Team colours on the dark card ─────────────────────────────────────────

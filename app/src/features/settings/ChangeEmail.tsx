@@ -4,7 +4,7 @@
 //   3. Code sent to the NEW email     → POST /users/me/email/change-verify
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, endpoints, ApiError } from "@/lib/api";
 import { Field } from "@/components/ui";
 import { LabeledField, WideButton } from "./components";
@@ -50,8 +50,8 @@ export function ChangeEmailForm({ currentEmail, onDone }: { currentEmail: string
     }
   }
 
-  async function verify(e: FormEvent) {
-    e.preventDefault();
+  async function verify(e?: FormEvent) {
+    e?.preventDefault();
     const target = pending[0];
     if (!target || !codeReady || submitting) return;
     setError(null);
@@ -68,6 +68,17 @@ export function ChangeEmailForm({ currentEmail, onDone }: { currentEmail: string
       setSubmitting(false);
     }
   }
+
+  // Like the password-reset code: the sixth digit submits. Once per code, so
+  // a rejected code doesn't resubmit until it's edited.
+  const autoSent = useRef<string | null>(null);
+  useEffect(() => {
+    if (code.length < 6) { autoSent.current = null; return; }
+    if (step === "form" || submitting || autoSent.current === code) return;
+    autoSent.current = code;
+    void verify();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, step]);
 
   function reset() { setStep("form"); setCode(""); setError(null); setPending([]); }
 
@@ -89,7 +100,7 @@ export function ChangeEmailForm({ currentEmail, onDone }: { currentEmail: string
     <form onSubmit={verify} className="flex flex-col gap-5">
       <p className="t-body-sm text-muted">{isOld ? "To protect your account, first enter the code we sent to your current email." : "Enter the code we sent to your new email."}</p>
       <span className="t-label-lg text-primary">{isOld ? currentEmail : newEmail.trim()}</span>
-      <LabeledField label="Verification Code"><Field inputMode="numeric" placeholder="6-digit code" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} autoComplete="one-time-code" autoFocus /></LabeledField>
+      <LabeledField label="Verification Code"><Field inputMode="numeric" placeholder="6-digit code" value={code} onChange={(e) => { setCode(e.target.value.replace(/\D/g, "").slice(0, 6)); setError(null); }} autoComplete="one-time-code" autoFocus /></LabeledField>
       {error ? <span className="t-label-sm text-error">{error}</span> : null}
       <WideButton type="submit" disabled={!codeReady} loading={submitting}>Verify</WideButton>
       <button type="button" onClick={reset} className="t-label-sm text-muted hover:text-primary text-center">Didn&apos;t get it? Start over</button>

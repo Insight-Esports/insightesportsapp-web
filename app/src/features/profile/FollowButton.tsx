@@ -4,6 +4,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { MorphText } from "@/components/ui";
 import { clsx } from "@/lib/format";
 import { loadFollowsIfNeeded, seedFollow, useFollowState, type FollowTargetType } from "./follow-store";
 
@@ -19,13 +20,13 @@ export function FollowButton({ targetType, targetId, compact, initialFollowing, 
       onClick={() => void toggle()}
       aria-pressed={following}
       className={clsx(
-        "rounded-full transition-colors shrink-0",
+        "inline-flex items-center justify-center rounded-full transition-colors shrink-0",
         compact ? "px-3.5 py-[7px] t-label-md" : "px-5 py-[9px] t-label-lg",
         following ? "bg-surface text-secondary hover:text-primary" : "bg-violet text-white hover:brightness-110",
         className,
       )}
     >
-      {following ? "Following" : "Follow"}
+      <MorphText text={following ? "Following" : "Follow"} />
     </button>
   );
 }

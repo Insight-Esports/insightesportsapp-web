@@ -340,3 +340,62 @@ html { -webkit-text-size-adjust: 100%; overscroll-behavior-y: none; }
 @keyframes dm-toast-out { to { opacity: 0; transform: translateY(4px) scale(0.98); } }
 .dm-toast-in { animation: dm-toast-spring 440ms cubic-bezier(0.22, 1, 0.36, 1) both, dm-toast-out 180ms ease-in 1620ms forwards; }
 @media (prefers-reduced-motion: reduce) { .dm-toast-in { animation: dm-toast-out 180ms ease-in 1620ms forwards; } }
+
+/* Press feedback (iOS PressableStyle): cards and rows sink to 0.97 and dim
+   the moment the pointer goes down, then ease back on release. Colour
+   transitions ride along so a hover tint on the same element still fades. */
+.pressable {
+  transition: transform 120ms ease, opacity 120ms ease, color 150ms ease,
+    background-color 150ms ease, border-color 150ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.pressable:active { transform: scale(0.97); opacity: 0.92; }
+@media (prefers-reduced-motion: reduce) {
+  .pressable { transition: opacity 120ms ease, color 150ms ease, background-color 150ms ease, border-color 150ms ease; }
+  .pressable:active { transform: none; }
+}
+
+/* One sliding underline per tab row (GameTabBar / FilterSegment): the single
+   indicator glides to the picked option once it has been placed. */
+.sliding-rule-glide { transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1), width 220ms cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* DM bubble menu: rises out of the held bubble (transform-origin set inline
+   at the press point) in 0.26 s, sinks back into it on dismiss in 0.2 s. */
+@keyframes menu-rise {
+  0% { opacity: 0; transform: scale(0.35); }
+  60% { opacity: 1; }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes menu-fall { to { opacity: 0; transform: scale(0.35); } }
+.menu-rise { animation: menu-rise 260ms cubic-bezier(0.2, 0.9, 0.3, 1.08) backwards; }
+.menu-fall { animation: menu-fall 200ms cubic-bezier(0.5, 0, 0.75, 0) forwards; pointer-events: none; }
+
+/* Premium tab rows stagger in, 40 ms apart (--i is the row's index). */
+@keyframes row-in { from { opacity: 0; transform: translateY(10px); } }
+.row-in { animation: row-in 340ms cubic-bezier(0.22, 1, 0.36, 1) backwards; animation-delay: calc(var(--i, 0) * 40ms); }
+
+/* Follow ↔ Following: the word crossfades while the pill's width eases. */
+@keyframes morph-in { from { opacity: 0; transform: translateY(35%) scale(0.92); filter: blur(2px); } }
+@keyframes morph-out { to { opacity: 0; transform: translateY(-35%) scale(0.92); filter: blur(2px); } }
+.morph-width { transition: width 240ms cubic-bezier(0.4, 0, 0.2, 1); }
+.morph-in { animation: morph-in 220ms cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.morph-out { animation: morph-out 180ms ease-in forwards; }
+
+/* "Set alert" ↔ "Alert set": the bell is replaced with a small scale + fade. */
+@keyframes icon-swap { from { opacity: 0; transform: scale(0.4); } 70% { transform: scale(1.12); } }
+.icon-swap { animation: icon-swap 280ms cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+
+/* Stat Alerts confirmation: the check tile pops in, then its check pulses once. */
+@keyframes confirm-pop { 0% { opacity: 0; transform: scale(0.5); } 60% { opacity: 1; transform: scale(1.08); } 100% { transform: none; } }
+@keyframes check-pulse { 0%, 100% { transform: none; } 45% { transform: scale(1.22); } }
+@keyframes confirm-ring { from { opacity: 0.55; transform: scale(1); } to { opacity: 0; transform: scale(1.6); } }
+.confirm-pop { animation: confirm-pop 420ms cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.check-pulse { animation: check-pulse 420ms ease-in-out 380ms backwards; }
+.confirm-ring { animation: confirm-ring 620ms ease-out 380ms both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sliding-rule-glide, .morph-width { transition: none; }
+  .menu-rise, .row-in, .morph-in, .icon-swap, .confirm-pop, .check-pulse { animation: none; }
+  .menu-fall, .morph-out { animation-duration: 1ms; }
+  .confirm-ring { display: none; }
+}

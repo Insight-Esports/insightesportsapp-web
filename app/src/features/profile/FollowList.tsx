@@ -13,7 +13,7 @@ import { gameLabel, type Json } from "@/lib/types";
 import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
 import { useReveal } from "@/lib/use-reveal";
-import { EmptyState, Page, SkeletonLedger, Spinner, Toast } from "@/components/ui";
+import { EmptyState, MorphText, Page, SkeletonLedger, Spinner, Toast } from "@/components/ui";
 import { FlairAvatar, FlairName } from "@/components/ui/premium-flair";
 import { NavBar } from "@/components/shell/NavBar";
 import { normalizeFollowRows, type FollowUser } from "./types";
@@ -161,8 +161,8 @@ function FollowUserRow({ user, isSelf, rowProps, more }: { user: FollowUser; isS
         </span>
       </Link>
       {!isSelf ? (
-        <button type="button" onClick={() => void toggle()} aria-pressed={following} className={clsx("px-3.5 py-[7px] rounded-full t-label-md shrink-0 transition-colors", following ? "bg-surface text-secondary hover:text-primary" : "bg-violet-gradient text-white")}>
-          {following ? "Following" : "Follow"}
+        <button type="button" onClick={() => void toggle()} aria-pressed={following} className={clsx("inline-flex items-center justify-center px-3.5 py-[7px] rounded-full t-label-md shrink-0 transition-colors", following ? "bg-surface text-secondary hover:text-primary" : "bg-violet-gradient text-white")}>
+          <MorphText text={following ? "Following" : "Follow"} />
         </button>
       ) : null}
       {more}

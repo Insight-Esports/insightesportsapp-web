@@ -5,11 +5,23 @@
 //   GET /api/tournaments/:id/odds                   every team's chance per round + title
 // The series routes (/api/tournaments/series/:id and /odds) live in
 // tournament-series.mjs. Data: ./_tournaments-data.mjs (shared by both).
-import { bracketFor, completedForGame, currentForGame, tournamentOddsFor } from "./_tournaments-data.mjs";
+//
+// Mock switch (no backend twin): POST /api/mock/cup-break?game=CS2&on=1 puts
+// the game between editions (its live cup steps aside, so the list's ON NOW
+// row is the last edition with "Champion: X"); on=0 brings it back.
+import { bracketFor, completedForGame, currentForGame, setCupBreak, tournamentOddsFor } from "./_tournaments-data.mjs";
 
 const VALID_GAMES = ["VALORANT", "CS2", "League"];
 
 export function register(app) {
+  app.post("/api/mock/cup-break", (req, res) => {
+    const game = String(req.query.game ?? "");
+    if (!VALID_GAMES.includes(game)) return res.status(400).json({ error: `game must be one of: ${VALID_GAMES.join(", ")}` });
+    const on = String(req.query.on ?? "1") !== "0";
+    setCupBreak(game, on);
+    res.json({ game, break: on });
+  });
+
   app.get("/api/tournaments/sim/current", (req, res) => {
     const game = req.query.game ? String(req.query.game) : "VALORANT";
     if (!VALID_GAMES.includes(game)) return res.status(400).json({ error: `Invalid game. Must be one of: ${VALID_GAMES.join(", ")}` });

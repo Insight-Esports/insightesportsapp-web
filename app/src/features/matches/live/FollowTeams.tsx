@@ -4,6 +4,7 @@
 // Membership comes from GET /users/me/following?type=team.
 "use client";
 
+import { MorphText } from "@/components/ui";
 import { useCallback, useEffect, useState } from "react";
 import { api, endpoints } from "@/lib/api";
 import { clsx } from "@/lib/format";
@@ -56,7 +57,7 @@ export function FollowButton({ teamId, compact = true, className }: { teamId: st
   if (!teamId) return null;
   return (
     <button type="button" onClick={() => void toggle()} aria-pressed={following} className={clsx("rounded-full transition-colors", compact ? "px-3.5 py-[7px] t-label-md" : "px-5 py-[9px] t-label-lg", following ? "bg-surface text-secondary hover:text-primary" : "bg-violet text-white hover:brightness-110", className)}>
-      {following ? "Following" : "Follow"}
+      <MorphText text={following ? "Following" : "Follow"} />
     </button>
   );
 }

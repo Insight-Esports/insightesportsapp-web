@@ -3,17 +3,26 @@
 //   1. email        → POST /auth/forgot-password   { email }
 //   2. 6-digit code → POST /auth/verify-reset-code { email, token } → recovery session
 //   3. new password → POST /auth/set-new-password  { resetToken, refreshToken, newPassword }
-// No session required: these paths are in the proxy's PUBLIC_PATHS.
+// No session required: these paths are in the proxy's PUBLIC_PATHS
+// (/api/backend/auth/* → callBackend in lib/server/backend).
+//
+// Send Reset Code moves to the code step at once ("Sending your code…") and
+// the request finishes behind it; a failure keeps the code step and points
+// at Resend. The backend answers the same generic success whether or not
+// the email has an account, so the success copy never reveals one.
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Mail, Hash, Lock, LockKeyhole, MailCheck, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { api, endpoints, ApiError } from "@/lib/api";
-import { Field } from "@/components/ui";
+import { Field, Spinner } from "@/components/ui";
 import { AuthBackLink, AuthButton, AuthError, AuthHero, AuthInfo, useCooldown } from "./AuthHero";
 
 type Step = "enterEmail" | "enterCode" | "newPassword" | "done";
+
+/** The backend's own check (authController emailRegex), so a 400 never comes back. */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function ForgotPassword() {
   const [step, setStep] = useState<Step>("enterEmail");
@@ -23,28 +32,44 @@ export function ForgotPassword() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [session, setSession] = useState<{ resetToken: string; refreshToken: string } | null>(null);
   const [loading, setLoading] = useState(false);
+  // A reset-code request in flight (the first send or a Resend).
+  const [sending, setSending] = useState(false);
+  const sendSeq = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const cooldown = useCooldown();
 
-  // Step 1 / Resend — request a reset code for the email.
-  async function requestCode(e?: FormEvent) {
+  // Step 1 / Resend — request a reset code for the email. The first send
+  // advances straight away; the answer lands on the code step.
+  function requestCode(e?: FormEvent) {
     e?.preventDefault();
     const trimmed = email.trim().toLowerCase();
-    if (!trimmed.includes("@") || !trimmed.includes(".")) { setError("Please enter a valid email address."); return; }
-    if (loading) return;
-    setLoading(true); setError(null); setInfo(null);
-    try {
-      await api.post(endpoints.forgotPassword, { email: trimmed });
-      setEmail(trimmed);
-      // Backend returns 200 whether or not the email exists — never reveal
-      // account existence; just move to code entry.
-      if (step === "enterEmail") { setStep("enterCode"); setInfo("If that email has an account, a code is on its way."); }
-      else { cooldown.start(60); setInfo("We sent a new code to your email."); }
-    } catch (err) {
-      if (err instanceof ApiError && err.isRateLimited) { cooldown.start(60); setError("Too many attempts. Please wait a moment."); }
-      else setError("Something went wrong. Please try again.");
-    } finally { setLoading(false); }
+    if (!EMAIL_RE.test(trimmed)) { setError("Please enter a valid email address."); return; }
+    if (sending) return;
+    const first = step === "enterEmail";
+    const seq = ++sendSeq.current;
+    setEmail(trimmed);
+    setError(null); setInfo(null);
+    setSending(true);
+    if (first) setStep("enterCode");
+    api.post(endpoints.forgotPassword, { email: trimmed })
+      .then(() => {
+        if (seq !== sendSeq.current) return;
+        // 200 whether or not the email exists — never reveal account existence.
+        if (first) setInfo("If that email has an account, a code is on its way.");
+        else { cooldown.start(60); setInfo("We sent a new code to your email."); }
+      })
+      .catch((err: unknown) => {
+        if (seq !== sendSeq.current) return;
+        if (err instanceof ApiError && err.isRateLimited) { cooldown.start(60); setError("Too many attempts. Please wait a moment."); }
+        else if (err instanceof ApiError && err.status >= 400 && err.status < 500 && err.status !== 408) {
+          // The server refused this email itself: back to the email step to fix it.
+          setStep("enterEmail"); setError(err.message || "Please enter a valid email address.");
+        }
+        // Transport failure (or a 5xx): stay on the code step, point at Resend.
+        else setError("Couldn't send the code. Tap Resend to try again.");
+      })
+      .finally(() => { if (seq === sendSeq.current) setSending(false); });
   }
 
   // Step 2 — verify the code. On success, move to the new-password step.
@@ -96,44 +121,46 @@ export function ForgotPassword() {
 
       {step === "enterEmail" ? (
         <>
-          <AuthHero icon={<LockKeyhole />} title="Reset your password" subtitle="Enter your email and we'll send you a reset code." />
+          <AuthHero flat icon={<LockKeyhole />} title="Reset your password" subtitle="Enter your email and we'll send you a reset code." />
           <form onSubmit={requestCode} className="w-full max-w-sm flex flex-col gap-4">
-            <Field type="email" placeholder="Email" icon={<Mail />} value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" autoCapitalize="none" autoFocus />
+            <Field type="email" placeholder="Email" icon={<Mail />} value={email} onChange={(e) => { setEmail(e.target.value); setError(null); }} autoComplete="email" autoCapitalize="none" autoFocus />
             <AuthError message={error} />
             {!error ? <AuthInfo message={info} /> : null}
-            <AuthButton loading={loading} disabled={email.trim() === ""}>Send Reset Code</AuthButton>
+            <AuthButton flat disabled={email.trim() === ""}>Send Reset Code</AuthButton>
           </form>
         </>
       ) : step === "enterCode" ? (
         <>
-          <AuthHero icon={<MailCheck />} title="Check your email" subtitle="We sent a 6-digit code to">
+          <AuthHero flat icon={<MailCheck />} title="Check your email" subtitle="We sent a 6-digit code to">
             <span className="t-body-md text-white">{email}</span>
           </AuthHero>
           <form onSubmit={verifyCode} className="w-full max-w-sm flex flex-col gap-4">
             <Field inputMode="numeric" placeholder="6-digit code" icon={<Hash />} value={code} onChange={(e) => { setCode(e.target.value.replace(/\D/g, "").slice(0, 6)); setError(null); }} autoComplete="one-time-code" autoFocus />
             <AuthError message={error} />
-            {!error ? <AuthInfo message={info} /> : null}
-            <AuthButton loading={loading} disabled={code.length !== 6}>Verify Code</AuthButton>
-            <button type="button" onClick={() => void requestCode()} disabled={cooldown.seconds > 0 || loading} className={`t-label-md pt-1 ${cooldown.seconds > 0 ? "text-muted" : "text-violet hover:underline"}`}>
+            {sending && !error ? (
+              <div className="flex items-center gap-2 px-1" role="status"><Spinner size={14} className="border-violet-light/30 border-t-violet-light" /><span className="t-body-sm text-muted">Sending your code…</span></div>
+            ) : !error ? <AuthInfo message={info} /> : null}
+            <AuthButton flat loading={loading} disabled={code.length !== 6}>Verify Code</AuthButton>
+            <button type="button" onClick={() => requestCode()} disabled={cooldown.seconds > 0 || loading || sending} className={`t-label-md pt-1 ${cooldown.seconds > 0 || sending ? "text-muted" : "text-violet hover:underline"}`}>
               {cooldown.seconds > 0 ? `Resend code in ${cooldown.seconds}s` : "Resend code"}
             </button>
           </form>
         </>
       ) : step === "newPassword" ? (
         <>
-          <AuthHero icon={<Lock />} title="Set a new password" subtitle="Choose a new password for your account." />
+          <AuthHero flat icon={<Lock />} title="Set a new password" subtitle="Choose a new password for your account." />
           <form onSubmit={resetPassword} className="w-full max-w-sm flex flex-col gap-4">
             <Field type="password" placeholder="New password" icon={<Lock />} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoComplete="new-password" autoFocus />
             <Field type="password" placeholder="Confirm new password" icon={<Lock />} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} autoComplete="new-password" />
             <AuthError message={error} />
-            <AuthButton loading={loading} disabled={!isFormValid}>Reset Password</AuthButton>
+            <AuthButton flat loading={loading} disabled={!isFormValid}>Reset Password</AuthButton>
           </form>
         </>
       ) : (
         <>
-          <AuthHero icon={<ShieldCheck />} title="Password reset" subtitle="You can now log in with your new password." />
+          <AuthHero flat icon={<ShieldCheck />} title="Password reset" subtitle="You can now log in with your new password." />
           <div className="w-full max-w-sm">
-            <Link href="/login" className="block w-full py-4 rounded-xl bg-violet-gradient text-white t-label-lg text-center">Back to Log In</Link>
+            <Link href="/login" className="block w-full py-4 rounded-xl bg-violet text-white t-label-lg text-center">Back to Log In</Link>
           </div>
         </>
       )}

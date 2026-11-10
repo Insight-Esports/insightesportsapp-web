@@ -44,9 +44,14 @@ export interface ScoreHUDProps {
   isRoundBased: boolean;
   team1Score: number;
   team2Score: number;
+  /** Filled dots: maps won, or series games won for a cup game (the HUD's `match.bestOf` is the series'). */
   team1Maps: number;
   team2Maps: number;
+  /** League: each team's total gold under its side badge (null hides it). */
+  team1Gold?: number | null;
+  team2Gold?: number | null;
   gameTime: string;
+  /** The bottom line, context only: "Quarterfinal · Game 1 of 5" / "Map 2 of 3". */
   seriesInfo: string;
   viewerCount: string;
   team1Side?: string | null;
@@ -88,13 +93,42 @@ function sideBadgeColor(label: string, teamColor: string): string {
   return teamColor;
 }
 
+/** One dot per game needed (floor(bestOf/2)+1), filled per game won. A best-of-one shows none. */
 function MapDots({ won, bestOf, color }: { won: number; bestOf: number; color: string }) {
-  const needed = Math.max(1, Math.floor(bestOf / 2) + 1);
+  if (bestOf <= 1) return null;
+  const needed = Math.floor(bestOf / 2) + 1;
   return (
-    <span className="flex gap-1">
+    <span className="flex gap-1" aria-label={`${Math.min(won, needed)} of ${needed} won`}>
       {Array.from({ length: needed }).map((_, i) => (
         <span key={i} className="size-[7px] rounded-full" style={{ background: i < won ? color : "var(--surface)" }} />
       ))}
+    </span>
+  );
+}
+
+/** The gold mark: two coins in outline, the front one whole, the back one peeking out behind it. */
+function GoldMark({ className }: { className?: string }) {
+  return (
+    <svg width="13" height="10" viewBox="0 0 13 10" fill="none" stroke="currentColor" strokeWidth={1.2} aria-hidden className={className}>
+      <circle cx="4.6" cy="5" r="3.9" />
+      <path d="M7.66 1.17A3.9 3.9 0 1 1 7.66 8.83" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+/** "38.2k" (one decimal from a thousand up), "860" below. */
+function teamGoldText(v: number): string {
+  const n = Math.max(0, Math.round(v));
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
+
+/** A team's total gold under its side badge: the violet two-coin mark, then "38.2k". */
+function TeamGold({ gold }: { gold: number }) {
+  const text = teamGoldText(gold);
+  return (
+    <span className="inline-flex items-center gap-1 text-violet" aria-label={`${text} gold`} title="Total gold">
+      <GoldMark />
+      <span className="t-label-sm tabular-nums text-secondary">{text}</span>
     </span>
   );
 }
@@ -115,7 +149,10 @@ function HUDTeamColumn({ p, side }: { p: ScoreHUDProps; side: 1 | 2 }) {
   const logo = side === 1 ? match.team1LogoURL : match.team2LogoURL;
   const id = side === 1 ? match.team1Id : match.team2Id;
   const color = side === 1 ? team1Color(match) : team2Color(match);
+  // Dots and pips in a colour that reads on the card (a near-black team colour turns light grey).
+  const dotColor = readableSides(team1Color(match), team2Color(match))[side - 1];
   const maps = side === 1 ? p.team1Maps : p.team2Maps;
+  const gold = match.game === "League" ? (side === 1 ? p.team1Gold : p.team2Gold) ?? null : null;
   const alive = side === 1 ? p.team1Alive : p.team2Alive;
   const sl = sideLabel(match, isRoundBased, side === 1 ? p.team1Side : p.team2Side, side === 1, p.team1Score, p.team2Score);
   return (
@@ -129,8 +166,9 @@ function HUDTeamColumn({ p, side }: { p: ScoreHUDProps; side: 1 | 2 }) {
       ) : sl ? (
         <span className="text-[9px] font-bold tracking-[0.5px]" style={{ color: sideBadgeColor(sl, color) }}>{sl}</span>
       ) : null}
-      <MapDots won={maps} bestOf={match.bestOf} color={color} />
-      {isRoundBased && winnerSide === null && alive != null ? <AlivePips alive={alive} color={color} /> : null}
+      {gold !== null ? <TeamGold gold={gold} /> : null}
+      <MapDots won={maps} bestOf={match.bestOf} color={dotColor} />
+      {isRoundBased && winnerSide === null && alive != null ? <AlivePips alive={alive} color={dotColor} /> : null}
     </div>
   );
 }

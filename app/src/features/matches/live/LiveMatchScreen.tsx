@@ -23,7 +23,6 @@ import { WatchPill } from "./StreamPlayer";
 import { isRoundBasedGame } from "./types";
 import { useLiveMatch } from "./use-live-match";
 import { SkeletonScoreboard } from "@/components/ui/skeletons";
-import { liveSeriesInfo } from "@/features/tournaments/series/series-logic";
 import { seriesFactorLine, useSeriesFactor } from "@/features/tournaments/series/series-data";
 
 /** Title strip above the HUD: Live/Final + tournament (the iOS principal toolbar).
@@ -58,14 +57,11 @@ export function LiveMatchScreen({ match, back }: { match: Match; /** A series pa
   // LiveMatchView hides the tab bar so the chat composer is reachable.
   useHideTabBar();
   const vm = useLiveMatch(match);
-  // A tournament game: the header reads the series ("Quarterfinal · Game 2
-  // of 3 • Spirit leads 1-0"), each side's dots = max(series wins, maps won),
-  // and the series effects show under Win Probability.
+  // A tournament game: the bottom line reads "Quarterfinal · Game 2 of 3",
+  // the dots are the series (from /progress — use-live-match.ts), and the
+  // series effects show under Win Probability.
   const series = match.series ?? null;
   const hudMatch = series ? { ...match, bestOf: series.bestOf } : match;
-  const team1Maps = series ? Math.max(series.team1Wins, vm.team1Maps) : vm.team1Maps;
-  const team2Maps = series ? Math.max(series.team2Wins, vm.team2Maps) : vm.team2Maps;
-  const seriesInfo = series ? liveSeriesInfo(series, match.team1Name, match.team2Name) : vm.seriesInfo;
   const factor = useSeriesFactor(match.id, !!series && !vm.isMatchComplete);
   const factorNote = factor ? seriesFactorLine(factor, match.team1Name, match.team2Name) : null;
   const isRoundBased = isRoundBasedGame(match.game);
@@ -113,10 +109,12 @@ export function LiveMatchScreen({ match, back }: { match: Match; /** A series pa
           isRoundBased={isRoundBased}
           team1Score={vm.team1Rounds}
           team2Score={vm.team2Rounds}
-          team1Maps={team1Maps}
-          team2Maps={team2Maps}
+          team1Maps={vm.team1Maps}
+          team2Maps={vm.team2Maps}
+          team1Gold={vm.team1Gold}
+          team2Gold={vm.team2Gold}
           gameTime={vm.gameTime}
-          seriesInfo={seriesInfo}
+          seriesInfo={vm.seriesInfo}
           viewerCount={vm.viewerCount}
           team1Side={vm.team1Side}
           team2Side={vm.team2Side}

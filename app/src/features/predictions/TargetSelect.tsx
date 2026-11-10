@@ -237,7 +237,7 @@ export function TargetSelectScreen() {
               ) : null}
               <Ledger>
                 {rows.map((item) => (
-                  <LedgerRow key={item.id + (item.matchId ?? "")} href={hrefFor(item)}>
+                  <LedgerRow key={item.id + (item.matchId ?? "")} href={hrefFor(item)} pressable>
                     <TargetRow item={item} targetType={targetType} />
                   </LedgerRow>
                 ))}

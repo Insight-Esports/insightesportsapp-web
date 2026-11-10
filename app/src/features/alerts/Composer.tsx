@@ -350,7 +350,11 @@ function Composer(p: ComposerProps) {
     return (
       <AlertsFrame title={title} back={alertsListHref()}>
         <div className="flex flex-col items-center gap-3 pt-10 text-center">
-          <span className="grid place-items-center size-14 rounded-full bg-violet/15 text-violet"><Check size={26} strokeWidth={2.5} /></span>
+          {/* Pops in, then the check pulses once (a soft ring goes out with it). */}
+          <span className="relative grid place-items-center size-14 confirm-pop">
+            <span aria-hidden className="absolute inset-0 rounded-full border-2 border-violet/60 confirm-ring" />
+            <span className="grid place-items-center size-14 rounded-full bg-violet/15 text-violet"><Check size={26} strokeWidth={2.5} className="check-pulse" /></span>
+          </span>
           <span className="t-headline-md text-primary">{editing ? "Alert updated" : "Alert set"}</span>
           <span className="t-body-md text-secondary">{displayName} · {words}</span>
           <span className="t-label-md text-muted">{line}</span>

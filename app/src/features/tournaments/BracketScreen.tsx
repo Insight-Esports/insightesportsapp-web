@@ -4,7 +4,7 @@
 //   header        game tag · name · LIVE; "8 teams · Bo3 · Bo3 · Bo5" (· Completed)
 //   game on now   "QUARTERFINAL · GAME 2" over the live match link
 //   the tree      BracketTree (two halves meeting at the final)
-//   champion      crest · CHAMPION · name · trophy (→ team page)
+//   champion      crest · CHAMPION · name · "Beat X 3–1 in the final" · › (→ team page)
 //   TITLE ODDS    reach per round after the first + title (hidden once completed)
 //   round by round  each round's series as rows (→ the series)
 //
@@ -13,7 +13,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Check, ChevronRight, Trophy } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import { GamePill, LiveBadge, LoadFailure, Page, SkeletonBar, TeamMark } from "@/components/ui";
 import { NavBar } from "@/components/shell/NavBar";
 import { useIsPhone } from "@/components/shell/use-phone";
@@ -85,16 +85,7 @@ function BracketBody({ b, wide }: { b: Bracket; wide: boolean }) {
       <BracketTree bracket={b} wide={wide} />
 
       {/* 4. Champion */}
-      {t.champion ? (
-        <Link href={teamHref(t.champion.id)} className="flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border border-gold/60 bg-card hover:bg-surface/60 transition-colors md:max-w-[560px]">
-          <TeamMark name={t.champion.name} logoURL={t.champion.logoURL} size={40} />
-          <span className="flex flex-col gap-0.5 min-w-0 flex-1">
-            <span className="text-[11px] font-bold tracking-[0.14em] text-gold">CHAMPION</span>
-            <span className="t-headline-sm text-primary truncate">{t.champion.name}</span>
-          </span>
-          <Trophy size={22} className="text-gold shrink-0" />
-        </Link>
-      ) : null}
+      {t.champion ? <ChampionCard b={b} champion={t.champion} /> : null}
 
       <div className={clsx("grid grid-cols-[minmax(0,1fr)] gap-7", odds && "lg:grid-cols-2 lg:gap-x-6 lg:items-start")}>
         {/* 5. TITLE ODDS */}
@@ -113,6 +104,35 @@ function BracketBody({ b, wide }: { b: Bracket; wide: boolean }) {
       </div>
     </div>
   );
+}
+
+// ── Champion ────────────────────────────────────────────────────────────────
+/** Crest · muted CHAMPION · name · "Beat Fnatic 3–1 in the final" · chevron (→ team page). No gold, no trophy. */
+function ChampionCard({ b, champion }: { b: Bracket; champion: NonNullable<Bracket["tournament"]["champion"]> }) {
+  const line = finalLine(b, champion.id);
+  return (
+    <Link href={teamHref(champion.id)} className="pressable flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border border-border-subtle bg-card hover:bg-surface/60 transition-colors md:max-w-[560px]">
+      <TeamMark name={champion.name} logoURL={champion.logoURL} size={40} />
+      <span className="flex flex-col gap-0.5 min-w-0 flex-1">
+        <span className="text-[11px] font-semibold tracking-[0.14em] text-muted">CHAMPION</span>
+        <span className="t-headline-sm text-primary truncate">{champion.name}</span>
+        {line ? <span className="t-body-sm text-secondary truncate">{line}</span> : null}
+      </span>
+      <ChevronRight size={16} className="text-muted shrink-0" />
+    </Link>
+  );
+}
+
+/** "Beat Fnatic 3–1 in the final": the last round's series the champion won — the opponent and the games. */
+function finalLine(b: Bracket, championId: string): string | null {
+  const last = b.rounds[b.rounds.length - 1];
+  const s = last?.series.find((x) => x.winnerId === championId || x.team1?.id === championId || x.team2?.id === championId);
+  if (!s || !s.team1 || !s.team2) return null;
+  const champIs1 = s.team1.id === championId;
+  const opponent = champIs1 ? s.team2 : s.team1;
+  const [won, lost] = champIs1 ? [s.team1Wins, s.team2Wins] : [s.team2Wins, s.team1Wins];
+  if (won <= lost) return null;
+  return `Beat ${opponent.name} ${won}–${lost} in the final`;
 }
 
 // ── TITLE ODDS ──────────────────────────────────────────────────────────────
@@ -164,7 +184,7 @@ function RoundRow({ s, current, from }: { s: BracketSeries; current: boolean; fr
     : current ? <span className="text-[11px] font-bold tracking-[0.1em] text-violet">NEXT</span>
     : <span className="t-label-md text-secondary tabular-nums">{startLabel(nextStartOf(s)) ?? ""}</span>;
   return (
-    <Link href={seriesHref(s.id, from)} className="relative flex items-center gap-3 pl-4 pr-3.5 py-2.5 hover:bg-surface/50 transition-colors">
+    <Link href={seriesHref(s.id, from)} className="pressable relative flex items-center gap-3 pl-4 pr-3.5 py-2.5 hover:bg-surface/50 transition-colors">
       {live ? <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[3px] bg-live" /> : null}
       <span className="flex flex-col gap-1.5 flex-1 min-w-0">
         <RowTeam team={s.team1} wins={s.team1Wins} s={s} />

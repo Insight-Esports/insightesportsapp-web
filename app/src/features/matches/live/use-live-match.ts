@@ -2,11 +2,16 @@
 //
 // Data strategy (identical to the app):
 //   INSTANT (socket):   round score, map score, current round, game time,
-//                       odds, chat messages, poll vote counts
+//                       odds, chat messages, poll vote counts, scoreboard
+//                       rows (stats_update), League team gold (match_update)
 //   POLLED (8s REST):   player stats table, League objectives + gold
 //                       timeline, AND match progress as a socket fallback —
 //                       score and round coloring keep working even if the
 //                       socket can't connect; sockets just make them instant.
+//
+// The HUD's dots: a cup game's (the row carries `series`) are the SERIES,
+// read from /progress only — its pushes' team1Maps/team2Maps are this game's
+// score, 0 until it's won. A standalone multi-map match takes its pushes too.
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -16,20 +21,26 @@ import { getSocket, rooms } from "@/lib/socket";
 import { normalizePlayers, type Match, type Json } from "@/lib/types";
 import { noteBan } from "@/features/moderation/ban";
 import { applyChatChange, onChatLocal } from "@/features/moderation/chat-actions";
+import { liveSeriesInfo } from "@/features/tournaments/series/series-logic";
 import {
   chatDeletedPayload, chatEditedPayload, formatGameTime, mapTeamRows, normalizeChatHistory, normalizeChatMessage,
   normalizeMatchDetail, normalizePoll, normalizeProgress, normalizeStatRows, placeholderStat,
-  resolvedLockedPayout, splitStatRows, viewerLabel, voteCountMap,
-  type FanPoll, type GoldTimelinePoint, type LeagueObjective, type LiveChatMessage, type LivePlayerStat, type LiveRound,
+  resolvedLockedPayout, splitStatRows, teamGoldTotal, viewerLabel, voteCountMap,
+  type FanPoll, type GoldTimelinePoint, type LeagueObjective, type LiveChatMessage, type LivePlayerStat, type LiveRound, type MatchStatRow,
 } from "./types";
 
 export interface LiveMatchState {
   team1Rounds: number;
   team2Rounds: number;
+  /** The HUD's dots: maps won (standalone) or series games won (a cup game). */
   team1Maps: number;
   team2Maps: number;
+  /** League: each team's total gold (roster gold_earned summed / the match_update tick). */
+  team1Gold: number | null;
+  team2Gold: number | null;
   currentRound: number;
   gameTime: string;
+  /** The HUD's bottom line: "Quarterfinal · Game 1 of 5" or "Map 2 of 3". */
   seriesInfo: string;
   viewerCount: string;
   team1Side: string | null;
@@ -61,15 +72,28 @@ const STATS_POLL_MS = 8000;
 // scoreboard/poll/chat at once while the first-screen requests refresh it.
 const liveStateCache = new Map<string, LiveMatchState>();
 
+/** "Quarterfinal · Game 1 of 5" (a cup game) or "Map 2 of 3" / "Game 2 of 3" (standalone). */
+function contextLine(seriesHead: string | null, game: string, bestOf: number, team1Maps: number, team2Maps: number, complete: boolean): string {
+  if (seriesHead !== null) return seriesHead;
+  const played = team1Maps + team2Maps;
+  // Live: the map being played; final: the last one played.
+  const n = Math.min(Math.max(1, complete ? played : played + 1), bestOf);
+  return `${game === "League" ? "Game" : "Map"} ${n} of ${bestOf}`;
+}
+
 export function useLiveMatch(match: Match) {
+  // A cup game's context ("Quarterfinal · Game 1 of 5"), as a string so callbacks stay stable.
+  const seriesHead = match.series ? liveSeriesInfo(match.series) : null;
   const [s, setS] = useState<LiveMatchState>(() => liveStateCache.get(match.id) ?? ({
     team1Rounds: match.team1Score,
     team2Rounds: match.team2Score,
-    team1Maps: 0,
-    team2Maps: 0,
+    team1Maps: match.series?.team1Wins ?? 0,
+    team2Maps: match.series?.team2Wins ?? 0,
+    team1Gold: null,
+    team2Gold: null,
     currentRound: 0,
     gameTime: "00:00",
-    seriesInfo: "",
+    seriesInfo: contextLine(seriesHead, match.game, match.bestOf, match.series?.team1Wins ?? 0, match.series?.team2Wins ?? 0, false),
     viewerCount: viewerLabel(match.viewerCount),
     team1Side: null,
     team2Side: null,
@@ -98,8 +122,13 @@ export function useLiveMatch(match: Match) {
     team2Id: match.team2Id,
     team1Rounds: match.team1Score,
     team2Rounds: match.team2Score,
-    team1Maps: 0,
-    team2Maps: 0,
+    team1Maps: match.series?.team1Wins ?? 0,
+    team2Maps: match.series?.team2Wins ?? 0,
+    // A cup game: the dots are the series, from /progress only. `seriesBefore`
+    // is the series score going into this game (the last live /progress).
+    inSeries: !!match.series,
+    seriesBefore1: match.series?.team1Wins ?? 0,
+    seriesBefore2: match.series?.team2Wins ?? 0,
     gameTimeSeconds: 0,
     hasInitialProgress: false,
     hasRealStats: false,
@@ -143,16 +172,29 @@ export function useLiveMatch(match: Match) {
     patch({ rounds, team1Rounds: r.team1Rounds, team2Rounds: r.team2Rounds });
   }, [patch]);
 
-  const updateSeriesInfo = useCallback(() => {
+  // The bottom line carries context only; the dots say who leads.
+  const updateSeriesInfo = useCallback((complete = false) => {
     const r = ref.current;
-    const mapsPlayed = r.team1Maps + r.team2Maps;
-    const gameNumber = mapsPlayed + 1;
-    const label = match.game === "League" ? "Game" : "Map";
-    let lead = `Series tied ${r.team1Maps}-${r.team2Maps}`;
-    if (r.team1Maps > r.team2Maps) lead = `${match.team1Name} leads ${r.team1Maps}-${r.team2Maps}`;
-    else if (r.team2Maps > r.team1Maps) lead = `${match.team2Name} leads ${r.team2Maps}-${r.team1Maps}`;
-    patch({ seriesInfo: `${label} ${Math.min(gameNumber, match.bestOf)} of ${match.bestOf} • ${lead}`, team1Maps: r.team1Maps, team2Maps: r.team2Maps });
-  }, [match.bestOf, match.game, match.team1Name, match.team2Name, patch]);
+    patch({ seriesInfo: contextLine(seriesHead, match.game, match.bestOf, r.team1Maps, r.team2Maps, complete || r.isMatchComplete), team1Maps: r.team1Maps, team2Maps: r.team2Maps });
+  }, [match.bestOf, match.game, patch, seriesHead]);
+
+  /** A cup game's dots at the end: the series going in + this game (the completed /progress maps). */
+  const applySeriesCompletion = useCallback((g1: number | null, g2: number | null) => {
+    const r = ref.current;
+    let a = g1 ?? 0, b = g2 ?? 0;
+    if (a + b > 1) {
+      // Already the series score (more than one game's worth): take it as is.
+      r.team1Maps = a; r.team2Maps = b;
+      return;
+    }
+    if (a + b === 0) {
+      // This game's map score not stated: the final score decides it.
+      if (r.team1Rounds > r.team2Rounds) a = 1;
+      else if (r.team2Rounds > r.team1Rounds) b = 1;
+    }
+    r.team1Maps = r.seriesBefore1 + a;
+    r.team2Maps = r.seriesBefore2 + b;
+  }, []);
 
   // ── Game clock (League) ────────────────────────────────────────────────
   const anchorClock = useCallback((seconds: number) => {
@@ -252,6 +294,7 @@ export function useLiveMatch(match: Match) {
       const completed = p.status?.toLowerCase() === "completed";
       r.team1Id = p.team1Id ?? r.team1Id;
       r.team2Id = p.team2Id ?? r.team2Id;
+      if (p.inSeries) r.inSeries = true;
       if (p.roundHistory) r.roundHistory = p.roundHistory;
 
       const next: Partial<LiveMatchState> = {};
@@ -272,10 +315,13 @@ export function useLiveMatch(match: Match) {
       if (completed) {
         r.team1Rounds = p.team1Rounds ?? r.team1Rounds;
         r.team2Rounds = p.team2Rounds ?? r.team2Rounds;
-        r.team1Maps = p.team1Maps ?? r.team1Maps;
-        r.team2Maps = p.team2Maps ?? r.team2Maps;
+        if (r.inSeries) applySeriesCompletion(p.team1Maps, p.team2Maps);
+        else {
+          r.team1Maps = p.team1Maps ?? r.team1Maps;
+          r.team2Maps = p.team2Maps ?? r.team2Maps;
+        }
         rebuildRounds();
-        updateSeriesInfo();
+        updateSeriesInfo(true);
         completeMatch();
         return;
       }
@@ -289,9 +335,12 @@ export function useLiveMatch(match: Match) {
         rebuildRounds();
         updateSeriesInfo();
       }
+      // Live: a cup game's /progress maps are the series score going into this game.
       r.team1Maps = p.team1Maps ?? r.team1Maps;
       r.team2Maps = p.team2Maps ?? r.team2Maps;
-      patch({ team1Maps: r.team1Maps, team2Maps: r.team2Maps, currentRound: p.currentRound ?? r.team1Rounds + r.team2Rounds + 1 });
+      if (r.inSeries) { r.seriesBefore1 = r.team1Maps; r.seriesBefore2 = r.team2Maps; }
+      updateSeriesInfo();
+      patch({ currentRound: p.currentRound ?? r.team1Rounds + r.team2Rounds + 1 });
       if (p.gameTimeSeconds !== null) syncGameClock(p.gameTimeSeconds);
     } catch (e) {
       if (e instanceof ApiError && e.isRateLimited) handleRateLimit();
@@ -304,7 +353,7 @@ export function useLiveMatch(match: Match) {
         updateSeriesInfo();
       }
     }
-  }, [anchorClock, applyRoundScore, checkIfCompleted, completeMatch, handleRateLimit, match.id, match.team1Score, match.team2Score, patch, rebuildRounds, syncGameClock, updateSeriesInfo]);
+  }, [anchorClock, applyRoundScore, applySeriesCompletion, checkIfCompleted, completeMatch, handleRateLimit, match.id, match.team1Score, match.team2Score, patch, rebuildRounds, syncGameClock, updateSeriesInfo]);
 
   const refreshFromServer = useCallback(async () => {
     const r = ref.current;
@@ -352,23 +401,34 @@ export function useLiveMatch(match: Match) {
     } catch { /* non-fatal */ }
   }, [patch]);
 
-  const loadStats = useCallback(async () => {
+  /** One scoreboard (GET /stats or a stats_update's rows) → the table, and with `gold` the HUD's team totals. */
+  const applyStatRows = useCallback(async (rows: MatchStatRow[], gold: boolean) => {
     const r = ref.current;
+    if (!rows.length) {
+      // No stats yet (pre-game / just started): show the rosters at 0 so
+      // the scoreboard isn't empty — only while we have nothing real.
+      if (!r.hasRealStats) await loadRosterPlaceholders();
+      return;
+    }
+    const [t1, t2] = splitStatRows(rows, r.team1Id, r.team2Id);
+    r.hasRealStats = true;
+    const next: Partial<LiveMatchState> = { team1Stats: mapTeamRows(t1, match.game, r.gameTimeSeconds), team2Stats: mapTeamRows(t2, match.game, r.gameTimeSeconds) };
+    if (gold && isLeague) {
+      const g1 = teamGoldTotal(t1), g2 = teamGoldTotal(t2);
+      if (g1 !== null) next.team1Gold = g1;
+      if (g2 !== null) next.team2Gold = g2;
+    }
+    patch(next);
+  }, [isLeague, loadRosterPlaceholders, match.game, patch]);
+
+  /** GET /stats. `gold`: the opening scoreboard, or the poll while the socket is down (its pushes feed gold otherwise). */
+  const loadStats = useCallback(async (gold = true) => {
     try {
-      const rows = normalizeStatRows(await api.get<Json>(endpoints.matchStats(match.id)));
-      if (!rows.length) {
-        // No stats yet (pre-game / just started): show the rosters at 0 so
-        // the scoreboard isn't empty — only while we have nothing real.
-        if (!r.hasRealStats) await loadRosterPlaceholders();
-        return;
-      }
-      const [t1, t2] = splitStatRows(rows, r.team1Id, r.team2Id);
-      r.hasRealStats = true;
-      patch({ team1Stats: mapTeamRows(t1, match.game, r.gameTimeSeconds), team2Stats: mapTeamRows(t2, match.game, r.gameTimeSeconds) });
+      await applyStatRows(normalizeStatRows(await api.get<Json>(endpoints.matchStats(match.id))), gold);
     } catch (e) {
       if (e instanceof ApiError && e.isRateLimited) handleRateLimit();
     }
-  }, [handleRateLimit, loadRosterPlaceholders, match.game, match.id, patch]);
+  }, [applyStatRows, handleRateLimit, match.id]);
 
   const loadChatHistory = useCallback(async () => {
     try {
@@ -401,8 +461,11 @@ export function useLiveMatch(match: Match) {
       applyRoundScore(typeof d.team1Rounds === "number" ? d.team1Rounds : null, typeof d.team2Rounds === "number" ? d.team2Rounds : null);
       const next: Partial<LiveMatchState> = {};
       if (typeof d.currentRound === "number") next.currentRound = d.currentRound;
-      if (typeof d.team1Maps === "number") { r.team1Maps = d.team1Maps; next.team1Maps = d.team1Maps; }
-      if (typeof d.team2Maps === "number") { r.team2Maps = d.team2Maps; next.team2Maps = d.team2Maps; }
+      // A cup game's push maps are this game's score — never the series dots.
+      if (!r.inSeries) {
+        if (typeof d.team1Maps === "number") { r.team1Maps = d.team1Maps; next.team1Maps = d.team1Maps; }
+        if (typeof d.team2Maps === "number") { r.team2Maps = d.team2Maps; next.team2Maps = d.team2Maps; }
+      }
       if (typeof d.team1Alive === "number" && typeof d.team2Alive === "number") { next.team1Alive = d.team1Alive; next.team2Alive = d.team2Alive; }
       patch(next);
       if (r.roundHistory) rebuildRounds();
@@ -418,13 +481,22 @@ export function useLiveMatch(match: Match) {
       patch({ team1WinProbability: decided ? (t1 >= 50 ? 100 : 0) : t1 });
     };
     const onGold = () => { void refreshFromServer(); };
+    const goldOf = (v: Json): number | null => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)) ? Math.round(Number(v)) : null);
+    // match_update {team1Maps, team2Maps, team1InhibitorsUp, team2InhibitorsUp, team1Gold, team2Gold}
+    // (liveDataWriter): the 2s gold tick between scoreboards.
     const onMatchUpdate = (d: Json) => {
       if (!d || typeof d !== "object") return;
       if (d.matchId && String(d.matchId) !== match.id) return;
       const next: Partial<LiveMatchState> = {};
-      if (typeof d.team1Maps === "number") { r.team1Maps = d.team1Maps; }
-      if (typeof d.team2Maps === "number") { r.team2Maps = d.team2Maps; }
-      if (typeof d.team1Gold === "number" && typeof d.team2Gold === "number") next.liveGoldDiff = d.team1Gold - d.team2Gold;
+      if (!r.inSeries) {
+        if (typeof d.team1Maps === "number") { r.team1Maps = d.team1Maps; }
+        if (typeof d.team2Maps === "number") { r.team2Maps = d.team2Maps; }
+      }
+      const g1 = goldOf(d.team1Gold), g2 = goldOf(d.team2Gold);
+      if (g1 !== null && g2 !== null) {
+        next.liveGoldDiff = g1 - g2;
+        if (isLeague) { next.team1Gold = g1; next.team2Gold = g2; }
+      }
       patch(next);
       if (typeof d.team1InhibitorsUp === "number" && typeof d.team2InhibitorsUp === "number") {
         patch((prev) => {
@@ -474,6 +546,13 @@ export function useLiveMatch(match: Match) {
     const onMatchCompleted = (d: Json) => {
       if (d?.matchId && String(d.matchId) === match.id) void refreshFromServer();
     };
+    // stats_update {matchId, stats?}: the rows GET /stats returns ride on the
+    // push (emitStatsUpdate); an older bare signal means "refetch now".
+    const onStatsUpdate = (d: Json) => {
+      if (d && typeof d === "object" && d.matchId && String(d.matchId) !== match.id) return;
+      if (Array.isArray(d?.stats)) void applyStatRows(normalizeStatRows(d.stats), true);
+      else void loadStats(true);
+    };
 
     (async () => {
       try {
@@ -493,6 +572,7 @@ export function useLiveMatch(match: Match) {
         sock.on("chat:deleted", onChatDeleted);
         sock.on("poll_update", onPollUpdate);
         sock.on("match_completed", onMatchCompleted);
+        sock.on("stats_update", onStatsUpdate);
         if (sock.connected) onConnect();
       } catch { /* the 8s REST polling keeps the screen current */ }
     })();
@@ -516,10 +596,11 @@ export function useLiveMatch(match: Match) {
         socket.off("chat:deleted", onChatDeleted);
         socket.off("poll_update", onPollUpdate);
         socket.off("match_completed", onMatchCompleted);
+        socket.off("stats_update", onStatsUpdate);
       }
       r.socket = null;
     };
-  }, [match.id, applyRoundScore, loadWinProbability, patch, rebuildRounds, refreshFromServer, syncGameClock, updateSeriesInfo]);
+  }, [match.id, applyRoundScore, applyStatRows, isLeague, loadStats, loadWinProbability, patch, rebuildRounds, refreshFromServer, syncGameClock, updateSeriesInfo]);
 
   // Your own edits and deletes show up at once (moderation/chat-actions.ts),
   // and come back as they were if the server refuses.
@@ -551,7 +632,8 @@ export function useLiveMatch(match: Match) {
       r.pollCycle += 1;
       void (async () => {
         await loadProgress();
-        await loadStats();
+        // Team gold comes from the pushes while the socket is up; the poll feeds it only when it's down.
+        await loadStats(!r.socket?.connected);
         if (isLeague && r.pollCycle % 3 === 0) await loadDetail();
       })();
     }, STATS_POLL_MS);

@@ -19,7 +19,7 @@ import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
 import { ConfirmDialog, EmptyState, SkeletonBar, Spinner, Toast } from "@/components/ui";
 import { FlairAvatar, FlairName } from "@/components/ui/premium-flair";
-import { ActionMenu, MoreButton, Portal, useActionMenu, type MenuAction } from "@/features/moderation/ActionMenu";
+import { ActionMenu, MoreButton, Portal, ToastCheck, useActionMenu, type MenuAction } from "@/features/moderation/ActionMenu";
 import { AlertDialog } from "@/features/moderation/dialogs";
 import { SkeletonBubbles, SkeletonCircle } from "@/components/ui/skeletons";
 import { blockUser, conversation as fetchConversation, removeConversation, sendTyping } from "./service";
@@ -100,17 +100,19 @@ function ThreadView({ row }: { row: DMConversationRow }) {
   const [editing, setEditing] = useState<DMMessage | null>(null);
   const [toDelete, setToDelete] = useState<DMMessage | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // "Message deleted": springs in near the bottom of the thread, gone after 1.8 s.
-  const [deletedToast, setDeletedToast] = useState(0);
+  // "Message deleted" / "Copied": springs in near the bottom of the thread,
+  // gone after 1.8 s. `n` restarts the animation for a repeat.
+  const [doneToast, setDoneToast] = useState<{ n: number; text: string } | null>(null);
+  const showToast = (text: string) => setDoneToast((t) => ({ n: (t?.n ?? 0) + 1, text }));
   useEffect(() => {
-    if (!deletedToast) return;
-    const t = setTimeout(() => setDeletedToast(0), 1800);
+    if (!doneToast) return;
+    const t = setTimeout(() => setDoneToast(null), 1800);
     return () => clearTimeout(t);
-  }, [deletedToast]);
+  }, [doneToast]);
   const actionsFor = (m: DMMessage): MenuAction[] => {
     const sent = !isPendingId(m.id);
     const list: MenuAction[] = [];
-    if (!m.media && m.decrypted) list.push({ key: "copy", label: "Copy", icon: <Copy size={15} />, onSelect: () => { void navigator.clipboard?.writeText(m.linkURL ?? m.text).catch(() => {}); } });
+    if (!m.media && m.decrypted) list.push({ key: "copy", label: "Copy", icon: <Copy size={15} />, onSelect: () => { void navigator.clipboard?.writeText(m.linkURL ?? m.text).then(() => showToast("Copied"), () => {}); } });
     if (m.isMine && sent && !m.media && m.decrypted && canEdit && now.getTime() - new Date(m.createdAt).getTime() < DM_EDIT_WINDOW_MS) {
       list.push({ key: "edit", label: "Edit", icon: <Pencil size={15} />, onSelect: () => startEdit(m) });
     }
@@ -126,7 +128,7 @@ function ThreadView({ row }: { row: DMConversationRow }) {
     if (editing?.id === m.id) cancelEdit();
     const err = await remove(m);
     if (err) setDeleteError(err);
-    else setDeletedToast((n) => n + 1);
+    else showToast("Message deleted");
   };
 
   const [draft, setDraft] = useState("");
@@ -377,8 +379,8 @@ function ThreadView({ row }: { row: DMConversationRow }) {
         )}
       </div>
 
-      {/* Their message landed while you were reading older ones; the "Message deleted" toast */}
-      {newBelow || deletedToast ? (
+      {/* Their message landed while you were reading older ones; the "Message deleted" / "Copied" toast */}
+      {newBelow || doneToast ? (
         <div className="relative h-0 shrink-0">
           {newBelow ? (
             <button
@@ -388,14 +390,11 @@ function ThreadView({ row }: { row: DMConversationRow }) {
               New messages<ArrowDown size={12} strokeWidth={2.5} />
             </button>
           ) : null}
-          {deletedToast ? (
-            <div key={deletedToast} className="absolute left-1/2 -translate-x-1/2 z-10 pointer-events-none" style={{ bottom: newBelow ? 56 : 14 }} role="status" aria-live="polite">
+          {doneToast ? (
+            <div key={doneToast.n} className="absolute left-1/2 -translate-x-1/2 z-10 pointer-events-none" style={{ bottom: newBelow ? 56 : 14 }} role="status" aria-live="polite">
               <div className="dm-toast-in flex items-center gap-2 pl-3 pr-4 py-2.5 rounded-full bg-surface border border-border-subtle shadow-[0_8px_28px_rgb(0_0_0/0.5)] t-label-md text-primary whitespace-nowrap">
-                <svg width={17} height={17} viewBox="0 0 24 24" aria-hidden className="shrink-0">
-                  <circle cx="12" cy="12" r="11" fill="var(--violet)" />
-                  <path d="m7.4 12.4 3.1 3.1 6.1-6.6" fill="none" stroke="var(--surface)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-                Message deleted
+                <ToastCheck />
+                {doneToast.text}
               </div>
             </div>
           ) : null}
@@ -480,7 +479,8 @@ function ThreadView({ row }: { row: DMConversationRow }) {
         message="This conversation leaves your inbox. A new message from either side brings it back."
         confirmTitle="Remove" onConfirm={() => void runMenuAction()} onCancel={() => setConfirm(null)}
       />
-      <ActionMenu anchor={bubbleMenu.anchor} actions={bubbleMenu.target ? actionsFor(bubbleMenu.target) : []} onClose={bubbleMenu.close} label="Message actions" />
+      {/* Rises out of the held bubble and sinks back into it; Copy's toast shows in the thread. */}
+      <ActionMenu anchor={bubbleMenu.anchor} actions={bubbleMenu.target ? actionsFor(bubbleMenu.target) : []} onClose={bubbleMenu.close} label="Message actions" rise copyToast={false} />
       <Portal>
         <ConfirmDialog open={!!toDelete} title="Delete message?" message="It'll be removed for both of you." confirmTitle="Delete" destructive onConfirm={() => void confirmDelete()} onCancel={() => setToDelete(null)} />
       </Portal>

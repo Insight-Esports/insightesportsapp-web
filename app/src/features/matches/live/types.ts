@@ -117,6 +117,8 @@ export interface MatchProgress {
   team1Side: string | null;
   team2Side: string | null;
   goldTimeline: GoldTimelinePoint[] | null;
+  /** A cup game (`series` on the payload): score.team*Maps is the series score while live, this game's once completed. */
+  inSeries: boolean;
 }
 
 export function normalizeProgress(raw: Json): MatchProgress {
@@ -147,7 +149,16 @@ export function normalizeProgress(raw: Json): MatchProgress {
     team1Side: str(raw?.team1_side ?? sides?.team1),
     team2Side: str(raw?.team2_side ?? sides?.team2),
     goldTimeline: Array.isArray(timeline) ? normalizeGoldTimeline(timeline) : null,
+    inSeries: !!raw?.series && typeof raw.series === "object",
   };
+}
+
+/** A team's total gold: its roster's gold_earned summed (null when no row carries gold). */
+export function teamGoldTotal(rows: MatchStatRow[]): number | null {
+  let total = 0;
+  let any = false;
+  for (const r of rows) if (r.goldEarned !== null) { total += r.goldEarned; any = true; }
+  return any ? total : null;
 }
 
 // ── /matches/:id (raw match row, the fields the detail screens use) ─────────

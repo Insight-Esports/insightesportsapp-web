@@ -208,9 +208,8 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
           <span>Titles</span><span className="text-right">Finals</span><span className="text-right">Semis</span><span className="text-right">Played</span>
         </div>
         <div className="grid grid-cols-4 gap-1 px-3 py-3 bg-card">
-          <span className={clsx("flex items-center gap-1.5 t-mono-md", honors.titles > 0 ? "text-gold" : "text-primary")}>
-            {honors.titles > 0 ? <Trophy size={14} className="text-gold shrink-0" /> : null}{honors.titles}
-          </span>
+          {/* A plain number: no gold, no trophy. */}
+          <span className="t-mono-md text-primary">{honors.titles}</span>
           <span className="text-right t-mono-md text-primary">{honors.finals}</span>
           <span className="text-right t-mono-md text-primary">{honors.semifinals}</span>
           <span className="text-right t-mono-md text-primary">{honors.tournaments}</span>
@@ -222,7 +221,8 @@ function TeamDetailLoaded({ team, stub }: { team: Team; stub: boolean }) {
             <Link key={r.tournamentId} href={`${bracketHref(r.tournamentId)}?from=${encodeURIComponent(`/teams/${team.id}`)}`} className="flex items-center gap-2.5 px-3 py-2.5 hover:bg-surface/70 transition-colors">
               <span className="flex-1 min-w-0 t-body-sm text-primary truncate">{r.tournament}</span>
               {r.seed != null ? <span className="shrink-0 t-label-sm text-muted">Seed {r.seed}</span> : null}
-              <span className={clsx("shrink-0 w-[88px] text-right t-label-md", r.placement === "champion" ? "text-gold" : "text-secondary")}>{placementWord(r.placement)}</span>
+              {/* Champion and Runner-up read primary (not gold), the rest secondary. */}
+              <span className={clsx("shrink-0 w-[88px] text-right t-label-md", r.placement === "champion" || r.placement === "runner_up" ? "text-primary" : "text-secondary")}>{placementWord(r.placement)}</span>
             </Link>
           ))}
         </div>
