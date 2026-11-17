@@ -7,6 +7,9 @@
 //   2 how they're playing  3 team line (pace colour from rev 2's `good`)
 //   4 series  5 map profile (VALORANT/CS2)  6 roster  7 matchup
 //   8 last 10 · kills  9 footer
+// Nov 5 §2: the team line shows every stats[] row the server sends (first
+// bloods and clutches included); the roster gains FB and CL columns in the
+// round-based games once any player row carries them (null reads "–").
 "use client";
 
 import Link from "next/link";
@@ -22,7 +25,7 @@ import { SkeletonLiveBreakdown } from "@/components/ui/skeletons";
 import { EntityHeader, entityHref } from "@/components/ui/entity-header";
 import { prefetchPlayer } from "@/features/entity-cache";
 import { PredictScreen } from "./PredictScreen";
-import { flowHref, readGame } from "./flow";
+import { backOr, flowHref, readBack, readGame } from "./flow";
 import { Caps, Disclaimer, FlowError, Section, StripedTable } from "./shared";
 import { GameRows, OpponentLink } from "./links";
 import { MapGrid } from "./MapGrid";
@@ -42,7 +45,7 @@ export function LiveTeamBreakdownScreen() {
   const teamId = sp.get("id") ?? "";
   const teamName = sp.get("name") ?? "";
   const matchId = sp.get("match");
-  const t = { game, targetType: "team" as const, targetId: teamId, targetName: teamName, isLive: true, matchId };
+  const t = { game, targetType: "team" as const, targetId: teamId, targetName: teamName, isLive: true, matchId, back: readBack(sp) };
 
   const [data, setData] = useState<LiveTeamBreakdown | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,7 +80,7 @@ export function LiveTeamBreakdownScreen() {
   const isTeam1 = live ? live.team1Id === teamId : true;
 
   return (
-    <PredictScreen title="Live Breakdown" back={flowHref.options(t)}>
+    <PredictScreen title="Live Breakdown" back={backOr(t, flowHref.options(t))}>
       <div className="flex flex-col gap-4 pt-3 max-w-3xl w-full mx-auto">
         <div className="px-4">
           <EntityHeader type="team" id={teamId} name={teamName} game={game} matchId={matchId} live />
@@ -104,6 +107,7 @@ function Body({ d, game, teamId, teamName, teamLogo }: { d: LiveTeamBreakdown; g
   const inSeries = (d.series?.bestOf ?? 1) > 1 || (d.series?.maps.length ?? 0) > 1;
   const showGold = game === "League" && d.players.some((p) => p.gold != null);
   const lastHeader = game === "VALORANT" ? "ACS" : game === "CS2" ? "ADR" : showGold ? "GOLD" : null;
+  const showRounds = game !== "League" && d.players.some((p) => p.firstBloods != null || p.clutchWins != null);
   return (
     <>
 
@@ -156,6 +160,7 @@ function Body({ d, game, teamId, teamName, teamLogo }: { d: LiveTeamBreakdown; g
               <span className="w-[22px] text-right">D</span>
               <span className="w-[22px] text-right">A</span>
               <span className="w-[34px] text-right">+/−</span>
+              {showRounds ? <><span className="w-[22px] text-right">FB</span><span className="w-[22px] text-right">CL</span></> : null}
               {lastHeader ? <span className="w-[44px] text-right">{lastHeader}</span> : null}
             </>}
             rows={d.players.map((p) => (
@@ -175,6 +180,12 @@ function Body({ d, game, teamId, teamName, teamLogo }: { d: LiveTeamBreakdown; g
                 <span className="w-[22px] shrink-0 text-right t-mono-sm text-primary">{p.deaths ?? 0}</span>
                 <span className="w-[22px] shrink-0 text-right t-mono-sm text-primary">{p.assists ?? 0}</span>
                 <span className={clsx("w-[34px] shrink-0 text-right t-mono-sm whitespace-nowrap", (p.plusMinus ?? 0) > 0 ? "text-success" : (p.plusMinus ?? 0) < 0 ? "text-error" : "text-secondary")}>{p.plusMinus == null ? "—" : signed(p.plusMinus)}</span>
+                {showRounds ? (
+                  <>
+                    <span className="w-[22px] shrink-0 text-right t-mono-sm text-secondary">{p.firstBloods ?? "–"}</span>
+                    <span className="w-[22px] shrink-0 text-right t-mono-sm text-secondary">{p.clutchWins ?? "–"}</span>
+                  </>
+                ) : null}
                 {lastHeader ? (
                   <span className="w-[44px] shrink-0 text-right t-mono-sm text-secondary whitespace-nowrap">
                     {game === "VALORANT" ? (p.acs == null ? "—" : Math.round(p.acs)) : game === "CS2" ? (p.adr == null ? "—" : Math.round(p.adr)) : p.gold == null ? "—" : compactGold(p.gold)}

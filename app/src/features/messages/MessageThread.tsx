@@ -1,38 +1,49 @@
-// MessageThread — MessageThreadView.swift: the person plainly in the
-// header, messages as a quiet timeline (day chapters, runs, a "Seen"
+// MessageThread — MessageThreadView.swift: the person (or the group) plainly
+// in the header, messages as a quiet timeline (day chapters, runs, a "Seen"
 // receipt under the last message of mine, typing dots), keyset paging
 // upward, and the composer (photo / video attach when the server lists
 // dm_media / dm_video, Enter sends, Shift+Enter breaks a line).
 //
 // Oct 28: the person wears their flair in the header and on their bubbles'
-// avatar; each bubble has a menu (hover "⋯", right-click, long press):
-// Copy on text and links, Edit on your own text or link for 15 minutes once
-// /status lists dm_edit, Delete on anything of yours that has been sent.
+// avatar.
+//
+// Nov 17 (MessageActions.swift, GroupChats.swift, parity N5-3 / N5-4 /
+// N15-3 / N15-4 / N15-5): a held bubble (right-click, long press, the hover
+// "⋯") opens the actions sheet — reactions, Reply, Forward, Copy, Pin,
+// Edit, Delete for you, Unsend, Report; a double-click is ❤️. The pinned
+// bar sits under the header; "Replying to @name" over the composer. A
+// group: its stacked avatars, name and "N people" in the header (its page
+// behind it), each sender's name over their run, the grey lines, "Seen by"
+// under the newest message, "Sending…" → "Sent" for mine until someone
+// reads it. "Seen" stays on the newest message of mine they saw while a
+// newer one is unseen.
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowDown, ArrowUp, Check, ChevronLeft, Copy, Ellipsis, Hand, ImagePlus, Pencil, Play, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, Ellipsis, Hand, ImagePlus, LogOut, Pencil, Play, Trash2, X } from "lucide-react";
 import { useHideTabBar } from "@/components/shell/tab-bar";
 import { clsx } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
 import { ConfirmDialog, EmptyState, SkeletonBar, Spinner, Toast } from "@/components/ui";
-import { FlairAvatar, FlairName } from "@/components/ui/premium-flair";
-import { ActionMenu, MoreButton, Portal, ToastCheck, useActionMenu, type MenuAction } from "@/features/moderation/ActionMenu";
+import { FlairAvatar, FlairName, ringBox } from "@/components/ui/premium-flair";
+import { MoreButton, Portal, ToastCheck, useActionMenu } from "@/features/moderation/ActionMenu";
 import { AlertDialog } from "@/features/moderation/dialogs";
 import { SkeletonBubbles, SkeletonCircle } from "@/components/ui/skeletons";
-import { blockUser, conversation as fetchConversation, removeConversation, sendTyping } from "./service";
+import { blockUser, conversation as fetchConversation, leaveGroup, removeConversation, sendTyping } from "./service";
 import { DMMediaError, prepareImage, prepareVideo, type PreparedMedia } from "./media";
 import { emitRemovedLocal, forgetRow, knownRow, queueInboxToast, rememberRow } from "./dm-local";
 import { dmsReadOnly, featureOn, useMediaFeatures, useNow, usePageVisible } from "./hooks";
 import { chapterStamp, durationClock } from "./format-dm";
 import { DM_EDIT_WINDOW_MS, useThread } from "./use-thread";
-import { MediaViewer, MessageBubble, TypingBubble } from "./bubbles";
+import { BubbleContent, MediaViewer, MessageBubble, TypingBubble } from "./bubbles";
+import { DMReportSheet, ForwardPicker, MessageActionSheet, PinnedBar, ReplyComposerBar, ReplyQuote, type MessageActionSet } from "./actions";
+import { GroupAvatar, GroupInfo, GroupNoteRow, SeenByRow } from "./groups";
 import { MenuItem } from "./MessagesInbox";
-import { isPendingId, otherFlair, type DMConversationRow, type DMMessage } from "./types";
+import { asQuote, conversationTitle, isGroupRow, isPendingId, myReaction, othersOf, otherFlair, quoteText, type DMConversationRow, type DMMessage } from "./types";
 
-/** DMThreadLoaderView: the row by id (what the inbox already holds, else the list). */
+/** DMThreadLoaderView: the row by id (what the inbox already holds, else the list, else the group's own route). */
 export function MessageThread({ conversationId }: { conversationId: string }) {
   const [row, setRow] = useState<DMConversationRow | null>(() => knownRow(conversationId));
   const [failed, setFailed] = useState(false);
@@ -46,7 +57,7 @@ export function MessageThread({ conversationId }: { conversationId: string }) {
     return () => { active = false; };
   }, [conversationId, row]);
 
-  if (row) return <ThreadView row={row} />;
+  if (row) return <ThreadView key={row.id} row={row} />;
   if (failed) {
     return (
       <div className="flex-1 flex flex-col">
@@ -78,7 +89,8 @@ function ThreadView({ row }: { row: DMConversationRow }) {
   // MessageThreadView: `.toolbar(.hidden, for: .tabBar)` — the thread owns
   // the whole phone screen and the composer sits on the bottom edge.
   useHideTabBar();
-  const { status } = useAppState();
+  const { status, user } = useAppState();
+  const me = user?.id ?? "";
   const visible = usePageVisible();
   const now = useNow(60_000);
   const features = useMediaFeatures();
@@ -86,49 +98,70 @@ function ThreadView({ row }: { row: DMConversationRow }) {
 
   const onRemoved = useCallback(() => {
     forgetRow(row.id);
-    queueInboxToast("Conversation removed");
+    queueInboxToast(isGroupRow(row) ? "You're no longer in this group" : "Conversation removed");
     router.replace("/messages");
-  }, [router, row.id]);
+  }, [router, row]);
 
   const vm = useThread(row, visible, onRemoved);
-  const { messages, loaded, canLoadMore, isLoadingMore, blockedState, sendError, clearSendError, otherIsTyping, receiptMessageId, seenLabel, loadMore, send, sendMedia, retry, unblock, remove, edit, startsRun, endsRun, showsTimeStamp } = vm;
+  const {
+    conv, isGroup, messages, pins, loaded, canLoadMore, isLoadingMore, blockedState, sendError, clearSendError, alert, dismissAlert, notice, say,
+    otherIsTyping, typingIdentity, receiptMessageId, seenMessageId, groupSentId, seenLabel, sentLabel, sender, quoteNames, readers, groupNotesAbove, groupNotesAtEnd,
+    loadMore, send, sendMedia, retry, unblock, remove, edit, react, togglePin, hide, startsRun, endsRun, showsTimeStamp, setConv,
+  } = vm;
   const other = otherFlair(row);
   const canEdit = featureOn(status, "dm_edit");
+  const title = conversationTitle(conv, me);
 
-  // ── The bubble menu: Copy · Edit · Delete ──────────────────────────────
+  // ── The actions sheet (MessageActionOverlay) ───────────────────────────
   const bubbleMenu = useActionMenu<DMMessage>();
+  const held = bubbleMenu.target ? messages.find((m) => m.id === bubbleMenu.target!.id) ?? bubbleMenu.target : null;
   const [editing, setEditing] = useState<DMMessage | null>(null);
+  const [replyingTo, setReplyingTo] = useState<DMMessage | null>(null);
+  const [forwarding, setForwarding] = useState<DMMessage | null>(null);
+  const [reporting, setReporting] = useState<DMMessage | null>(null);
   const [toDelete, setToDelete] = useState<DMMessage | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // "Message deleted" / "Copied": springs in near the bottom of the thread,
-  // gone after 1.8 s. `n` restarts the animation for a repeat.
-  const [doneToast, setDoneToast] = useState<{ n: number; text: string } | null>(null);
-  const showToast = (text: string) => setDoneToast((t) => ({ n: (t?.n ?? 0) + 1, text }));
+  const [showInfo, setShowInfo] = useState(false);
+  const [flashId, setFlashId] = useState<string | null>(null);
+  // "Message deleted" / "Copied" / "Pinned": springs in near the bottom of the thread, gone after 1.8 s.
+  const [doneToastGone, setDoneToastGone] = useState(0);
+  const doneToast = notice && notice.n !== doneToastGone ? notice : null;
   useEffect(() => {
-    if (!doneToast) return;
-    const t = setTimeout(() => setDoneToast(null), 1800);
+    if (!notice) return;
+    const t = setTimeout(() => setDoneToastGone(notice.n), 1800);
     return () => clearTimeout(t);
-  }, [doneToast]);
-  const actionsFor = (m: DMMessage): MenuAction[] => {
-    const sent = !isPendingId(m.id);
-    const list: MenuAction[] = [];
-    if (!m.media && m.decrypted) list.push({ key: "copy", label: "Copy", icon: <Copy size={15} />, onSelect: () => { void navigator.clipboard?.writeText(m.linkURL ?? m.text).then(() => showToast("Copied"), () => {}); } });
-    if (m.isMine && sent && !m.media && m.decrypted && canEdit && now.getTime() - new Date(m.createdAt).getTime() < DM_EDIT_WINDOW_MS) {
-      list.push({ key: "edit", label: "Edit", icon: <Pencil size={15} />, onSelect: () => startEdit(m) });
-    }
-    if (m.isMine && sent) list.push({ key: "delete", label: "Delete", icon: <Trash2 size={15} />, destructive: true, onSelect: () => setToDelete(m) });
-    return list;
+  }, [notice]);
+
+  const toggleReaction = (emoji: string, m: DMMessage) => { void react(myReaction(m) === emoji ? null : emoji, m); };
+
+  /** Instagram's list for this bubble: yours gets Edit and Unsend; theirs
+   *  gets Delete for you and Report. Nothing that needs the server is
+   *  offered on a message still sending. */
+  const actionsFor = (m: DMMessage): MessageActionSet => {
+    const pending = isPendingId(m.id);
+    const words = !m.media && m.decrypted;
+    return {
+      react: pending ? null : (e) => { void react(e, m); },
+      reply: () => beginReply(m),
+      forward: words && !pending ? () => setForwarding(m) : null,
+      copy: words ? () => { void navigator.clipboard?.writeText(m.linkURL ?? m.text).then(() => say("Copied"), () => {}); } : null,
+      pin: pending ? null : () => { void togglePin(m); },
+      isPinned: !!m.pinnedAt,
+      edit: m.isMine && !pending && !m.media && m.decrypted && canEdit && now.getTime() - new Date(m.createdAt).getTime() < DM_EDIT_WINDOW_MS ? () => startEdit(m) : null,
+      hide: pending ? null : () => { void hide(m); },
+      unsend: m.isMine && !pending ? () => setToDelete(m) : null,
+      report: !m.isMine && !pending ? () => setReporting(m) : null,
+    };
   };
-  /** Copy (text, links) or Delete (yours, sent) — Edit never comes alone. */
-  const hasActions = (m: DMMessage) => (!m.media && m.decrypted) || (m.isMine && !isPendingId(m.id));
   const confirmDelete = async () => {
     const m = toDelete;
     setToDelete(null);
     if (!m) return;
     if (editing?.id === m.id) cancelEdit();
+    if (replyingTo?.id === m.id) setReplyingTo(null);
     const err = await remove(m);
     if (err) setDeleteError(err);
-    else showToast("Message deleted");
+    else say("Message deleted");
   };
 
   const [draft, setDraft] = useState("");
@@ -140,7 +173,7 @@ function ThreadView({ row }: { row: DMConversationRow }) {
   const [viewing, setViewing] = useState<DMMessage | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [menu, setMenu] = useState(false);
-  const [confirm, setConfirm] = useState<"remove" | "block" | null>(null);
+  const [confirm, setConfirm] = useState<"remove" | "block" | "leave" | null>(null);
   const lastTypingSent = useRef(0);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -159,11 +192,8 @@ function ThreadView({ row }: { row: DMConversationRow }) {
   // ── Scrolling: bottom-anchored; a single append animates, loads jump;
   //    paging upward keeps the viewport where it was. Their message while
   //    you're reading older ones stays below the fold (Instagram) behind a
-  //    "New messages" chip; yours always pins.
-  //    Oct 29: keyed on the NEWEST message's id, not the count, so deleting
-  //    one mid-thread keeps your place: unchanged newest → nothing; the old
-  //    newest gone (deleted, or a pending send swapped for its server id) →
-  //    nothing; a newer one arrived → the pill or the scroll. ──────────────
+  //    "New messages" chip; yours always pins. Keyed on the NEWEST
+  //    message's id, so deleting one mid-thread keeps your place. ─────────
   const list = useRef<HTMLDivElement>(null);
   const prevNewest = useRef<string | null>(null);
   const prepend = useRef<{ height: number; top: number } | null>(null);
@@ -200,8 +230,9 @@ function ThreadView({ row }: { row: DMConversationRow }) {
     if (!otherIsTyping || !atBottom.current) return;
     scrollToBottom("smooth");
   }, [otherIsTyping, scrollToBottom]);
-  // The viewport shrinking (the attachment strip, the composer growing a
-  // line) re-pins the newest message only when the bottom was in view.
+  // The viewport shrinking (the attachment strip, the reply bar, the
+  // composer growing a line) re-pins the newest message only when the
+  // bottom was in view.
   useEffect(() => {
     const el = list.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -214,6 +245,16 @@ function ThreadView({ row }: { row: DMConversationRow }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  /** A quote or a pin: the original, centred, with a brief glow. */
+  const jump = (messageId: string) => {
+    const el = list.current?.querySelector(`[data-mid="${CSS.escape(messageId)}"]`);
+    if (!el) { say("That message isn't loaded"); return; }
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFlashId(null);
+    requestAnimationFrame(() => setFlashId(messageId));
+    setTimeout(() => setFlashId((cur) => (cur === messageId ? null : cur)), 1400);
+  };
 
   const loadEarlier = useCallback(() => {
     const el = list.current;
@@ -247,18 +288,21 @@ function ThreadView({ row }: { row: DMConversationRow }) {
     const text = draft.trim();
     const media = attachment;
     if (!text && !media) return;
+    const quote = replyingTo ? asQuote(replyingTo) : null;
     setDraft("");
     setAttachment(null);
+    setReplyingTo(null);
     requestAnimationFrame(grow);
     // The picture first, the words under it — one task so they land in that order.
     void (async () => {
       if (media) await sendMedia(media);
-      if (text) await send(text);
+      if (text) await send(text, quote);
     })();
   };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (editing) saveEdit(); else submit(); }
     else if (e.key === "Escape" && editing) { e.preventDefault(); cancelEdit(); }
+    else if (e.key === "Escape" && replyingTo) { e.preventDefault(); setReplyingTo(null); }
   };
   /** A picked photo or video: prepared, then staged in the composer. Nothing leaves until Send. */
   const onPick = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -290,7 +334,9 @@ function ThreadView({ row }: { row: DMConversationRow }) {
     if (!which) return;
     emitRemovedLocal(row.id);
     forgetRow(row.id);
-    if (which === "remove") await removeConversation(row.id); else await blockUser(row.otherId);
+    if (which === "remove") await removeConversation(row.id);
+    else if (which === "leave") { try { await leaveGroup(conv); } catch { /* the row comes back on the next read */ } }
+    else await blockUser(row.otherId);
     router.replace("/messages");
   };
 
@@ -298,6 +344,7 @@ function ThreadView({ row }: { row: DMConversationRow }) {
   const stash = useRef<string | null>(null);
   function startEdit(m: DMMessage) {
     if (stash.current === null) stash.current = draft;
+    setReplyingTo(null);
     setEditing(m);
     setDraft(m.linkURL ?? m.text);
     requestAnimationFrame(() => { grow(); const t = textarea.current; if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } });
@@ -316,30 +363,59 @@ function ThreadView({ row }: { row: DMConversationRow }) {
     cancelEdit();
     void edit(m, text).then((err) => { if (err) setToast(`Couldn't edit — ${err}`); });
   };
+  function beginReply(m: DMMessage) {
+    if (editing) cancelEdit();
+    setReplyingTo(m);
+    requestAnimationFrame(() => textarea.current?.focus());
+  }
+  const replyName = (m: DMMessage) => (m.isMine ? "yourself" : `@${sender(m).username}`);
 
   const canSend = editing ? draft.trim().length > 0 : draft.trim().length > 0 || attachment !== null;
   const profileHref = `/profile/${encodeURIComponent(row.otherId)}`;
+  const notesAtEnd = groupNotesAtEnd(messages);
+  const lastIndex = messages.length - 1;
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col bg-bg">
-      {/* Header: back · avatar · name — the person, plainly */}
+    <div className="relative flex-1 min-h-0 flex flex-col bg-bg">
+      {/* Header: back · avatar · name — the person (or the group), plainly */}
       <div className="flex items-center gap-2.5 px-3 pt-1.5 pb-2 hairline-b shrink-0">
         <Link href="/messages" aria-label="Back" className="grid place-items-center size-8 text-primary hover:text-violet md:hidden"><ChevronLeft size={20} strokeWidth={2.5} /></Link>
-        <Link href={profileHref} className="flex items-center gap-2.5 min-w-0 hover:opacity-80">
-          <FlairAvatar user={other} size={30} />
-          <FlairName user={other} className="text-[17px] font-bold tracking-[-0.3px]" />
-        </Link>
+        {isGroup ? (
+          <button type="button" onClick={() => setShowInfo(true)} className="flex items-center gap-2.5 min-w-0 text-left hover:opacity-85" aria-label="Group details">
+            <GroupAvatar members={othersOf(conv, me)} size={30} />
+            <span className="flex flex-col gap-px min-w-0">
+              <span className="flex items-center gap-1 min-w-0">
+                <span className="text-[17px] font-bold tracking-[-0.3px] text-primary truncate">{title}</span>
+                <ChevronRight size={12} strokeWidth={2.75} className="text-muted shrink-0" />
+              </span>
+              <span className="t-label-sm text-muted">{conv.members.length} people</span>
+            </span>
+          </button>
+        ) : (
+          <Link href={profileHref} className="flex items-center gap-2.5 min-w-0 hover:opacity-80">
+            <FlairAvatar user={other} size={30} />
+            <FlairName user={other} className="text-[17px] font-bold tracking-[-0.3px]" />
+          </Link>
+        )}
         <span className="flex-1" />
         <span className="relative hidden md:block">
           <button type="button" aria-label="More" title="More" onClick={(e) => { e.stopPropagation(); setMenu((m) => !m); }} className="grid place-items-center size-8 rounded-lg text-secondary hover:text-primary hover:bg-card"><Ellipsis size={18} /></button>
           {menu ? (
             <div className="absolute right-0 top-9 z-20 min-w-44 ledger py-1" role="menu">
-              <MenuItem onClick={() => setConfirm("remove")} icon={<Trash2 size={15} />} className="text-primary">Remove chat</MenuItem>
-              <MenuItem onClick={() => setConfirm("block")} icon={<Hand size={15} />} className="text-error">Block</MenuItem>
+              {isGroup ? (
+                <MenuItem onClick={() => setConfirm("leave")} icon={<LogOut size={15} />} className="text-error">Leave chat</MenuItem>
+              ) : (
+                <>
+                  <MenuItem onClick={() => setConfirm("remove")} icon={<Trash2 size={15} />} className="text-primary">Remove chat</MenuItem>
+                  <MenuItem onClick={() => setConfirm("block")} icon={<Hand size={15} />} className="text-error">Block</MenuItem>
+                </>
+              )}
             </div>
           ) : null}
         </span>
       </div>
+
+      <PinnedBar pins={pins} onOpen={(m) => jump(m.id)} />
 
       {/* Messages */}
       <div ref={list} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-4 pt-2 pb-1.5">
@@ -353,27 +429,46 @@ function ThreadView({ row }: { row: DMConversationRow }) {
             {messages.map((m, i) => {
               const stamp = showsTimeStamp(i);
               const starts = startsRun(i);
+              const who = sender(m);
+              const notes = groupNotesAbove(i, messages);
+              // A group shows who read, not "Seen": my newest message says "Sent" until someone has read it, then the row of readers.
+              const label = m.id === groupSentId ? sentLabel(m) : m.id === receiptMessageId || (m.isMine && m.id === seenMessageId) ? seenLabel(m) : null;
+              const names = quoteNames(m);
+              const actionable = !m.failed;
               return (
-                <div key={m.id} className={clsx(starts && !stamp && "pt-2")}>
+                <div key={m.id} data-mid={m.id} className={clsx(starts && !stamp && notes.length === 0 && "pt-2")}>
+                  {notes.map((n) => <GroupNoteRow key={n.id} text={n.text} />)}
                   {stamp ? (
                     <div className="text-center py-3 text-[10px] font-semibold tracking-[1.2px] text-muted">{chapterStamp(m.createdAt, now)}</div>
                   ) : null}
-                  <MessageBubble
-                    message={m}
-                    seenLabel={m.id === receiptMessageId ? seenLabel(m) : null}
-                    endsRun={endsRun(i)}
-                    other={other}
-                    rowProps={hasActions(m) ? bubbleMenu.rowProps(m) : undefined}
-                    more={hasActions(m) ? <MoreButton hover size={15} className="size-7" {...bubbleMenu.triggerProps(m)} aria-expanded={bubbleMenu.target?.id === m.id} /> : null}
-                    showTime={revealedTimeId === m.id}
-                    onToggleTime={() => setRevealedTimeId((cur) => (cur === m.id ? null : m.id))}
-                    onOpenMedia={setViewing}
-                    onRetry={(id) => void retry(id)}
-                  />
+                  <div data-bubble={m.id}>
+                    <MessageBubble
+                      message={m}
+                      seenLabel={label}
+                      endsRun={endsRun(i)}
+                      sender={who}
+                      senderName={isGroup && !m.isMine && starts ? who.username : null}
+                      quote={m.replyTo ? (
+                        <ReplyQuote quote={m.replyTo} isMine={m.isMine} me={me} replierName={names.replier} quotedName={names.quoted} onTap={() => jump(m.replyTo!.id)} inset={m.isMine ? 0 : ringBox(24) + 8} />
+                      ) : null}
+                      rowProps={actionable ? bubbleMenu.rowProps(m) : undefined}
+                      more={actionable ? <MoreButton hover size={15} className="size-7" {...bubbleMenu.triggerProps(m)} aria-expanded={bubbleMenu.target?.id === m.id} /> : null}
+                      showTime={revealedTimeId === m.id}
+                      onToggleTime={() => setRevealedTimeId((cur) => (cur === m.id ? null : m.id))}
+                      onOpenMedia={setViewing}
+                      onRetry={(id) => void retry(id)}
+                      onDoubleTap={isPendingId(m.id) ? undefined : () => toggleReaction("❤️", m)}
+                      onReaction={(e) => toggleReaction(e, m)}
+                      flash={flashId === m.id}
+                    />
+                  </div>
+                  {/* A group: who has read this far, under the newest message. */}
+                  {isGroup && i === lastIndex ? <SeenByRow readers={readers(m)} /> : null}
                 </div>
               );
             })}
-            {otherIsTyping ? <div className="pt-1.5"><TypingBubble other={other} /></div> : null}
+            {notesAtEnd.map((n) => <GroupNoteRow key={n.id} text={n.text} />)}
+            {otherIsTyping ? <div className="pt-1.5"><TypingBubble other={typingIdentity} /></div> : null}
             <div className="h-1.5" />
           </div>
         )}
@@ -412,7 +507,17 @@ function ThreadView({ row }: { row: DMConversationRow }) {
           </div>
         ) : (
           <div className="px-4 pt-2.5">
-            {preparing || attachment ? (
+            {editing ? (
+              <div className="flex items-center gap-1.5 pb-2 max-w-[860px] t-label-md text-violet-light">
+                <Pencil size={12} />
+                <span>Editing message</span>
+                <span className="flex-1" />
+                <button type="button" onClick={cancelEdit} aria-label="Cancel editing" className="grid place-items-center size-6 rounded text-muted hover:text-primary"><X size={14} /></button>
+              </div>
+            ) : replyingTo ? (
+              <ReplyComposerBar quote={asQuote(replyingTo)} name={replyName(replyingTo)} onCancel={() => setReplyingTo(null)} />
+            ) : null}
+            {!editing && (preparing || attachment) ? (
               // The picked photo/video in the composer: a thumbnail with an X, the video's length on it.
               <div className="flex items-start pb-2.5 max-w-[860px]">
                 <div className="relative size-[84px] shrink-0">
@@ -441,14 +546,6 @@ function ThreadView({ row }: { row: DMConversationRow }) {
                 </div>
               </div>
             ) : null}
-            {editing ? (
-              <div className="flex items-center gap-1.5 pb-2 max-w-[860px] t-label-md text-violet-light">
-                <Pencil size={12} />
-                <span>Editing message</span>
-                <span className="flex-1" />
-                <button type="button" onClick={cancelEdit} aria-label="Cancel editing" className="grid place-items-center size-6 rounded text-muted hover:text-primary"><X size={14} /></button>
-              </div>
-            ) : null}
             <div className={clsx("flex items-end gap-2 rounded-[22px] bg-surface border py-[5px] pr-[5px] max-w-[860px]", editing ? "border-violet" : "border-border-subtle", features.media && !editing ? "pl-[5px]" : "pl-4")}>
               {features.media && !editing ? (
                 <>
@@ -473,18 +570,49 @@ function ThreadView({ row }: { row: DMConversationRow }) {
         )}
       </div>
 
+      {showInfo && isGroup ? (
+        <GroupInfo
+          row={conv}
+          onChange={(r) => setConv((cur) => ({ ...cur, ...r, members: r.members.length ? r.members : cur.members }))}
+          onLeft={() => { emitRemovedLocal(row.id); forgetRow(row.id); router.replace("/messages"); }}
+          onClose={() => setShowInfo(false)}
+        />
+      ) : null}
+
       {viewing ? <MediaViewer message={viewing} onClose={() => setViewing(null)} /> : null}
+      {held ? (
+        <MessageActionSheet
+          message={held}
+          originSelector={`[data-bubble="${CSS.escape(held.id)}"] [data-bubble-content]`}
+          actions={actionsFor(held)}
+          bubble={<BubbleContent message={held} still />}
+          onClose={bubbleMenu.close}
+        />
+      ) : null}
+      {forwarding ? <ForwardPicker message={forwarding} fromConversationId={row.id} onClose={() => setForwarding(null)} /> : null}
+      {reporting ? (
+        <DMReportSheet
+          conversationId={row.id}
+          message={{ ...reporting, text: quoteText(reporting) }}
+          user={{ ...sender(reporting), id: sender(reporting).id ?? reporting.senderId }}
+          onClose={() => setReporting(null)}
+        />
+      ) : null}
       <ConfirmDialog
         open={confirm === "remove"} title="Remove chat?"
         message="This conversation leaves your inbox. A new message from either side brings it back."
         confirmTitle="Remove" onConfirm={() => void runMenuAction()} onCancel={() => setConfirm(null)}
       />
-      {/* Rises out of the held bubble and sinks back into it; Copy's toast shows in the thread. */}
-      <ActionMenu anchor={bubbleMenu.anchor} actions={bubbleMenu.target ? actionsFor(bubbleMenu.target) : []} onClose={bubbleMenu.close} label="Message actions" rise copyToast={false} />
+      <ConfirmDialog
+        open={confirm === "leave"} title="Leave this group?"
+        message="You'll stop getting its messages. Someone can add you back."
+        confirmTitle="Leave" destructive onConfirm={() => void runMenuAction()} onCancel={() => setConfirm(null)}
+      />
       <Portal>
-        <ConfirmDialog open={!!toDelete} title="Delete message?" message="It'll be removed for both of you." confirmTitle="Delete" destructive onConfirm={() => void confirmDelete()} onCancel={() => setToDelete(null)} />
+        <ConfirmDialog open={!!toDelete} title="Delete message?" message={isGroup ? "It'll be removed for everyone." : "It'll be removed for both of you."} confirmTitle="Delete" destructive onConfirm={() => void confirmDelete()} onCancel={() => setToDelete(null)} />
       </Portal>
       <AlertDialog open={!!deleteError} title="Couldn't delete" message={deleteError ?? undefined} onClose={() => setDeleteError(null)} />
+      <AlertDialog open={!!alert} title={alert?.title ?? ""} message={alert?.message} onClose={dismissAlert} />
       <ConfirmDialog
         open={confirm === "block"} title={`Block @${row.otherUsername}?`}
         message="They won't see your profile, comments or messages, and you won't see theirs. You can unblock them in Settings."

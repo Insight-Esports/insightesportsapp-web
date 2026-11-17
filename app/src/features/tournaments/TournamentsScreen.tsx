@@ -23,7 +23,7 @@ import { gameLabel, type GameId } from "@/lib/types";
 import { useGameParam } from "@/features/matches/shared";
 import { CalendarTool, ScheduleSegmentPicker } from "@/features/matches/schedule-phone";
 import { bracketHref, tournamentsHref } from "./routes";
-import { fetchCompleted, fetchCurrent, findSeries, liveGames, roundPlural, seriesIsLive, type Bracket, type TournamentRow } from "./data";
+import { allSeries, fetchCompleted, fetchCurrent, findSeries, liveGames, roundLabel, roundPlural, seriesIsLive, stageOf, tournamentIsLive, type Bracket, type TournamentRow } from "./data";
 import { LiveGameLink, TourLabel } from "./ui";
 
 const GAME_ORDER = ["VALORANT", "CS2", "League"] as const;
@@ -56,6 +56,7 @@ export function TournamentsScreen() {
     return rows.slice().sort((a, b) => (b.edition ?? 0) - (a.edition ?? 0) || ((b.endDate ?? b.startDate ?? "") > (a.endDate ?? a.startDate ?? "") ? 1 : -1));
   });
   const live = onNow.flatMap((b) => liveGames(b).map((x) => ({ ...x, tournament: b.tournament })));
+  const bracketOf = (id: string) => onNow.find((b) => b.tournament.id === id)!;
   const anyLive = onNow.some((b) => b.tournament.status === "live");
   // The bracket's Back returns here with the same game filter.
   const listPath = tournamentsHref(game);
@@ -87,7 +88,7 @@ export function TournamentsScreen() {
                     key={g.matchId}
                     className="pt-3"
                     matchId={g.matchId!}
-                    caption={`${gameLabel(tournament.game)} · ${series.roundName} · Game ${g.number}`}
+                    caption={`${gameLabel(tournament.game)} · ${roundLabel(bracketOf(tournament.id), series)} · Game ${g.number}`}
                   />
                 ))}
               </section>
@@ -111,16 +112,20 @@ function TournamentCard({ children }: { children: React.ReactNode }) {
   return <div className="rounded-2xl border border-border-subtle bg-card overflow-hidden [&>*+*]:border-t [&>*+*]:border-border-subtle">{children}</div>;
 }
 
-/** The line under an ON NOW row: "Quarterfinals · Bo3 live", "Semifinals next", "Champion: Spirit" (muted, not gold). */
+/** The line under an ON NOW row: "Quarterfinals · Bo3 live", "Semifinals next", "Swiss · Round 4 next", "Champion: Spirit" (muted, not gold). */
 function currentLine(b: Bracket): { text: string; muted?: boolean } | null {
   const t = b.tournament;
   if (t.status === "completed") {
     if (t.champion) return { text: `Champion: ${t.champion.name}`, muted: true };
     return t.endDate ? { text: endDate(t.endDate) } : null;
   }
-  const s = findSeries(b, b.currentSeriesId);
+  const s = findSeries(b, b.currentSeriesId) ?? allSeries(b).find(seriesIsLive) ?? null;
   if (!s) return null;
-  return seriesIsLive(s) ? { text: `${roundPlural(s.roundName)} · Bo${s.bestOf} live` } : { text: `${roundPlural(s.roundName)} next` };
+  const stage = stageOf(b, s.id);
+  const count = stage?.rounds.find((r) => r.series.some((x) => x.id === s.id))?.series.length ?? 1;
+  let name = roundPlural(s.roundName, count);
+  if (b.stages.length > 1 && stage) name = `${stage.name} · ${name}`;
+  return seriesIsLive(s) ? { text: `${name} · Bo${s.bestOf} live` } : { text: `${name} next` };
 }
 
 function endDate(isoTime: string): string {
@@ -150,7 +155,7 @@ function CurrentRow({ bracket: b, from }: { bracket: Bracket; from: string }) {
   const t = b.tournament;
   const line = currentLine(b);
   const lead = t.champion ? <TeamMark name={t.champion.name} logoURL={t.champion.logoURL} size={32} /> : <GamePill game={t.game} className="!text-[12px]" />;
-  return <RowShell href={bracketFrom(t.id, from)} lead={lead} name={t.name} live={t.status === "live"} line={line?.text ?? null} muted={line?.muted} />;
+  return <RowShell href={bracketFrom(t.id, from)} lead={lead} name={t.name} live={tournamentIsLive(b)} line={line?.text ?? null} muted={line?.muted} />;
 }
 
 function PastRow({ row, from }: { row: TournamentRow; from: string }) {

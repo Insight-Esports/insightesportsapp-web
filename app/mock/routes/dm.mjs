@@ -7,6 +7,22 @@
 // (also served without the api key at GET /mock/dm/link-payload).
 // Every other mock user derives a stable key pair from its id.
 //
+// Messages this browser can't open: chronicle (conv-8) carries two rows
+// sealed to a key the browser never holds (one mid-thread, one newest), so
+// the thread shows no bubble for them and the inbox previews the newest
+// that opens. They are sealed with chronicle's key version 2, which the
+// mock doesn't serve (GET /dm/keys/user-8?version=2 → 404) until the test
+// hook POST /mock/dm/key-arrives: then the thread's once-a-minute retry
+// opens the same ciphertext and shows them in place.
+//
+// Lost key versions (backend dmKeyBackupController): GET/POST/DELETE
+// /api/dm/keys/lost. While a version of mine is listed, every message
+// locked to it is left out of my pages, previews and counts (as
+// notHiddenSql does). Test hook (no auth): POST /mock/dm/lost {versions,
+// keepNewest?, resetLog?} sets the list (keepNewest: each conversation's
+// newest N rows stay, as if sealed to the current key — every mock row is
+// v1), GET /mock/dm/lost reads it plus the DELETE log.
+//
 // Sockets: each authenticated socket joins user:<id>; ~20 s after connect
 // the mock types and then delivers a dm:message; every message you send
 // gets a dm:read and a canned reply (typing first).
@@ -108,6 +124,28 @@ export function register(app, h) {
   };
   const convWith = (otherId) => [...convs.values()].find((c) => c.other === otherId) ?? null;
 
+  // A row sealed to a key nobody on this account holds (as if locked to a
+  // version the phone lost): the browser can't open it.
+  // Their key version 2: what the unopenable rows are sealed with.
+  const v2Of = (userId) => {
+    const priv = privFromRaw(createHash("sha256").update(`insight-mock-dm:${userId}:v2`).digest());
+    return { priv, pubB64: pubRawOf(priv).toString("base64") };
+  };
+  const releasedV2 = new Set();      // user ids whose v2 the key endpoint serves
+  const addUnopenable = (conv, senderId, text, createdAt) => {
+    const k2 = v2Of(senderId);
+    const shared = diffieHellman({ privateKey: k2.priv, publicKey: createPublicKey(keyOf(me.id).priv) });
+    const key = Buffer.from(hkdfSync("sha256", shared, Buffer.alloc(0), "insight-dm-v1", 32));
+    const sealed = sealBytes(Buffer.from(JSON.stringify({ t: "text", body: text }), "utf8"), key);
+    const row = { id: msgId(), conversation_id: conv.id, sender_id: senderId, ciphertext: sealed.bytes.toString("base64"), nonce: sealed.nonce, sender_key_version: 2, recipient_key_version: 1, content_type: "text", created_at: createdAt };
+    conv.messages.push(row);
+    conv.messages.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
+    conv.last_message_at = conv.messages[conv.messages.length - 1].created_at;
+    return row;
+  };
+  // {userId, arrived?: false} — false takes it away again (test reset).
+  app.post("/mock/dm/key-arrives", (req, res) => { const id = req.body?.userId ?? "user-8"; if (req.body?.arrived === false) releasedV2.delete(id); else releasedV2.add(id); res.json({ released: [...releasedV2] }); });
+
   // ── Seed ───────────────────────────────────────────────────────────────
   const MIN = 6e4, HOUR = 36e5, DAY = 864e5;
   {
@@ -158,6 +196,20 @@ export function register(app, h) {
     c.read["user-5"] = isoAgo(5 * DAY);
   }
   {
+    // chronicle — two messages this browser can't open: one mid-thread (no
+    // bubble), one newest (the inbox previews "ropz is cracked on nuke").
+    const c = createConv("user-8", isoAgo(10 * DAY));
+    addText(c, "user-8", "you watching the CS major tonight?", isoAgo(3 * HOUR));
+    addText(c, me.id, "obviously, vitality looks scary", isoAgo(2 * HOUR + 50 * MIN));
+    addText(c, me.id, "zywoo on anubis is a cheat code", isoAgo(2 * HOUR + 48 * MIN));
+    addUnopenable(c, "user-8", "did you see that eco round on inferno", isoAgo(2 * HOUR + 46 * MIN));
+    addText(c, "user-8", "ropz is cracked on nuke", isoAgo(2 * HOUR + 44 * MIN));
+    addText(c, "user-8", "faze in 3 then", isoAgo(2 * HOUR + 43 * MIN));
+    addUnopenable(c, "user-8", "match starts in 10, you on?", isoAgo(15 * MIN));
+    c.read[me.id] = isoAgo(2 * HOUR + 30 * MIN);
+    c.read["user-8"] = isoAgo(2 * HOUR + 45 * MIN);
+  }
+  {
     // sinatraa — blocked me: sending answers 403 CANNOT_MESSAGE_USER
     const c = createConv("user-17", isoAgo(15 * DAY));
     addText(c, "user-17", "nice predictions streak", isoAgo(8 * DAY));
@@ -166,8 +218,21 @@ export function register(app, h) {
     c.read["user-17"] = isoAgo(8 * DAY);
   }
 
+  // ── Lost key versions (mine) ───────────────────────────────────────────
+  const lostVersions = new Set();
+  const lostLog = [];       // every DELETE /api/dm/keys/lost body, for tests
+  let lostKeepNewest = 0;   // test knob: the newest N rows of each conversation stay
+  const lockedToLost = (m, userId) => lostVersions.size > 0 && userId === me.id
+    && lostVersions.has(m.sender_id === userId ? m.sender_key_version : m.recipient_key_version);
+
   // ── Shapes ─────────────────────────────────────────────────────────────
-  const visibleMessages = (c, userId) => { const h0 = c.hidden[userId]; return h0 ? c.messages.filter((m) => m.created_at > h0) : c.messages; };
+  const visibleMessages = (c, userId) => {
+    const h0 = c.hidden[userId];
+    const list = h0 ? c.messages.filter((m) => m.created_at > h0) : c.messages;
+    if (!lostVersions.size) return list;
+    const kept = new Set(lostKeepNewest > 0 ? list.slice(-lostKeepNewest).map((m) => m.id) : []);
+    return list.filter((m) => kept.has(m.id) || !lockedToLost(m, userId));
+  };
   const unreadIn = (c, userId) => { const r = c.read[userId]; return visibleMessages(c, userId).filter((m) => m.sender_id !== userId && (!r || m.created_at > r)).length; };
   const inboxRow = (c) => {
     const other = person(c.other) ?? { id: c.other, username: "User", avatar_url: null };
@@ -196,11 +261,37 @@ export function register(app, h) {
   app.get("/api/dm/settings", protect, (_req, res) => res.json({ dm_privacy: dmPrivacy }));
   app.put("/api/dm/settings", protect, (req, res) => { const v = req.body?.dm_privacy ?? req.body?.who_can_message; if (v === "everyone" || v === "following") dmPrivacy = v; res.json({ dm_privacy: dmPrivacy }); });
 
+  // ── Lost key versions (registered before /keys/:userId) ────────────────
+  const cleanVersions = (v) => [...new Set((Array.isArray(v) ? v : []).map((x) => parseInt(x, 10)).filter((x) => Number.isInteger(x) && x >= 1))].sort((a, b) => a - b);
+  const lostShape = () => ({ versions: [...lostVersions].sort((a, b) => a - b) });
+  app.get("/api/dm/keys/lost", protect, (_req, res) => res.json(lostShape()));
+  app.post("/api/dm/keys/lost", protect, (req, res) => {
+    const asked = cleanVersions(req.body?.versions);
+    if (!asked.length) return res.status(400).json({ error: "versions must list at least one earlier key version", code: "INVALID_VERSIONS" });
+    for (const v of asked) lostVersions.add(v);
+    res.json(lostShape());
+  });
+  app.delete("/api/dm/keys/lost", protect, (req, res) => {
+    const asked = cleanVersions(req.body?.versions);
+    lostLog.push({ at: now(), versions: asked });
+    if (asked.length) for (const v of asked) lostVersions.delete(v); else lostVersions.clear();
+    res.json(lostShape());
+  });
+  app.get("/mock/dm/lost", (_req, res) => res.json({ ...lostShape(), deletes: lostLog }));
+  app.post("/mock/dm/lost", (req, res) => {
+    lostVersions.clear();
+    for (const v of cleanVersions(req.body?.versions)) lostVersions.add(v);
+    lostKeepNewest = Math.max(0, parseInt(req.body?.keepNewest ?? 0, 10) || 0);
+    if (req.body?.resetLog) lostLog.length = 0;
+    res.json({ ...lostShape(), deletes: lostLog });
+  });
+
   // ── Keys ───────────────────────────────────────────────────────────────
   app.get("/api/dm/keys/:userId", protect, (req, res) => {
     const id = req.params.userId === "me" ? me.id : req.params.userId;
     if (!person(id)) return res.status(404).json({ error: "No key published", code: "NO_KEY" });
     const version = req.query.version != null ? parseInt(req.query.version, 10) : null;
+    if (version === 2 && releasedV2.has(id)) return res.json({ user_id: id, public_key: v2Of(id).pubB64, key_version: 2, algorithm: "x25519-hkdf-sha256+aes-256-gcm", rotated: false });
     if (version != null && version !== keyOf(id).version) return res.status(404).json({ error: "No key at that version", code: "NO_KEY" });
     res.json(keyRow(id));
   });

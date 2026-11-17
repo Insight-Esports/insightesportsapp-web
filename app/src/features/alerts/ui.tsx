@@ -1,6 +1,6 @@
 // alerts/ui.tsx — the small pieces every Stat Alerts screen shares: the
 // screen frame (centered column on desktop, full width on phones), capsule
-// chips, the two-way segment, the row ⋯ menu, the anchored confirm popover,
+// chips, the composer's two-column grid, the two-way segment, the row ⋯ menu, the anchored confirm popover,
 // the live / when readouts and the outcome labels.
 "use client";
 
@@ -14,7 +14,7 @@ import { matchPageHref } from "@/components/ui/entity-header";
 import { rememberMatch } from "@/features/matches/match-cache";
 import { scoreFromSide } from "@/lib/live-matches";
 import type { Match } from "@/lib/types";
-import { fmtStat, isReached, scorePair, whenText, type ActiveAlert, type AlertOutcome, type HistoryAlert } from "./model";
+import { fmtStat, isFallingBehind, isOnPace, isReached, scorePair, whenText, type ActiveAlert, type AlertOutcome, type HistoryAlert } from "./model";
 
 // ── Frame ─────────────────────────────────────────────────────────────────
 export function AlertsFrame({ title, back, trailing, children }: { title: string; back?: string; trailing?: ReactNode; children: ReactNode }) {
@@ -54,6 +54,30 @@ export function Chip({ label, selected, onClick, disabled }: { label: string; se
       className={clsx(
         "shrink-0 px-4 py-2 rounded-full t-label-md border transition-colors disabled:opacity-40",
         selected ? "bg-violet-gradient text-white border-transparent" : "bg-surface text-secondary border-border-subtle hover:text-primary",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** The composer's pickers (StatAlerts.swift `statChips` / `chipGroup`): every option at once, two to a
+ *  row, equal 40px boxes; nothing hides off the edge and nothing scrolls sideways. */
+export function ChoiceGrid({ children }: { children: ReactNode }) {
+  return <div className="grid grid-cols-2 gap-2">{children}</div>;
+}
+
+/** A ChoiceGrid box: the label centred, violet when picked, surface + hairline otherwise. */
+export function GridCell({ label, selected, onClick }: { label: string; selected: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      title={label}
+      className={clsx(
+        "min-w-0 h-10 px-2 rounded-[10px] border t-label-md truncate transition-colors",
+        selected ? "bg-violet text-white border-transparent" : "bg-surface text-secondary border-border-subtle hover:text-primary hover:border-border-strong",
       )}
     >
       {label}
@@ -164,7 +188,9 @@ export function mapsLine(a: Pick<ActiveAlert, "match">): string | null {
   return scorePair(m.targetScore ?? 0, m.opponentScore ?? 0);
 }
 
-/** The right side of an ACTIVE row while its match is live; opens the live match. */
+/** The right side of an ACTIVE row while its match is live; opens the live match.
+ *  A stat call's word: REACHED, else (Premium, once that push has gone out)
+ *  ON PACE or BEHIND — the later of the two — else LIVE. */
 export function LiveReadout({ a, live }: { a: ActiveAlert; live: Match | null }) {
   if (!a.match) return null;
   let value: string;
@@ -172,7 +198,10 @@ export function LiveReadout({ a, live }: { a: ActiveAlert; live: Match | null })
   if (a.kind === "stat") {
     const reached = isReached(a);
     value = `${fmtStat(a.stat, a.live?.value ?? null)} / ${fmtStat(a.stat, a.target, false)}`;
-    label = reached ? <span className="text-success">REACHED</span> : <span className="text-violet">LIVE</span>;
+    label = reached ? <span className="text-success">REACHED</span>
+      : isOnPace(a) ? <span className="text-success">ON PACE</span>
+      : isFallingBehind(a) ? <span className="text-secondary">BEHIND</span>
+      : <span className="text-violet">LIVE</span>;
   } else {
     value = roundScore(a, live) ?? "–";
     const maps = mapsLine(a);

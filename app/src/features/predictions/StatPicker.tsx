@@ -6,6 +6,11 @@
 // Oct 28: the entity header on top; live TEAMS (Kills, +/−) gate a settled
 // line on the roster's summed kills and, without a line, open the live team
 // breakdown; "Set alert for this" (or "Set a line to make it an alert").
+//
+// Nov 5 §2: first bloods and clutches join the round-based games' stats
+// (player and team), with line examples sized to them. Nov 5 §7: a pre-match
+// line for someone playing right now offers the live one (THIS MATCH · Live
+// Stat Line) under the header.
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
@@ -17,10 +22,11 @@ import { normalizeTeams } from "@/lib/types";
 import { Field, FilterChip, FilterSegment, SearchablePickerSheet } from "@/components/ui";
 import { EntityHeader } from "@/components/ui/entity-header";
 import { PredictScreen } from "./PredictScreen";
-import { flowHref, readTarget } from "./flow";
+import { backOr, flowHref, readTarget } from "./flow";
 import { BlockButton } from "./shared";
 import { SetAlertForThis } from "./links";
-import { CUMULATIVE_STATS, filterAgents, filterMaps, liveStatValue, normalizePredictionFilters, normalizeStatRows, PredictionFormat, PredictionStatCatalog, directionLabel, type PredictionDirection } from "./types";
+import { PlayingNowOffer, usePlayingNow } from "./playing-now";
+import { CUMULATIVE_STATS, exampleLine, filterAgents, filterMaps, liveStatValue, normalizePredictionFilters, normalizeStatRows, PredictionFormat, PredictionStatCatalog, directionLabel, type PredictionDirection } from "./types";
 
 type SheetKind = "opponent" | "map" | "agent" | "champion" | null;
 
@@ -31,6 +37,7 @@ export function StatPickerScreen() {
   const { game, targetType, targetId, targetName, isLive, matchId } = t;
 
   const stats = targetType === "team" ? PredictionStatCatalog.teamStats(game) : PredictionStatCatalog.playerStats(game);
+  const playing = usePlayingNow(targetType, targetId, !isLive);
 
   const [selectedStat, setSelectedStat] = useState<string | null>(sp.get("stat"));
   const [baselineText, setBaselineText] = useState(sp.get("baseline") ?? "");
@@ -143,10 +150,11 @@ export function StatPickerScreen() {
     : null;
 
   return (
-    <PredictScreen title="Stat" back={flowHref.options(t)}>
+    <PredictScreen title="Stat" back={backOr(t, flowHref.options(t))}>
       <div className="flex flex-col gap-6 pt-1 max-w-3xl w-full mx-auto">
         <div className="flex flex-col gap-3 px-4 pt-3">
           <EntityHeader type={targetType} id={targetId} name={targetName} game={game} matchId={isLive ? matchId : null} live={isLive} />
+          {playing ? <PlayingNowOffer title="Live Stat Line" href={flowHref.stat({ ...t, isLive: true, matchId: playing.id, back: flowHref.stat(t) })} /> : null}
           <h1 className="t-headline-md text-primary">Pick a stat</h1>
         </div>
 
@@ -162,7 +170,7 @@ export function StatPickerScreen() {
               icon={<Target />}
               value={baselineText}
               onChange={(e) => setBaselineText(e.target.value)}
-              placeholder={selectedStat ? "e.g. 20" : "Pick a stat first"}
+              placeholder={selectedStat ? `e.g. ${exampleLine(selectedStat, targetType)}` : "Pick a stat first"}
               disabled={!selectedStat}
               inputMode={selectedStat === "plus_minus" ? "text" : "decimal"}
               aria-label="Line"

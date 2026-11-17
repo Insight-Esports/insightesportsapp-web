@@ -13,18 +13,22 @@ export function directionLabel(d: PredictionDirection): string {
 }
 
 // ── Stat whitelists — MUST match the backend exactly (predictionService.js) ──
+// Shared by the predictor and the alert composer. First bloods and clutches
+// (round stats, Nov 5 §2) are VALORANT and CS2 only; a team's is the
+// roster's total. League never lists them.
 export const PredictionStatCatalog = {
   playerStats(game: string): string[] {
     switch (game) {
-      case "VALORANT": return ["kills", "deaths", "assists", "acs", "adr", "headshots", "plus_minus"];
-      case "CS2": return ["kills", "deaths", "assists", "adr", "headshots", "plus_minus"];
+      case "VALORANT": return ["kills", "deaths", "assists", "acs", "adr", "headshots", "first_bloods", "clutch_wins", "plus_minus"];
+      case "CS2": return ["kills", "deaths", "assists", "adr", "headshots", "first_bloods", "clutch_wins", "plus_minus"];
       case "League": return ["kills", "deaths", "assists", "cs_per_min", "gold_earned", "vision_score", "plus_minus"];
       default: return [];
     }
   },
   teamStats(game: string): string[] {
     switch (game) {
-      case "VALORANT": case "CS2": case "League": return ["kills", "plus_minus"];
+      case "VALORANT": case "CS2": return ["kills", "plus_minus", "first_bloods", "clutch_wins"];
+      case "League": return ["kills", "plus_minus"];
       default: return [];
     }
   },
@@ -40,9 +44,9 @@ export const PredictionStatCatalog = {
       case "cs_per_min": return "CS/min";
       case "gold_earned": return "Gold";
       case "vision_score": return "Vision Score";
+      case "first_bloods": case "firstBloods": return "First Bloods";
+      case "clutch_wins": case "clutchWins": return "Clutches";
       // Overview-only stat columns (player-overview endpoint)
-      case "first_bloods": return "First Bloods";
-      case "clutch_wins": return "Clutch Wins";
       case "kills_t_side": return "T-Side Kills";
       case "kills_ct_side": return "CT-Side Kills";
       case "damage_dealt": return "Damage";
@@ -58,14 +62,40 @@ export function overviewLabel(key: string): string {
     case "plusMinus": return "+/−";
     case "gold_diff_at_15": return "Gold Diff (15 min)";
     case "damage_dealt": return "Damage Dealt";
-    case "first_bloods": return "First Bloods";
-    case "clutch_wins": return "Clutch Wins";
+    case "first_bloods": case "firstBloods": return "First Bloods";
+    case "clutch_wins": case "clutchWins": return "Clutches";
     case "kills_t_side": return "T-Side Kills";
     case "cs": case "csPerMin": return "CS / min";
     case "gold": case "goldEarned": return "Gold";
     case "visionScore": return "Vision Score";
     case "kills_ct_side": return "CT-Side Kills";
     default: return PredictionStatCatalog.label(key);
+  }
+}
+
+/** The line field's example, sized to the stat (PredictionStatPickerView.exampleLine):
+ *  first bloods and clutches are small numbers (a player 2–5 and 0.3–0.7 a map). */
+export function exampleLine(stat: string | null, targetType: PredictionTargetType): string {
+  switch (stat) {
+    case "first_bloods": return targetType === "team" ? "12" : "3.5";
+    case "clutch_wins": return targetType === "team" ? "2.5" : "0.5";
+    case "acs": return "240";
+    case "adr": return "150";
+    case "cs_per_min": return "8.5";
+    case "gold_earned": return "12000";
+    default: return targetType === "team" ? "60" : "20";
+  }
+}
+
+/** A team overview's stats in reading order (PredictionBreakdownViewModel.statOrder): game-aware,
+ *  first bloods and clutches in the round-based games, CS/gold/vision in League. Keys the server
+ *  doesn't send drop out, so variants are safe to list. (A player's order is the server's statColumns.) */
+export function teamOverviewOrder(game: string): string[] {
+  switch (game) {
+    case "VALORANT": return ["kills", "deaths", "assists", "acs", "adr", "headshots", "firstBloods", "clutchWins", "plusMinus"];
+    case "CS2": return ["kills", "deaths", "assists", "adr", "headshots", "firstBloods", "clutchWins", "plusMinus"];
+    case "League": return ["kills", "deaths", "assists", "cs", "csPerMin", "cs_per_min", "gold", "goldEarned", "gold_earned", "visionScore", "vision_score", "plusMinus"];
+    default: return ["kills", "deaths", "assists", "plusMinus"];
   }
 }
 
@@ -532,7 +562,11 @@ export function isCountingStat(stat: string | null | undefined): boolean {
 // ── Live team breakdown (POST /predictions/live-team-breakdown) ───────────
 /** Rev 2: `good` — is the pace good news for the team (ahead on deaths isn't). Null when not rated. */
 export interface LiveTeamStatLine { stat: string; current: number | null; careerAverage: number | null; paceExpected: number | null; projectedFinal: number | null; vsPace: string | null; good: boolean | null }
-export interface LiveTeamRosterRow { playerId: string | null; name: string; imageURL: string | null; kills: number | null; deaths: number | null; assists: number | null; plusMinus: number | null; acs: number | null; adr: number | null; gold: number | null; agent: string | null }
+export interface LiveTeamRosterRow {
+  playerId: string | null; name: string; imageURL: string | null; kills: number | null; deaths: number | null; assists: number | null; plusMinus: number | null; acs: number | null; adr: number | null; gold: number | null; agent: string | null;
+  /** Round stats (VALORANT / CS2), once the feed has counted them; null = not counted. */
+  firstBloods: number | null; clutchWins: number | null;
+}
 export interface LiveTeamMap { number: number; status: string | null; targetWon: boolean | null; rounds: string | null }
 export interface LiveTeamBreakdown {
   matchId: string | null; teamId: string | null; team: string | null; game: string | null; summary: string | null;
@@ -560,6 +594,7 @@ export function normalizeLiveTeamBreakdown(raw: Json): LiveTeamBreakdown {
       imageURL: str(p.imageUrl ?? p.image_url ?? p.imageURL),
       kills: int(p.kills), deaths: int(p.deaths), assists: int(p.assists), plusMinus: int(p.plusMinus ?? p.plus_minus),
       acs: num(p.acs), adr: num(p.adr), gold: num(p.gold ?? p.gold_earned ?? p.goldEarned), agent: str(p.agent ?? p.character_name),
+      firstBloods: int(p.firstBloods ?? p.first_bloods), clutchWins: int(p.clutchWins ?? p.clutch_wins),
     })) : [],
     last10Games: normalizeGames(r.last10Games) ?? [],
     opponentName: str(r.opponentName), opponentId: str(r.opponentId), opponentLogoUrl: str(r.opponentLogoUrl),

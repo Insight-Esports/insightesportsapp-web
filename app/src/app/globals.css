@@ -399,3 +399,16 @@ html { -webkit-text-size-adjust: 100%; overscroll-behavior-y: none; }
   .menu-fall, .morph-out { animation-duration: 1ms; }
   .confirm-ring { display: none; }
 }
+
+/* ── DMs: message actions (Nov 17, MessageActions.swift) ─────────────────
+   Reaction chips pop in on a small spring and their counts roll; a message
+   jumped to (a quote, a pin) glows a beat; the group Create bar rises. */
+@keyframes dm-chip-pop { 0% { opacity: 0; transform: scale(0.6); } 70% { opacity: 1; transform: scale(1.08); } 100% { transform: none; } }
+.dm-chip-pop { animation: dm-chip-pop 240ms cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+@keyframes dm-count-roll { from { opacity: 0; transform: translateY(60%); } }
+.dm-count-roll { display: inline-block; animation: dm-count-roll 200ms ease-out both; }
+@keyframes dm-flash { 0%, 100% { box-shadow: 0 0 0 0 rgb(124 92 252 / 0); } 25% { box-shadow: 0 0 0 4px rgb(124 92 252 / 0.55); } }
+.dm-flash { animation: dm-flash 1.3s ease-out both; }
+@keyframes dm-rise-in { from { opacity: 0; transform: translateY(16px); } }
+.dm-rise-in { animation: dm-rise-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+@media (prefers-reduced-motion: reduce) { .dm-chip-pop, .dm-count-roll, .dm-flash, .dm-rise-in { animation: none; } }

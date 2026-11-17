@@ -5,8 +5,8 @@ import { iso, str, type Json } from "@/lib/types";
 export type NotificationTypeId =
   | "prediction_resolved" | "poll_resolved" | "weekly_report" | "mid_match" | "prediction_window" | "streak_milestone"
   | "followed_live" | "followed_result" | "followed_starting_soon" | "followed_news" | "leaderboard_rank" | "leaderboard_reset"
-  | "new_follower" | "direct_message" | "featured_match" | "final_score" | "featured_news" | "pre_game" | "followed_player_highlight"
-  | "badge_earned" | "leaderboard_result" | "stat_alert_live" | "stat_alert_result" | "unknown";
+  | "new_follower" | "direct_message" | "featured_match" | "final_score" | "featured_news" | "pre_game" | "followed_player_standout"
+  | "badge_earned" | "leaderboard_result" | "stat_alert_live" | "stat_alert_result" | "stat_alert_pace" | "stat_alert_slipping" | "unknown";
 
 export type NotificationTint = "violet" | "blue" | "gold" | "muted";
 
@@ -41,13 +41,17 @@ export const NOTIFICATION_TYPES: Record<NotificationTypeId, NotificationTypeInfo
   final_score: T("final_score", "Final Scores", "When a match in your games finishes", "flag", "blue"),
   featured_news: T("featured_news", "Big News", "Major stories across your games", "newspaper", "muted"),
   pre_game: T("pre_game", "Upcoming Matches", "A heads-up before any match in your games", "clock", "blue"),
-  followed_player_highlight: T("followed_player_highlight", "Player Highlights", "When a player you follow has a standout game", "zap", "blue"),
+  // The server's name for it (prefs key, stored rows, push): a player you follow pops off.
+  followed_player_standout: T("followed_player_standout", "Player Highlights", "When a player you follow has a standout game", "zap", "blue"),
   // Backend: types.badge_earned / types.leaderboard_result (both default on).
   badge_earned: T("badge_earned", "Badges", "When you earn a new badge", "badge-rosette", "violet"),
   leaderboard_result: T("leaderboard_result", "Monthly Results", "Where you finished when the month closes", "trophy", "gold"),
   // Stat Alerts (backend: types.stat_alert_live / stat_alert_result, both default on). Both open the list.
   stat_alert_live: T("stat_alert_live", "Stat Alerts: Live", "The moment an alert's target is reached (Premium)", "bell-dot", "violet"),
   stat_alert_result: T("stat_alert_result", "Stat Alerts: Results", "Hit or miss, when the match ends", "bell-dot", "violet"),
+  // Smart alerts (backend: types.stat_alert_pace / stat_alert_slipping, both default on; Premium, while live). Both open the list.
+  stat_alert_pace: T("stat_alert_pace", "Stat Alerts: On Pace", "When the chance of a live alert hitting climbs (Premium)", "bell-dot", "violet"),
+  stat_alert_slipping: T("stat_alert_slipping", "Stat Alerts: Falling Behind", "When the chance of a live alert hitting drops (Premium)", "bell-dot", "violet"),
   unknown: T("unknown", "Notification", "", "bell", "muted"),
 };
 
@@ -55,12 +59,15 @@ export function notificationType(raw: string | null | undefined): NotificationTy
   return raw && raw in NOTIFICATION_TYPES ? NOTIFICATION_TYPES[raw as NotificationTypeId] : NOTIFICATION_TYPES.unknown;
 }
 
-/** Rows the bell keeps as history. Heads-ups are push-only. */
+/** Rows the bell keeps as history (NotificationManager.swift `bellEligible`): what is yours — stat
+ *  alerts, predictions, polls, the weekly report, rank, badges, followers — and any type this build
+ *  doesn't know (a generic row). Match traffic (results, final scores, player highlights, big-match
+ *  promos) and news are pushed only; heads-ups (starting soon, live, pre-game, mid-match, prediction
+ *  window) and DMs never show here. */
 export const BELL_ELIGIBLE = new Set<NotificationTypeId>([
-  "followed_result", "final_score", "followed_player_highlight",
   "prediction_resolved", "poll_resolved", "streak_milestone",
   "leaderboard_rank", "leaderboard_reset", "leaderboard_result", "badge_earned", "new_follower",
-  "weekly_report", "followed_news", "featured_news", "stat_alert_live", "stat_alert_result", "unknown",
+  "weekly_report", "stat_alert_live", "stat_alert_result", "stat_alert_pace", "stat_alert_slipping", "unknown",
 ]);
 
 export const LEADERBOARD_TYPES: NotificationTypeId[] = ["leaderboard_rank", "leaderboard_reset", "leaderboard_result"];
@@ -80,7 +87,7 @@ export interface NotificationItem {
 export function normalizeNotification(raw: Json): NotificationItem | null {
   if (raw?.id == null) return null;
   const type = notificationType(str(raw.type));
-  if (!BELL_ELIGIBLE.has(type.id)) return null;   // DMs live in Messages
+  if (!BELL_ELIGIBLE.has(type.id)) return null;   // pushed only (match traffic, news, heads-ups); DMs live in Messages
   const readRaw = raw.is_read ?? raw.read;
   return {
     id: String(raw.id),

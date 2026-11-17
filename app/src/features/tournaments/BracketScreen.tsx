@@ -1,30 +1,44 @@
-// tournaments/BracketScreen.tsx — a tournament's bracket (iOS
-// Tournaments.swift, parity 2026-10-29 §1) at /tournaments/[id].
+// tournaments/BracketScreen.tsx — a tournament (iOS Tournaments.swift
+// BracketView + TournamentStages.swift; parity 2026-10-29 §1, 2026-11-05 §1)
+// at /tournaments/[id]. The nav bar carries no title: the name is in the header.
 //
-//   header        game tag · name · LIVE; "8 teams · Bo3 · Bo3 · Bo5" (· Completed)
-//   game on now   "QUARTERFINAL · GAME 2" over the live match link
-//   the tree      BracketTree (two halves meeting at the final)
+//   header        game tag · name · LIVE; "8 teams · Bo3 · Bo3 · Bo5",
+//                 "16 teams · Swiss · Playoffs", "32 teams · Three Swiss
+//                 stages · Playoffs", "16 teams · Groups · Double
+//                 elimination" (· Completed)
+//   game on now   "QUARTERFINAL · GAME 2" (or "SWISS · ROUND 3 · GAME 1")
+//                 over the live match link
+//   stage tabs    with several stages: Swiss · Playoffs, Groups · Playoffs,
+//                 Stage 1 · Stage 2 · Stage 3 · Playoffs; opens on the live
+//                 stage, else the next one up, else the last
+//   the stage     SwissStage, GroupStage, or the playoff tree (BracketTree)
 //   champion      crest · CHAMPION · name · "Beat X 3–1 in the final" · › (→ team page)
-//   TITLE ODDS    reach per round after the first + title (hidden once completed)
-//   round by round  each round's series as rows (→ the series)
+//   TITLE ODDS    the columns the server lists (PO · QF · SF · FINAL, PO ·
+//                 UQF · USF · UF · GF; a cup drops its first round) + title,
+//                 hidden once completed
+//   round by round  a playoff stage's series as rows (→ the series)
 //
 // GET /tournaments/:id/bracket, refreshed every 30 s until completed.
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Check, ChevronRight } from "lucide-react";
-import { GamePill, LiveBadge, LoadFailure, Page, SkeletonBar, TeamMark } from "@/components/ui";
+import { FilterSegment, GamePill, LiveBadge, LoadFailure, Page, SkeletonBar, TeamMark } from "@/components/ui";
 import { NavBar } from "@/components/shell/NavBar";
 import { useIsPhone } from "@/components/shell/use-phone";
 import { useFetch, useInterval } from "@/lib/use-fetch";
 import { clsx } from "@/lib/format";
 import { pagePathFrom } from "@/features/matches/from-match";
 import { pctText } from "./format";
-import { bracketHref, seriesHref, tournamentsHref } from "./routes";
-import { fetchBracket, formatLine, liveGames, nextStartOf, roundPlural, roundShort, seriesDecided, seriesIsLive, startLabel, type Bracket, type BracketSeries, type BracketTeam, type TitleOddsRow } from "./data";
+import { bracketHref, tournamentsHref } from "./routes";
+import { defaultStage, fetchBracket, formatLine, liveGames, roundLabel, roundPlural, roundShort, tournamentIsLive, type Bracket, type Stage, type TitleOddsRow } from "./data";
 import { BracketTree } from "./BracketTree";
-import { LiveGameLink, TbdCrest, TourLabel } from "./ui";
+import { LiveGameLink, TourLabel } from "./ui";
+import { SeriesRoundList } from "./stages/SeriesRoundList";
+import { SwissStage } from "./stages/SwissStage";
+import { GroupStage } from "./stages/GroupStage";
 
 const teamHref = (id: string) => `/teams/${encodeURIComponent(id)}`;
 
@@ -40,7 +54,8 @@ export function BracketScreen({ id }: { id: string }) {
 
   return (
     <Page>
-      <NavBar title={b?.tournament.name ?? ""} back={back} centered />
+      {/* The name is in the header; the bar keeps only the way back. */}
+      <NavBar title="" back={back} centered />
       {!b ? (
         feed.loading ? <BracketSkeleton /> : (
           <div className="pt-10"><LoadFailure error={feed.error ?? "Content not found."} connectionProblem={feed.connectionProblem} onRetry={feed.reload} /></div>
@@ -57,6 +72,10 @@ function BracketBody({ b, wide }: { b: Bracket; wide: boolean }) {
   const live = liveGames(b);
   const completed = t.status === "completed";
   const odds = !completed && b.odds && b.odds.length > 0 ? b.odds : null;
+  const [stageId, setStageId] = useState<string | null>(null);
+  const stage = b.stages.find((s) => s.id === stageId) ?? defaultStage(b);
+  const playoffStage = !!stage && stage.kind !== "swiss" && stage.kind !== "groups";
+  const from = bracketHref(t.id);
   return (
     <div className="flex flex-col gap-7 px-4 pt-5">
       {/* 1. Header */}
@@ -66,7 +85,7 @@ function BracketBody({ b, wide }: { b: Bracket; wide: boolean }) {
           {/* The LIVE badge flows after the name, so a long name wraps with it rather than orphaning it. */}
           <h1 className="min-w-0 text-[22px] min-[400px]:text-[24px] md:text-[26px] font-bold tracking-[-0.4px] text-primary leading-tight">
             {t.name}
-            {t.status === "live" ? <LiveBadge className="!text-[14px] !font-medium tracking-normal ml-2.5 align-[3px] whitespace-nowrap" /> : null}
+            {tournamentIsLive(b) ? <LiveBadge className="!text-[14px] !font-medium tracking-normal ml-2.5 align-[3px] whitespace-nowrap" /> : null}
           </h1>
         </div>
         <span className="t-body-md text-secondary">{formatLine(b)}</span>
@@ -76,34 +95,56 @@ function BracketBody({ b, wide }: { b: Bracket; wide: boolean }) {
       {live.length > 0 ? (
         <div className="flex flex-col gap-4 md:max-w-[560px]">
           {live.map(({ series, game }) => (
-            <LiveGameLink key={game.matchId} matchId={game.matchId!} caption={`${series.roundName} · Game ${game.number}`} />
+            <LiveGameLink key={game.matchId} matchId={game.matchId!} caption={`${roundLabel(b, series)} · Game ${game.number}`} />
           ))}
         </div>
       ) : null}
 
-      {/* 3. The tree */}
-      <BracketTree bracket={b} wide={wide} />
+      {/* 3. The stage: tabs with several, then its view */}
+      {b.stages.length > 1 && stage ? (
+        <FilterSegment
+          options={b.stages.map((s) => ({ label: s.name, value: s.id }))}
+          value={stage.id}
+          onChange={setStageId}
+          className="px-1 -mb-2 overflow-x-auto no-scrollbar"
+        />
+      ) : null}
+      {stage ? <StageView key={stage.id} b={b} stage={stage} wide={wide} from={from} /> : null}
 
       {/* 4. Champion */}
       {t.champion ? <ChampionCard b={b} champion={t.champion} /> : null}
 
-      <div className={clsx("grid grid-cols-[minmax(0,1fr)] gap-7", odds && "lg:grid-cols-2 lg:gap-x-6 lg:items-start")}>
-        {/* 5. TITLE ODDS */}
-        {odds ? <TitleOdds b={b} rows={odds} /> : null}
-        {/* 6. Round by round */}
-        <div className="flex flex-col gap-6 min-w-0">
-          {b.rounds.map((r) => (
-            <section key={r.round} className="flex flex-col gap-2.5">
-              <TourLabel trailing={`Best of ${r.bestOf}`}>{roundPlural(r.name)}</TourLabel>
-              <div className="rounded-2xl border border-border-subtle bg-card overflow-hidden [&>*+*]:border-t [&>*+*]:border-border-subtle">
-                {r.series.map((s) => <RoundRow key={s.id} s={s} current={s.id === b.currentSeriesId} from={bracketHref(t.id)} />)}
-              </div>
-            </section>
-          ))}
+      {odds || playoffStage ? (
+        <div className={clsx("grid grid-cols-[minmax(0,1fr)] gap-7", odds && "lg:grid-cols-2 lg:gap-x-6 lg:items-start")}>
+          {/* 5. TITLE ODDS */}
+          {odds ? <TitleOdds b={b} rows={odds} /> : null}
+          {/* 6. Round by round (the playoffs; a Swiss or group stage lists its own) */}
+          {stage && playoffStage ? (
+            <div className="flex flex-col gap-6 min-w-0">
+              {stage.rounds.map((r) => (
+                <SeriesRoundList
+                  key={`${r.bracket ?? ""}${r.round}`}
+                  title={roundPlural(r.name, r.series.length)}
+                  detail={`Best of ${r.bestOf}`}
+                  series={r.series}
+                  currentId={b.currentSeriesId}
+                  from={from}
+                />
+              ))}
+            </div>
+          ) : null}
         </div>
-      </div>
+      ) : null}
     </div>
   );
+}
+
+function StageView({ b, stage, wide, from }: { b: Bracket; stage: Stage; wide: boolean; from: string }) {
+  switch (stage.kind) {
+    case "swiss": return <SwissStage stage={stage} bracket={b} from={from} />;
+    case "groups": return <GroupStage stage={stage} bracket={b} from={from} />;
+    default: return <BracketTree bracket={b} stage={stage} wide={wide} />;
+  }
 }
 
 // ── Champion ────────────────────────────────────────────────────────────────
@@ -123,7 +164,7 @@ function ChampionCard({ b, champion }: { b: Bracket; champion: NonNullable<Brack
   );
 }
 
-/** "Beat Fnatic 3–1 in the final": the last round's series the champion won — the opponent and the games. */
+/** "Beat Fnatic 3–1 in the final": the last playoff round's series the champion won (the grand final in a double elimination) — the opponent and the games. */
 function finalLine(b: Bracket, championId: string): string | null {
   const last = b.rounds[b.rounds.length - 1];
   const s = last?.series.find((x) => x.winnerId === championId || x.team1?.id === championId || x.team2?.id === championId);
@@ -143,70 +184,56 @@ function OddsCell({ v, check, className }: { v: number; check: boolean; classNam
   return <span className={className}>{pctText(v)}</span>;
 }
 
+/**
+ * The columns: every round the server lists (by number, in order), labelled
+ * by its own name ("Playoffs" → PO, "Upper Final" → UF), else the playoff
+ * round's. In a cup the first round is dropped: everyone plays it.
+ */
+function oddsColumns(b: Bracket, rows: TitleOddsRow[]): { round: number; label: string }[] {
+  const listed = new Map<number, string | null>();
+  for (const row of rows) for (const x of row.rounds) if (!listed.has(x.round) || (!listed.get(x.round) && x.name)) listed.set(x.round, x.name);
+  let keys = [...listed.keys()].sort((a, c) => a - c);
+  if (b.stages.length === 1 && keys.length > 1) keys = keys.slice(1);
+  const R = b.rounds.filter((r) => r.bracket !== "lower").length;
+  return keys.map((k) => {
+    const name = listed.get(k) ?? b.rounds.find((r) => r.round === k && r.bracket !== "lower")?.name ?? null;
+    return { round: k, label: roundShort(name, k, R) };
+  });
+}
+
 function TitleOdds({ b, rows }: { b: Bracket; rows: TitleOddsRow[] }) {
-  const R = b.rounds.length;
-  const later = b.rounds.filter((r) => r.round > 1);
+  const cols = oddsColumns(b, rows);
+  // Four columns and more (PO · QF · SF · FINAL, PO · UQF · USF · UF · GF):
+  // narrower on a phone, so the team keeps room for its name.
+  const many = cols.length > 3;
+  const w = many ? "w-[36px] md:w-[52px]" : "w-[52px]";
+  const pad = many ? "px-3 md:px-4 gap-0.5 md:gap-1" : "px-4 gap-1";
+  const num = many ? "text-[13px] md:text-[14px] tabular-nums" : "t-body-md tabular-nums";
   return (
     <section className="flex flex-col gap-2.5 min-w-0">
       <TourLabel>Title odds</TourLabel>
       <div className="rounded-2xl border border-border-subtle bg-card overflow-hidden [&>*:nth-child(odd):not(:first-child)]:bg-surface/50">
-        <div className="flex items-center gap-1 px-4 py-2.5 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase">
+        <div className={clsx("flex items-center py-2.5 text-[11px] font-semibold tracking-[0.08em] text-muted uppercase", pad)}>
           <span className="flex-1">Team</span>
-          {later.map((r) => <span key={r.round} className="w-[52px] text-right">{roundShort(r.name, r.round, R)}</span>)}
-          <span className="w-[52px] text-right">Title</span>
+          {cols.map((c) => <span key={c.round} className={clsx(w, "shrink-0 text-right whitespace-nowrap")}>{c.label}</span>)}
+          <span className={clsx(w, "shrink-0 text-right")}>Title</span>
         </div>
         {rows.map((row) => (
-          <Link key={row.team.id} href={teamHref(row.team.id)} className={clsx("flex items-center gap-1 px-4 py-2.5 min-h-[48px] hover:bg-surface transition-colors", row.eliminated && "opacity-40")}>
-            <span className="flex-1 min-w-0 flex items-center gap-2.5">
-              <TeamMark name={row.team.name} logoURL={row.team.logoURL} size={26} />
-              <span className="t-body-md text-primary truncate">{row.team.name}</span>
+          <Link key={row.team.id} href={teamHref(row.team.id)} className={clsx("flex items-center py-2.5 min-h-[48px] hover:bg-surface transition-colors", pad, row.eliminated && "opacity-40")}>
+            <span className={clsx("flex-1 min-w-0 flex items-center", many ? "gap-2 md:gap-2.5" : "gap-2.5")}>
+              <span className="shrink-0 inline-flex"><TeamMark name={row.team.name} logoURL={row.team.logoURL} size={many ? 22 : 26} /></span>
+              <span className={clsx("text-primary truncate", many ? "text-[13px] md:text-[14px]" : "t-body-md")}>{row.team.name}</span>
             </span>
-            {later.map((r) => {
-              const v = row.rounds.find((x) => x.round === r.round)?.reach ?? 0;
-              return <OddsCell key={r.round} v={v} check className="w-[52px] text-right t-body-md tabular-nums text-secondary" />;
+            {cols.map((c) => {
+              const v = row.rounds.find((x) => x.round === c.round)?.reach ?? 0;
+              return <OddsCell key={c.round} v={v} check className={clsx(w, "shrink-0 text-right text-secondary", num)} />;
             })}
-            <OddsCell v={row.eliminated ? 0 : row.champion} check={false} className="w-[52px] text-right t-body-md tabular-nums font-semibold text-primary" />
+            <OddsCell v={row.eliminated ? 0 : row.champion} check={false} className={clsx(w, "shrink-0 text-right font-semibold text-primary", num)} />
           </Link>
         ))}
       </div>
       <p className="px-1 t-label-sm text-muted leading-relaxed">Chance to reach each round and to win the title. For entertainment purposes only. This is not financial advice.</p>
     </section>
-  );
-}
-
-// ── Round by round ──────────────────────────────────────────────────────────
-function RoundRow({ s, current, from }: { s: BracketSeries; current: boolean; from: string }) {
-  const live = seriesIsLive(s);
-  const decided = seriesDecided(s);
-  const state = live
-    ? <span className="text-[11px] font-bold tracking-[0.1em] text-live">LIVE</span>
-    : decided ? <span className="text-[11px] font-semibold tracking-[0.1em] text-muted">FINAL</span>
-    : current ? <span className="text-[11px] font-bold tracking-[0.1em] text-violet">NEXT</span>
-    : <span className="t-label-md text-secondary tabular-nums">{startLabel(nextStartOf(s)) ?? ""}</span>;
-  return (
-    <Link href={seriesHref(s.id, from)} className="pressable relative flex items-center gap-3 pl-4 pr-3.5 py-2.5 hover:bg-surface/50 transition-colors">
-      {live ? <span aria-hidden className="absolute left-0 top-0 bottom-0 w-[3px] bg-live" /> : null}
-      <span className="flex flex-col gap-1.5 flex-1 min-w-0">
-        <RowTeam team={s.team1} wins={s.team1Wins} s={s} />
-        <RowTeam team={s.team2} wins={s.team2Wins} s={s} />
-      </span>
-      <span className="w-[64px] shrink-0 text-right">{state}</span>
-      <ChevronRight size={14} className="text-muted shrink-0 -ml-1" />
-    </Link>
-  );
-}
-
-function RowTeam({ team, wins, s }: { team: BracketTeam | null; wins: number; s: BracketSeries }) {
-  const decided = seriesDecided(s);
-  const won = !!team && s.winnerId === team.id;
-  const lost = !!team && decided && !won;
-  return (
-    <span className="flex items-center gap-2 min-w-0">
-      <span className="w-3.5 shrink-0 text-right font-mono text-[10px] text-muted">{team?.seed ?? ""}</span>
-      {team ? <span className={clsx("inline-flex shrink-0", lost && "opacity-45")}><TeamMark name={team.name} logoURL={team.logoURL} size={20} /></span> : <TbdCrest size={20} />}
-      <span className={clsx("flex-1 min-w-0 truncate t-body-sm", !team ? "text-muted" : won ? "text-primary font-semibold" : lost ? "text-muted" : "text-primary")}>{team ? team.name : "TBD"}</span>
-      {team ? <span className={clsx("shrink-0 font-mono text-[13px] tabular-nums", won ? "text-violet font-bold" : lost ? "text-muted" : "text-primary")}>{wins}</span> : null}
-    </span>
   );
 }
 

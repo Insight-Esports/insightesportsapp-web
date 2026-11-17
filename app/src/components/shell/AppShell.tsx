@@ -65,7 +65,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex-1 flex items-center">
             <Link href="/" className="flex items-center gap-2.5 shrink-0">
               <BrandMark size={30} />
-              <span className="text-[19px] font-bold tracking-[-0.5px] text-brand-gradient">Insight</span>
+              <span className="text-[19px] font-bold tracking-[-0.5px] text-violet">Insight</span>
             </Link>
           </div>
           <nav className="flex items-center gap-1 shrink-0 justify-center" aria-label="Tabs">
@@ -179,7 +179,8 @@ function PanelRow({ icon, title, onClick, badge, tint }: { icon: ReactNode; titl
       <span className={clsx("w-5 grid place-items-center", tint ?? "text-secondary")}>{icon}</span>
       <span className="t-body-md text-primary whitespace-nowrap truncate">{title}</span>
       <span className="flex-1 min-w-1" />
-      {badge ? <span className="px-[7px] py-[2px] rounded-full bg-violet text-white text-[11px] font-bold leading-[14px] shrink-0">{badge > 99 ? "99+" : badge}</span> : null}
+      {/* The Messages count (N12-5): watches the DM store; the pill keeps its size, 18px at least both ways. */}
+      {badge ? <span className="inline-flex items-center justify-center min-w-[18px] min-h-[18px] px-[5px] rounded-full bg-violet text-white text-[11px] font-bold leading-[14px] tabular-nums shrink-0">{badge > 99 ? "99+" : badge}</span> : null}
       <ChevronRight size={14} className="text-muted shrink-0 -ml-1" />
     </button>
   );
@@ -245,7 +246,7 @@ export function Splash() {
     <div className="min-h-dvh grid place-items-center bg-bg">
       <div className="flex flex-col items-center gap-4 animate-[fadein_.5s_ease-out]">
         <BrandMark size={80} />
-        <span className="t-headline-lg text-brand-gradient">Insight</span>
+        <span className="t-headline-lg text-violet">Insight</span>
       </div>
       <style>{`@keyframes fadein{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}`}</style>
     </div>

@@ -16,7 +16,7 @@ import { useInterval } from "@/lib/use-fetch";
 import { EntityHeader } from "@/components/ui/entity-header";
 import { SkeletonLiveBreakdown } from "@/components/ui/skeletons";
 import { PredictScreen } from "./PredictScreen";
-import { flowHref, readGame } from "./flow";
+import { backOr, flowHref, readBack, readGame } from "./flow";
 import { Caps, Disclaimer, FlowError, Section, StatRow, StripedTable, type Cell } from "./shared";
 import { normalizeLiveBreakdown, normalizeStatRows, type MatchStatRow } from "./types";
 
@@ -37,7 +37,7 @@ export function LiveBreakdownScreen() {
   const playerId = sp.get("id") ?? "";
   const playerName = sp.get("name") ?? "";
   const knownMatchId = sp.get("match");
-  const t = { game, targetType: "player" as const, targetId: playerId, targetName: playerName, isLive: true, matchId: knownMatchId };
+  const t = { game, targetType: "player" as const, targetId: playerId, targetName: playerName, isLive: true, matchId: knownMatchId, back: readBack(sp) };
 
   const [state, setState] = useState<LiveState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -172,7 +172,7 @@ export function LiveBreakdownScreen() {
   useInterval(() => { void refresh(); }, 20_000);
 
   return (
-    <PredictScreen title="Live Breakdown" back={flowHref.options(t)}>
+    <PredictScreen title="Live Breakdown" back={backOr(t, flowHref.options(t))}>
       <div className="flex flex-col gap-4 pt-2 max-w-3xl w-full mx-auto">
         <div className="px-4 pt-1">
           <EntityHeader type="player" id={playerId} name={playerName} game={game} matchId={knownMatchId} live imageURL={state?.row?.imageURL ?? null} />

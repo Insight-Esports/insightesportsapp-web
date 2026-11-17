@@ -11,6 +11,10 @@
 // alert on a team that is team 2 of its match (the round score flips), a
 // REACHED one, a negative +/−, an upcoming map alert, an "every match"
 // alert, and HIT / MISS / DIDN'T PLAY history.
+// Premium (smartAlertService.decorate): each active row carries
+// chance {at_set, now} and smart {on_pace_at, falling_behind_at} — leaf is
+// ON PACE (50% → 85%), trent BEHIND (45% → 12%), the upcoming ones show the
+// chance when set. MOCK_ALERTS_FREE=1 sends chance: null (and no smart).
 //   MOCK_ALERTS_FREE=1  → free limit (403 ALERT_LIMIT past one active)
 //   MOCK_ALERTS_OFF=1   → 503 FEATURE_DISABLED (the stat_alerts switch)
 import { allMatches, findMatch } from "./_matches-data.mjs";
@@ -26,8 +30,10 @@ const pid = (name) => uuid(20000 + VAL[name]);
 
 const RESULT_EVENTS = ["win", "lose", "sweep", "distance"];
 const RATE = ["acs", "adr", "cs_per_min", "plus_minus"];
-const CUMULATIVE = ["kills", "deaths", "assists", "headshots", "gold_earned", "vision_score"];
-const PLAYER_STATS = { VALORANT: ["kills", "deaths", "assists", "acs", "adr", "headshots", "plus_minus"], CS2: ["kills", "deaths", "assists", "adr", "headshots", "plus_minus"], League: ["kills", "deaths", "assists", "cs_per_min", "gold_earned", "vision_score", "plus_minus"] };
+const CUMULATIVE = ["kills", "deaths", "assists", "headshots", "first_bloods", "clutch_wins", "gold_earned", "vision_score"];
+// predictionService VALID_PLAYER_STATS / VALID_TEAM_STATS (first bloods and clutches: VALORANT and CS2 only).
+const PLAYER_STATS = { VALORANT: ["kills", "deaths", "assists", "acs", "adr", "headshots", "plus_minus", "first_bloods", "clutch_wins"], CS2: ["kills", "deaths", "assists", "adr", "headshots", "plus_minus", "first_bloods", "clutch_wins"], League: ["kills", "deaths", "assists", "cs_per_min", "gold_earned", "vision_score", "plus_minus"] };
+const TEAM_STATS = { VALORANT: ["kills", "plus_minus", "first_bloods", "clutch_wins"], CS2: ["kills", "plus_minus", "first_bloods", "clutch_wins"], League: ["kills", "plus_minus", "gold_earned"] };
 
 const err = (res, status, code, message) => res.status(status).json({ error: message, code });
 
@@ -80,6 +86,17 @@ export function register(app, h) {
     { id: id(), game: "VALORANT", ...team("NRG", "team-nrg"), ...call({ kind: "map", event: "map_win", map_number: 2 }), repeat: false, match_id: "m-up-1", created_at: isoAgo(6 * 36e5) },
     { id: id(), game: "VALORANT", ...player("TenZ", "Sentinels", "team-sentinels"), ...call({ stat: "kills", direction: "over", target: 20 }), repeat: true, match_id: null, created_at: isoAgo(30 * 36e5) },
   ];
+  // Smart alerts (Premium): the chance when set / now, and when the pace pushes went out.
+  const smartSeed = {
+    leaf: { chance: { at_set: 50, now: 85 }, smart: { on_pace_at: isoAgo(3 * 6e4), falling_behind_at: null } },
+    LOUD: { chance: { at_set: 55, now: 61 }, smart: { on_pace_at: null, falling_behind_at: null } },
+    valyn: { chance: { at_set: 58, now: 97 }, smart: { on_pace_at: isoAgo(14 * 6e4), falling_behind_at: null } },
+    trent: { chance: { at_set: 45, now: 12 }, smart: { on_pace_at: null, falling_behind_at: isoAgo(5 * 6e4) } },
+    NRG: { chance: { at_set: 48, now: null }, smart: { on_pace_at: null, falling_behind_at: null } },
+    TenZ: { chance: { at_set: 40, now: null }, smart: { on_pace_at: null, falling_behind_at: null } },
+  };
+  for (const a of active) Object.assign(a, smartSeed[a.target_name] ?? {});
+
   const history = [
     { id: "res-1", alert_id: "alert-h1", game: "VALORANT", ...player("Derke", "Fnatic", "team-fnatic"), ...call({ stat: "kills", direction: "over", target: 18 }), status: "hit", final_value: 22, final_score: null, final_at: isoAgo(20 * 36e5), match: { id: "m-done-3", opponent_name: "Team Heretics", scheduled_at: isoAgo(23 * 36e5), best_of: 3, target_score: 2, opponent_score: 1 } },
     { id: "res-2", alert_id: "alert-h2", game: "VALORANT", ...team("Sentinels", "team-sentinels"), ...call({ kind: "result", event: "win" }), status: "miss", final_value: null, final_score: "1 – 2", final_at: isoAgo(28 * 36e5), match: { id: "m-done-5", opponent_name: "G2 Esports", scheduled_at: isoAgo(31 * 36e5), best_of: 3, target_score: 1, opponent_score: 2 } },
@@ -97,6 +114,12 @@ export function register(app, h) {
       match: matchShape(m, a.team_id), created_at: a.created_at,
     };
     if (m && m.status === "live") out.live = a.kind === "stat" ? (a.live ?? { value: null, fired_at: null }) : { value: null, fired_at: null };
+    // Premium only; a free account gets chance: null. "now" only while live.
+    if (process.env.MOCK_ALERTS_FREE === "1") out.chance = null;
+    else {
+      out.chance = { at_set: a.chance?.at_set ?? null, now: m && m.status === "live" ? (a.chance?.now ?? null) : null };
+      out.smart = { on_pace_at: a.smart?.on_pace_at ?? null, falling_behind_at: a.smart?.falling_behind_at ?? null };
+    }
     return out;
   };
   const historyRow = ({ team_id: _t, ...r }) => r;
@@ -118,7 +141,7 @@ export function register(app, h) {
   const validateCall = (b, game, type) => {
     const kind = b.kind ?? "stat";
     if (kind === "stat") {
-      const stats = type === "team" ? ["kills", "plus_minus"] : PLAYER_STATS[game] ?? [];
+      const stats = (type === "team" ? TEAM_STATS : PLAYER_STATS)[game] ?? [];
       if (!stats.includes(b.stat)) return ["INVALID_STAT", `stat must be one of ${stats.join(", ")} for ${game} ${type}s`];
       if (!["over", "under"].includes(b.direction)) return ["INVALID_DIRECTION", "direction must be over or under"];
       const t = Number(b.target);
@@ -139,7 +162,7 @@ export function register(app, h) {
     const mine = a.target_type === "player" ? rows.filter((r) => r.player_id === a.target_id) : rows.filter((r) => r.team_id === a.target_id);
     if (!mine.length) return null;
     const v = mine.reduce((s, r) => s + Number(r[a.stat] ?? 0), 0);
-    return v >= Number(a.target) ? `${a.target_name} already ${a.target_type === "team" ? "have" : "has"} ${v} ${a.stat.replace(/_/g, " ")} this match. Pick a higher number.` : null;
+    return v >= Number(a.target) ? `${a.target_name} already ${a.target_type === "team" ? "have" : "has"} ${v} ${a.stat === "clutch_wins" ? "clutches" : a.stat.replace(/_/g, " ")} this match. Pick a higher number.` : null;
   };
 
   // ── Routes ──────────────────────────────────────────────────────────────

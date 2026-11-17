@@ -1,11 +1,13 @@
 // LiveMatchScreen.tsx — LiveMatchView: the live match screen. Score HUD,
-// round/map state, win probability, scoreboard, fan poll, predictions
+// round/map state, win probability, Insight's Calls, scoreboard (a name
+// opens the player's stat card for this match), fan poll, predictions
 // teaser, live chat (and the match discussion once the game ends). Two columns on wide screens:
 // scoreboard + stats on the left, chat / poll / discussion in the rail.
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { Flag } from "lucide-react";
+import { ChevronRight, Flag } from "lucide-react";
 import { AssetIcon, LiveBadge, Page, SplitLayout } from "@/components/ui";
 import { team1Color, team2Color, type Match } from "@/lib/types";
 import { useReveal } from "@/lib/use-reveal";
@@ -22,12 +24,16 @@ import { CollapsedScoreBar, FanPollSection, LeagueObjectives, PredictionTeaserSe
 import { WatchPill } from "./StreamPlayer";
 import { isRoundBasedGame } from "./types";
 import { useLiveMatch } from "./use-live-match";
+import { useMatchTournamentLinks, type ScreenLink } from "./match-links";
 import { SkeletonScoreboard } from "@/components/ui/skeletons";
 import { seriesFactorLine, useSeriesFactor } from "@/features/tournaments/series/series-data";
+import { InsightCallsSection } from "@/features/calls/InsightCallsSection";
 
 /** Title strip above the HUD: Live/Final + tournament (the iOS principal toolbar).
- *  `back` (a series page, from `?from=`) is where the chevron goes; otherwise history back. */
-export function MatchTitleStrip({ match, isComplete, back, children }: { match: Match; isComplete: boolean; back?: string; children?: React.ReactNode }) {
+ *  `back` (a series page, from `?from=`) is where the chevron goes; otherwise history back.
+ *  `tournamentLink` (the live screen, a game with a bracket of ours): the name + › opens the bracket. */
+export function MatchTitleStrip({ match, isComplete, back, tournamentLink, children }: { match: Match; isComplete: boolean; back?: string; tournamentLink?: ScreenLink | null; children?: React.ReactNode }) {
+  const name = match.tournamentName ?? "Unknown Tournament";
   const principal = (
     <span className="flex items-center gap-1.5 min-w-0">
       {isComplete ? (
@@ -35,7 +41,14 @@ export function MatchTitleStrip({ match, isComplete, back, children }: { match: 
       ) : (
         <LiveBadge />
       )}
-      <span className="t-label-md text-secondary truncate">{match.tournamentName ?? "Unknown Tournament"}</span>
+      {tournamentLink ? (
+        <Link href={tournamentLink.href} onClick={tournamentLink.onClick} title="Open the tournament" className="inline-flex items-center gap-1 min-w-0 py-1 t-label-md text-secondary hover:text-primary transition-colors active:opacity-60">
+          <span className="truncate">{name}</span>
+          <ChevronRight size={10} strokeWidth={3} className="text-muted shrink-0" aria-hidden />
+        </Link>
+      ) : (
+        <span className="t-label-md text-secondary truncate">{name}</span>
+      )}
     </span>
   );
   return (
@@ -62,6 +75,8 @@ export function LiveMatchScreen({ match, back }: { match: Match; /** A series pa
   // series effects show under Win Probability.
   const series = match.series ?? null;
   const hudMatch = series ? { ...match, bestOf: series.bestOf } : match;
+  // The series line → the series page; the tournament name → the bracket (back to either when it's beneath).
+  const links = useMatchTournamentLinks(match);
   const factor = useSeriesFactor(match.id, !!series && !vm.isMatchComplete);
   const factorNote = factor ? seriesFactorLine(factor, match.team1Name, match.team2Name) : null;
   const isRoundBased = isRoundBasedGame(match.game);
@@ -115,6 +130,7 @@ export function LiveMatchScreen({ match, back }: { match: Match; /** A series pa
           team2Gold={vm.team2Gold}
           gameTime={vm.gameTime}
           seriesInfo={vm.seriesInfo}
+          seriesLink={links.series}
           viewerCount={vm.viewerCount}
           team1Side={vm.team1Side}
           team2Side={vm.team2Side}
@@ -158,8 +174,11 @@ export function LiveMatchScreen({ match, back }: { match: Match; /** A series pa
 
       <WinProbabilityBar team1Color={c1} team2Color={c2} team1Name={match.team1Name} team2Name={match.team2Name} team1Probability={vm.team1WinProbability} note={factorNote} />
 
+      {/* Insight's calls from before the match (read again once it ends). */}
+      <InsightCallsSection matchId={match.id} refreshKey={vm.isMatchComplete} />
+
       {!vm.statsLoaded ? <SkeletonScoreboard columns={5} /> : (
-      <StatsTableSection team1Color={c1} team2Color={c2} game={match.game} team1Name={match.team1Name} team2Name={match.team2Name} team1Stats={vm.team1Stats} team2Stats={vm.team2Stats} matchId={match.id} />
+      <StatsTableSection team1Color={c1} team2Color={c2} game={match.game} team1Name={match.team1Name} team2Name={match.team2Name} team1Stats={vm.team1Stats} team2Stats={vm.team2Stats} matchId={match.id} match={match} />
       )}
 
       {!vm.statsLoaded ? null : (
@@ -218,7 +237,7 @@ export function LiveMatchScreen({ match, back }: { match: Match; /** A series pa
 
   return (
     <Page wide className="max-md:pb-6">
-      <MatchTitleStrip match={match} isComplete={vm.isMatchComplete} back={back}>
+      <MatchTitleStrip match={match} isComplete={vm.isMatchComplete} back={back} tournamentLink={links.tournament}>
         {!vm.socketConnected && !vm.isMatchComplete ? <span className="t-label-sm text-muted" title="Live socket not connected — updating every few seconds">polling</span> : null}
       </MatchTitleStrip>
       <div className={`sticky top-0 z-20 px-4 pb-2 bg-bg transition-opacity ${collapsed && revealed ? "opacity-100" : "opacity-0 pointer-events-none h-0 pb-0 overflow-hidden"}`} aria-hidden={!collapsed}>

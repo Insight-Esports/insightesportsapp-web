@@ -1,11 +1,20 @@
-// tournaments/BracketTree.tsx — the playoff tree (parity 2026-10-29 §1.3).
+// tournaments/BracketTree.tsx — the playoff tree (parity 2026-10-29 §1.3,
+// 2026-11-05 §1; iOS Tournaments.swift BracketLayout).
 //
-// The two halves of the draw run in from the edges and meet at the final in
-// the centre column: QF | SF | FINAL | SF | QF (R16 … for 16 teams). Each
-// series is a 58px card with two lines (seed · crest · games won); the
-// connectors run from each card's inner edge to the next round — across,
-// down, across — violet once the feeder is decided. Under each open
-// matchup: its favourite, "SEN 72%".
+// Three shapes:
+//   mirrored  up to three rounds (an 8-team draw): the two halves run in from
+//             the edges and meet at the final in the centre column,
+//             QF | SF | FINAL | SF | QF.
+//   linear    four rounds and more (16 and 32 teams): left to right,
+//             R16 · QF · SF · FINAL, the final on the right.
+//   double    double elimination: the upper bracket on top (UQF · USF · UF),
+//             the lower under it with its own column labels (LR1 · LR2 ·
+//             LR3 · LF), the grand final (GF) in its own column on the right,
+//             level with the middle of the two finals.
+// Each series is a 58px card with two lines (seed · crest · games won); the
+// connectors follow next_series_id from each feeder to the series its
+// winner goes to — across, down, across — violet once the feeder is
+// decided. Under each open matchup: its favourite, "SEN 72%".
 //
 // Columns share the width from 66px up to 96px on phones (below 66 the tree
 // scrolls sideways); on desktop they grow and the cards carry team names.
@@ -20,7 +29,7 @@ import { clsx } from "@/lib/format";
 import { teamLetters } from "@/lib/team-letters";
 import { pctText } from "./format";
 import { bracketHref, seriesHref } from "./routes";
-import { roundShort, seriesDecided, seriesIsLive, type Bracket, type BracketSeries, type BracketTeam } from "./data";
+import { roundShort, seriesDecided, seriesIsLive, stageIsDouble, type Bracket, type BracketRound, type BracketSeries, type BracketTeam, type Stage } from "./data";
 import { TbdCrest } from "./ui";
 
 const CARD_H = 58;
@@ -33,37 +42,131 @@ const PHONE_MAX_COL = 96;
 const DESK_MAX_COL = 212;
 /** Cards carry team names from this column width up. */
 const NAMES_FROM = 132;
+/** Double elimination: the lower bracket's label row sits this far under the upper bracket… */
+const LOWER_LABEL_GAP = 10;
+/** …and its cards this far under that label row's top (the top row's 34 + 14). */
+const LOWER_CARDS_GAP = 48;
 
-interface Placed { s: BracketSeries; col: number; cy: number; side: "left" | "right" | "centre" }
+/** `ltr`: a linear or double-elimination slot, its connectors run left to right. */
+interface Placed { s: BracketSeries; col: number; cy: number; side: "left" | "right" | "centre" | "ltr" }
+interface ColumnLabel { text: string; bo: string }
+interface Layout {
+  placed: Placed[];
+  cols: number;
+  height: number;
+  /** Column → the top label row (the upper or only bracket, and the grand final). */
+  labels: Map<number, ColumnLabel>;
+  /** Column → the lower bracket's label row, at `lowerLabelTop` in the tree. */
+  lowerLabels: Map<number, ColumnLabel>;
+  lowerLabelTop: number | null;
+}
+const labelOf = (r: BracketRound, rounds = 1): ColumnLabel => ({ text: roundShort(r.name, r.round, rounds), bo: `Bo${r.bestOf}` });
 
 /** Where each series sits: column index and vertical centre. */
-function layout(b: Bracket): { placed: Placed[]; cols: number; height: number } {
-  const R = b.rounds.length;
-  if (R === 0) return { placed: [], cols: 0, height: 0 };
+function layout(stage: Stage): Layout {
+  const rounds = stage.rounds;
+  if (stageIsDouble(stage)) return doubleLayout(rounds);
+  if (rounds.length > 3) return linearLayout(rounds);
+  return mirroredLayout(rounds);
+}
+
+/** Up to three rounds: the two halves of the draw meet at the final in the centre column. */
+function mirroredLayout(rounds: BracketRound[]): Layout {
+  const R = rounds.length;
+  const labels = new Map<number, ColumnLabel>();
+  if (R === 0) return { placed: [], cols: 0, height: 0, labels, lowerLabels: new Map(), lowerLabelTop: null };
   const cols = 2 * R - 1;
   const placed: Placed[] = [];
   const centreOf = (r: number, idx: number) => (idx * 2 ** (r - 1) + (2 ** (r - 1) - 1) / 2) * PITCH + CARD_H / 2;
-  for (const round of b.rounds) {
-    const r = round.round;
+  rounds.forEach((round, i) => {
+    const r = i + 1;
     const list = round.series;
     if (r === R || list.length === 1) {
       // The final (or a lone series): the centre column, level with the semis.
       for (const s of list) placed.push({ s, col: R - 1, cy: R >= 2 ? centreOf(R - 1, 0) : CARD_H / 2, side: "centre" });
-      continue;
+      return;
     }
     const half = list.length / 2;
-    list.forEach((s, i) => {
-      const left = i < half;
-      const idx = left ? i : i - half;
+    list.forEach((s, k) => {
+      const left = k < half;
+      const idx = left ? k : k - half;
       placed.push({ s, col: left ? r - 1 : cols - r, cy: centreOf(r, idx), side: left ? "left" : "right" });
     });
+  });
+  for (let c = 0; c < cols; c++) {
+    const r = c < R ? c + 1 : cols - c;
+    labels.set(c, labelOf(rounds[r - 1], R));
   }
-  const perHalf = Math.max(1, (b.rounds[0]?.series.length ?? 2) / 2);
+  const perHalf = Math.max(1, (rounds[0]?.series.length ?? 2) / 2);
   const height = R === 1 ? CARD_H + TAIL : (perHalf - 1) * PITCH + CARD_H + TAIL;
-  return { placed, cols, height };
+  return { placed, cols, height, labels, lowerLabels: new Map(), lowerLabelTop: null };
 }
 
-export function BracketTree({ bracket, wide }: { bracket: Bracket; /** Desktop: wider columns with names. */ wide: boolean }) {
+/**
+ * One bracket's rounds left to right from column 0, the first round in rows
+ * from `top`, each later series level with the middle of the series that
+ * feed it (by next_series_id; by position when a payload has none).
+ */
+function chain(rounds: BracketRound[], top: number): { placed: Placed[]; cy: Map<string, number>; height: number } {
+  const placed: Placed[] = [];
+  const cy = new Map<string, number>();
+  let prev: BracketSeries[] = [];
+  rounds.forEach((round, r) => {
+    round.series.forEach((s, i) => {
+      let feeders = prev.filter((p) => p.nextSeriesId === s.id);
+      if (!feeders.length && r > 0) {
+        feeders = prev.length === round.series.length ? [prev[i]].filter(Boolean) : [prev[2 * i], prev[2 * i + 1]].filter(Boolean);
+      }
+      const ys = feeders.map((f) => cy.get(f.id)).filter((y): y is number => y != null);
+      const y = ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : top + i * PITCH + CARD_H / 2;
+      cy.set(s.id, y);
+      placed.push({ s, col: r, cy: y, side: "ltr" });
+    });
+    prev = round.series;
+  });
+  const rows = Math.max(1, rounds[0]?.series.length ?? 1);
+  return { placed, cy, height: (rows - 1) * PITCH + CARD_H + TAIL };
+}
+
+/** Four rounds and more (16 and 32 teams): left to right, the final on the right. */
+function linearLayout(rounds: BracketRound[]): Layout {
+  const { placed, height } = chain(rounds, 0);
+  const labels = new Map(rounds.map((r, i) => [i, labelOf(r, rounds.length)] as const));
+  return { placed, cols: Math.max(1, rounds.length), height, labels, lowerLabels: new Map(), lowerLabelTop: null };
+}
+
+/** Double elimination: upper on top, lower under it, the grand final on the right of both. */
+function doubleLayout(rounds: BracketRound[]): Layout {
+  const upper = rounds.filter((r) => r.bracket !== "lower" && r.bracket !== "grand_final");
+  const lower = rounds.filter((r) => r.bracket === "lower");
+  const grand = rounds.filter((r) => r.bracket === "grand_final");
+  const up = chain(upper, 0);
+  const lowerLabelTop = up.height + LOWER_LABEL_GAP;
+  const low = chain(lower, lowerLabelTop + LOWER_CARDS_GAP);
+  const gfCol = Math.max(upper.length, lower.length);
+  const labels = new Map(upper.map((r) => [upper.indexOf(r), labelOf(r)] as const));
+  const lowerLabels = new Map(lower.map((r) => [lower.indexOf(r), labelOf(r)] as const));
+  // The grand final: level with the middle of the two finals.
+  const finals = [...(upper[upper.length - 1]?.series ?? []), ...(lower[lower.length - 1]?.series ?? [])];
+  const ys = finals.map((s) => up.cy.get(s.id) ?? low.cy.get(s.id)).filter((y): y is number => y != null);
+  const lowerBottom = lower.length ? lowerLabelTop + LOWER_CARDS_GAP + low.height : up.height;
+  const gfY = ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : lowerBottom / 2;
+  const placed = [...up.placed, ...low.placed];
+  for (const round of grand) {
+    labels.set(gfCol, labelOf(round));
+    for (const s of round.series) placed.push({ s, col: gfCol, cy: gfY, side: "ltr" });
+  }
+  return {
+    placed,
+    cols: gfCol + (grand.length ? 1 : 0),
+    height: lowerBottom,
+    labels,
+    lowerLabels,
+    lowerLabelTop: lower.length ? lowerLabelTop : null,
+  };
+}
+
+export function BracketTree({ bracket, stage, wide }: { bracket: Bracket; /** The playoff stage drawn (a cup's only stage). */ stage: Stage; /** Desktop: wider columns with names. */ wide: boolean }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [avail, setAvail] = useState<number | null>(null);
   useEffect(() => {
@@ -76,8 +179,7 @@ export function BracketTree({ bracket, wide }: { bracket: Bracket; /** Desktop: 
     return () => ro.disconnect();
   }, []);
 
-  const { placed, cols, height } = layout(bracket);
-  const R = bracket.rounds.length;
+  const { placed, cols, height, labels, lowerLabels, lowerLabelTop } = layout(stage);
   const maxCol = wide ? DESK_MAX_COL : PHONE_MAX_COL;
   const colW = avail == null || cols === 0 ? 0 : Math.max(MIN_COL, Math.min(maxCol, Math.floor(avail / cols)));
   const names = colW >= NAMES_FROM;
@@ -88,21 +190,23 @@ export function BracketTree({ bracket, wide }: { bracket: Bracket; /** Desktop: 
   const from = bracketHref(bracket.tournament.id);
   const byId = new Map(placed.map((p) => [p.s.id, p]));
 
-  // Connectors: feeder inner edge → across → down → across → next card.
+  // Connectors: feeder inner edge → across → down → across → next card
+  // (left to right in a linear or double-elimination tree).
   const lines = placed.flatMap((p) => {
     const n = p.s.nextSeriesId ? byId.get(p.s.nextSeriesId) : null;
     if (!n || p.side === "centre") return [];
-    const x1 = p.side === "left" ? xOf(p.col) + cardW : xOf(p.col);
-    const x2 = n.side === "right" ? xOf(n.col) + cardW : n.side === "left" ? xOf(n.col) : p.side === "left" ? xOf(n.col) : xOf(n.col) + cardW;
+    let x1: number, x2: number;
+    if (p.side === "ltr") {
+      if (n.col <= p.col) return [];
+      x1 = xOf(p.col) + cardW;
+      x2 = xOf(n.col);
+    } else {
+      x1 = p.side === "left" ? xOf(p.col) + cardW : xOf(p.col);
+      x2 = n.side === "right" ? xOf(n.col) + cardW : n.side === "left" ? xOf(n.col) : p.side === "left" ? xOf(n.col) : xOf(n.col) + cardW;
+    }
     const mid = Math.round((x1 + x2) / 2);
     const decided = seriesDecided(p.s);
     return [{ key: p.s.id, d: `M ${x1} ${p.cy} H ${mid} V ${n.cy} H ${x2}`, decided }];
-  });
-
-  const labels = Array.from({ length: cols }, (_, c) => {
-    const r = c < R ? c + 1 : cols - c;
-    const round = bracket.rounds.find((x) => x.round === r);
-    return { c, text: roundShort(round?.name, r, R), bo: round ? `Bo${round.bestOf}` : "" };
   });
 
   return (
@@ -113,14 +217,15 @@ export function BracketTree({ bracket, wide }: { bracket: Bracket; /** Desktop: 
           <div className="relative mx-auto" style={{ width: totalW }}>
             {/* Column labels: QF / SF / FINAL with the length under each. */}
             <div className="flex" style={{ height: 34 }}>
-              {labels.map((l) => (
-                <div key={l.c} className="flex flex-col items-center justify-start gap-0.5" style={{ width: colW }}>
-                  <span className="text-[11px] font-semibold tracking-[0.14em] leading-none text-secondary">{l.text}</span>
-                  <span className="text-[10px] text-muted leading-none mt-1">{l.bo}</span>
-                </div>
-              ))}
+              {Array.from({ length: cols }, (_, c) => <ColumnHead key={c} label={labels.get(c) ?? null} width={colW} />)}
             </div>
             <div className="relative mt-3.5" style={{ height }}>
+              {/* Double elimination: the lower bracket's own labels, under the upper. */}
+              {lowerLabelTop != null ? (
+                <div className="absolute left-0 flex" style={{ top: lowerLabelTop, height: 34 }}>
+                  {Array.from({ length: cols }, (_, c) => <ColumnHead key={c} label={lowerLabels.get(c) ?? null} width={colW} />)}
+                </div>
+              ) : null}
               <svg className="absolute inset-0 pointer-events-none" width={totalW} height={height} aria-hidden>
                 {lines.filter((l) => !l.decided).map((l) => <path key={l.key} d={l.d} fill="none" stroke="var(--border-strong)" strokeWidth={1} shapeRendering="crispEdges" />)}
                 {lines.filter((l) => l.decided).map((l) => <path key={l.key} d={l.d} fill="none" stroke="var(--violet)" strokeOpacity={0.7} strokeWidth={1.5} />)}
@@ -141,6 +246,19 @@ export function BracketTree({ bracket, wide }: { bracket: Bracket; /** Desktop: 
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ColumnHead({ label, width }: { label: ColumnLabel | null; width: number }) {
+  return (
+    <div className="flex flex-col items-center justify-start gap-0.5" style={{ width }}>
+      {label ? (
+        <>
+          <span className="text-[11px] font-semibold tracking-[0.14em] leading-none text-secondary whitespace-nowrap">{label.text}</span>
+          <span className="text-[10px] text-muted leading-none mt-1">{label.bo}</span>
+        </>
+      ) : null}
     </div>
   );
 }

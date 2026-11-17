@@ -2,19 +2,25 @@
 // suggestions while the field is empty (you follow, then follows you),
 // pick one → POST /conversations → the thread. People wear their flair;
 // blocked people aren't suggested (parity Oct 28).
+//
+// Nov 17 (parity N5-4): "New group chat" at the top while the field is
+// empty → /messages/new/group (NewGroup: GroupPeoplePicker in create mode).
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Users } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
 import { normalizePremiumStyle, normalizeTitle, type Json } from "@/lib/types";
 import { useAppState } from "@/store/app-state";
 import { AssetIcon, Ledger, LedgerRow, Page, SearchField, SkeletonLedger, Spinner } from "@/components/ui";
 import { FlairAvatar, FlairName } from "@/components/ui/premium-flair";
 import { useBlockedIds } from "@/features/moderation/use-blocked";
+import { useHideTabBar } from "@/components/shell/tab-bar";
 import { useReveal } from "@/lib/use-reveal";
 import { startConversation, startConversationMessage } from "./start-conversation";
+import { GroupPeoplePicker } from "./groups";
+import { rememberRow } from "./dm-local";
 import { normalizeSearchUser, searchUserFlair, type SearchUser } from "./types";
 
 interface SuggestedUser extends SearchUser { reason: "You follow" | "Follows you" }
@@ -118,6 +124,15 @@ export function NewMessage() {
         <SearchField value={query} onChange={setQuery} placeholder="Search people" autoFocus />
         {error ? <span className="t-label-sm text-muted">{error}</span> : null}
 
+        {term === "" ? (
+          // Instagram's "Create group chat" link, as a row.
+          <button type="button" onClick={() => router.push("/messages/new/group")} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-card border border-border-subtle text-left hover:bg-surface/60 transition-colors">
+            <span className="grid place-items-center size-9 rounded-full bg-violet/[0.18] text-violet shrink-0"><Users size={15} strokeWidth={2.5} /></span>
+            <span className="t-body-md text-primary flex-1">New group chat</span>
+            <ChevronRight size={14} className="text-muted" />
+          </button>
+        ) : null}
+
         {term === "" && !suggestedRevealed ? (
           <div className="flex flex-col gap-2 pb-2">
             <span className="t-kicker">Suggested</span>
@@ -156,5 +171,29 @@ export function NewMessage() {
         ) : null}
       </div>
     </Page>
+  );
+}
+
+/** /messages/new/group: the people picker in create mode; Create opens the new group. */
+export function NewGroup() {
+  const router = useRouter();
+  // The picker owns the phone screen (its Create bar sits on the bottom edge) and fills what's below the shell's header.
+  useHideTabBar();
+  const frame = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState("100dvh");
+  useEffect(() => {
+    const measure = () => setHeight(`calc(100dvh - ${Math.max(0, Math.round((frame.current?.getBoundingClientRect().top ?? 0) + window.scrollY))}px)`);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+  return (
+    <div ref={frame} className="flex flex-col max-w-[1400px] w-full" style={{ height }}>
+      <GroupPeoplePicker
+        mode="create"
+        onCancel={() => router.push("/messages/new")}
+        onDone={(row) => { rememberRow(row); router.replace(`/messages/${encodeURIComponent(row.id)}`); }}
+      />
+    </div>
   );
 }

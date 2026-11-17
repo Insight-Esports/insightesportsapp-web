@@ -5,6 +5,12 @@
 // per-stat averages, best game, (players) highs & lows + best/worst,
 // map / agent performance tables, (League teams) side performance.
 // Nothing is computed client-side except bar scaling.
+//
+// Nov 5 §2: a team's averages and best-game line read in the game's order
+// (first bloods and clutches in the round-based games); the best-game line
+// scrolls sideways now that it can hold nine stats. Nov 5 §7: someone
+// playing right now gets one violet-bordered THIS MATCH row under the
+// header → Current Game Breakdown.
 "use client";
 
 import { useSearchParams } from "next/navigation";
@@ -18,9 +24,10 @@ import { SkeletonBreakdown } from "@/components/ui/skeletons";
 import { EntityHeader } from "@/components/ui/entity-header";
 import { PredictScreen } from "./PredictScreen";
 import { flowHref, readTarget, type FlowTarget } from "./flow";
+import { PlayingNowOffer, usePlayingNow } from "./playing-now";
 import { Disclaimer, FormPips, Section, StatRow, StepHeader, StripedTable, Track } from "./shared";
 import { GameRows } from "./links";
-import { BREAKDOWN_PERIODS, normalizePlayerOverview, normalizeTeamOverview, overviewLabel, pctDisplay, PredictionFormat, type BreakdownPeriodKey, type NamedHighlight, type OverviewPeriod, type PlayerOverview, type SideStats, type TeamOverview } from "./types";
+import { BREAKDOWN_PERIODS, normalizePlayerOverview, normalizeTeamOverview, overviewLabel, pctDisplay, PredictionFormat, teamOverviewOrder, type BreakdownPeriodKey, type NamedHighlight, type OverviewPeriod, type PlayerOverview, type SideStats, type TeamOverview } from "./types";
 
 export function BreakdownScreen() {
   const sp = useSearchParams();
@@ -45,17 +52,21 @@ export function useOverview(t: FlowTarget) {
 export function BreakdownPanel({ target: t, compact }: { target: FlowTarget; compact?: boolean }) {
   const { data, loading, error, connectionProblem, reload } = useOverview(t);
   const [period, setPeriod] = useState<BreakdownPeriodKey>("last10");
+  const playing = usePlayingNow(t.targetType, t.targetId, !compact);
 
   // The entity header (full screen only) stands while the overview loads.
   const headerPo = data?.player ?? null;
   const headerSeason = headerPo?.currentSeason ?? data?.team?.currentSeason ?? null;
+  // Playing right now: the current game's read is one tap away (and comes back here).
+  const liveT = playing ? { ...t, isLive: true, matchId: playing.id, back: flowHref.breakdown(t) } : null;
   const header = compact ? null : (
-    <div className="px-4 pt-3 w-full max-w-2xl mx-auto">
+    <div className="px-4 pt-3 w-full max-w-2xl mx-auto flex flex-col gap-3">
       <EntityHeader
         type={t.targetType} id={t.targetId} name={t.targetName} game={t.game}
         teamName={headerPo?.team ?? null}
         subtitle={data ? [t.targetType === "player" ? headerPo?.team : "Team", gameLabel(t.game), headerSeason].filter(Boolean).join(" · ") : null}
       />
+      {liveT ? <PlayingNowOffer title="Current Game Breakdown" href={t.targetType === "player" ? flowHref.live(liveT) : flowHref.liveTeam(liveT)} /> : null}
     </div>
   );
   if (loading) {
@@ -81,17 +92,13 @@ export function BreakdownPanel({ target: t, compact }: { target: FlowTarget; com
   const periodLabel = BREAKDOWN_PERIODS.find((x) => x.key === period)!.label;
   const statLabel = (k: string) => overviewLabel(k);
 
-  // Per-stat averages: player order follows the backend's statColumns; team order is game-aware.
+  // The stats in reading order (averages and the best game): a player's follow the backend's
+  // statColumns; a team's are game-aware (first bloods and clutches in VALORANT / CS2).
+  const statOrder = (fallback: string[]) => (t.targetType === "player" ? po?.statColumns ?? fallback : teamOverviewOrder(t.game));
   const avgEntries = (() => {
     if (!p?.avgStats) return [] as { label: string; value: string }[];
     const avg = p.avgStats;
-    let order: string[];
-    if (t.targetType === "player") order = po?.statColumns ?? Object.keys(avg).sort();
-    else if (t.game === "VALORANT") order = ["kills", "deaths", "assists", "acs", "adr", "headshots", "plusMinus"];
-    else if (t.game === "CS2") order = ["kills", "deaths", "assists", "adr", "headshots", "plusMinus"];
-    else if (t.game === "League") order = ["kills", "deaths", "assists", "cs", "csPerMin", "cs_per_min", "gold", "goldEarned", "gold_earned", "visionScore", "vision_score", "plusMinus"];
-    else order = ["kills", "deaths", "assists", "plusMinus"];
-    return order.flatMap((k) => (avg[k] != null ? [{ label: statLabel(k), value: PredictionFormat.stat(avg[k] as number) }] : []));
+    return statOrder(Object.keys(avg).sort()).flatMap((k) => (avg[k] != null ? [{ label: statLabel(k), value: PredictionFormat.stat(avg[k] as number) }] : []));
   })();
 
   const highLow = (season: boolean) => {
@@ -142,7 +149,7 @@ export function BreakdownPanel({ target: t, compact }: { target: FlowTarget; com
               ))} />
             </Section>
           ) : null}
-          <BestGameCard period={p} order={po?.statColumns ?? null} fallbackLabel={periodLabel} />
+          <BestGameCard period={p} order={p.bestGame?.stats ? statOrder(Object.keys(p.bestGame.stats).sort()) : null} fallbackLabel={periodLabel} />
           {t.targetType === "team" && p.games.length ? (
             <Section title={`GAMES · ${periodLabel} · KILLS`}>
               <GameRows games={p.games} />
@@ -210,11 +217,12 @@ function BestGameCard({ period, order, fallbackLabel }: { period: OverviewPeriod
           <span className="flex-1" />
           {best.date ? <span className="t-label-sm text-muted">{best.date}</span> : null}
         </div>
-        <div className="flex flex-wrap gap-x-3.5 gap-y-2">
+        {/* Nine stats in the round-based games: the line scrolls sideways. */}
+        <div className="flex gap-x-3.5 overflow-x-auto no-scrollbar -mx-3.5 px-3.5">
           {keys.map((k) => (
-            <span key={k} className="flex flex-col items-center gap-0.5">
+            <span key={k} className="flex flex-col items-center gap-0.5 shrink-0">
               <span className="t-mono-md text-violet">{PredictionFormat.stat(stats[k] as number)}</span>
-              <span className="t-label-sm text-muted">{overviewLabel(k)}</span>
+              <span className="t-label-sm text-muted whitespace-nowrap">{overviewLabel(k)}</span>
             </span>
           ))}
         </div>

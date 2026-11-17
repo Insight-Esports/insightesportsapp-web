@@ -9,6 +9,9 @@
 // Oct 28 §7: under each section, a row of chips from `section.entities`
 // (20px photo or crest, then the name) → the player or team page; with none,
 // the followed teams and players named in the text (iOS's fallback).
+//
+// Nov 5 §10: the header carries the report mark (violet glyph on a surface
+// tile), the same mark as the Premium tab's Weekly Report row.
 "use client";
 
 import Link from "next/link";
@@ -17,7 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Bookmark, BookmarkX, ChevronLeft, ChevronRight, CirclePlus, Trash2 } from "lucide-react";
 import { api, ApiError, endpoints } from "@/lib/api";
 import { clsx } from "@/lib/format";
-import { AssetIcon, ConfirmDialog, FilterSegment, Img, InitialAvatar, Page, SkeletonLedger, Spinner, TeamMark } from "@/components/ui";
+import { ConfirmDialog, FilterSegment, Img, InitialAvatar, Page, SkeletonLedger, Spinner, TeamMark } from "@/components/ui";
 import { entityHref } from "@/components/ui/entity-header";
 import { str, type Json } from "@/lib/types";
 import { prefetchPlayer, prefetchTeam } from "@/features/entity-cache";
@@ -25,6 +28,7 @@ import { SkeletonReport } from "@/components/ui/skeletons";
 import { NavBar } from "@/components/shell/NavBar";
 import { useReveal } from "@/lib/use-reveal";
 import { PremiumGate } from "@/features/premium/PremiumGate";
+import { ReportMark } from "./ReportMark";
 import { entitiesNamedIn, normalizeLatest, normalizeReport, normalizeReports, placeArticles, publishedLabel, reportStory, weekLabel, type ReportArticle, type ReportEntity, type WeeklyReport } from "./types";
 
 type Tab = "week" | "saved";
@@ -106,7 +110,7 @@ function CurrentReport({ vm, revealed }: { vm: ReturnType<typeof useWeeklyReport
   return (
     <div className="flex flex-col gap-4 px-4 lg:px-0 pt-3 max-w-[720px]">
       <div className="flex items-center gap-2.5">
-        <span className="relative grid place-items-center size-11 rounded-xl bg-violet-gradient shrink-0"><span className="absolute inset-0 rounded-xl bg-white/14" /><AssetIcon name="weeklyreport" height={30} className="relative" /></span>
+        <ReportMark tile={40} glyph={22} />
         <span className="flex flex-col gap-1">
           <span className="t-headline-sm text-primary">{weekLabel(r)}</span>
           <span className="violet-rule w-[22px]" />

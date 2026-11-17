@@ -8,7 +8,7 @@
 
 import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { BadgeCheck, Calendar, ChevronDown, ChevronRight, CircleHelp, Clock, Eye, Flag, ListOrdered } from "lucide-react";
 import { GamePill, LiveBadge, StagePill, TeamMark } from "@/components/ui";
 import { clsx, formatTime } from "@/lib/format";
@@ -16,6 +16,7 @@ import { matchResultTime, team1Color, team2Color, teamStub, type Match } from "@
 import { rememberMatch } from "./match-cache";
 import { prefetchTeam, rememberTeam } from "@/features/entity-cache";
 import { isGameOpen, previewOpensAfter, seriesLine, TAG_TEXT } from "@/features/tournaments/series/series-logic";
+import { bracketHref } from "@/features/tournaments/routes";
 
 /** The one door to a match, whatever its state (CompletedMatchLoaderView routes by status server-side). */
 export function matchHref(id: string): string {
@@ -94,8 +95,18 @@ function LiveTeamRow({ name, logo, color, score, leads }: { name: string; logo: 
 // A tournament game (match.series) adds the series line under the header
 // ("QUARTERFINAL · GAME 3 OF 3 · DECIDER"), the series wins on the team rows
 // once the series has started, and — one game ahead — a locked preview row
-// until the game before it is over.
-export function UpcomingMatchCard({ match, className, defaultExpanded = false, previewHref }: { match: Match; className?: string; defaultExpanded?: boolean; /** Where "Match preview" goes (a series page passes its own `from`). */ previewHref?: string }) {
+// until the game before it is over. Its tournament name (series.tournament_id)
+// is a link to the tournament — a step brighter, with a small › — and the
+// rest of the header still expands the card (parity 2026-11-05 §9).
+export function UpcomingMatchCard({ match, className, defaultExpanded = false, previewHref, linksTournament = true }: {
+  match: Match;
+  className?: string;
+  defaultExpanded?: boolean;
+  /** Where "Match preview" goes (a series page passes its own `from`). */
+  previewHref?: string;
+  /** Off inside the tournament's own screens (the link would loop back). */
+  linksTournament?: boolean;
+}) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const toggle = () => setExpanded((v) => !v);
   const time = formatTime(match.scheduledAt);
@@ -115,27 +126,36 @@ export function UpcomingMatchCard({ match, className, defaultExpanded = false, p
   const played = series ? series.team1Wins + series.team2Wins : 0;
   // Series wins once the series has started: the leader (both when level) bright.
   const wins = series && played > 0 ? [series.team1Wins, series.team2Wins] as const : null;
-  const fullTournamentName = match.tournamentName ?? series?.tournamentName ?? "Unknown Tournament";
+  const fullTournamentName = series?.tournamentName ?? match.tournamentName ?? "Unknown Tournament";
+  const tournamentId = linksTournament && series?.tournamentId ? series.tournamentId : null;
 
   return (
     // The whole card sinks while any part of it is pressed (:active reaches the card).
     <div className={clsx(CARD, "pressable", className)}>
-      {/* Header (tap to expand) */}
-      <button type="button" onClick={toggle} aria-expanded={expanded} className="w-full flex flex-col gap-1 px-4 pt-4 pb-2.5 text-left min-w-0 hover:bg-surface/40 rounded-t-xl transition-colors">
-        <span className="w-full flex items-center gap-2 min-w-0">
-          <span className="t-label-sm text-muted truncate min-w-0">{fullTournamentName}</span>
-          {match.stage && !series ? <StagePill stage={match.stage} className="shrink-0" /> : null}
-          <span className="flex-1" />
-          <GamePill game={match.game} />
-          <span className="t-label-lg text-violet whitespace-nowrap">{time}</span>
-        </span>
-        {line && line.text ? (
-          <span className="block w-full text-[10px] font-semibold tracking-[0.8px] uppercase whitespace-nowrap overflow-hidden text-ellipsis">
-            <span className="text-secondary">{line.text}</span>
-            {line.tag ? <span className={line.tag === "decider" ? "text-violet" : "text-muted"}> · {TAG_TEXT[line.tag]}</span> : null}
+      {/* Header (tap to expand). The toggle fills the header under its
+          content, so the tournament link inside can take its own tap. */}
+      <div className="relative">
+        <button type="button" onClick={toggle} aria-expanded={expanded} aria-label={expanded ? "Hide details" : "Show details"} className="absolute inset-0 w-full hover:bg-surface/40 rounded-t-xl transition-colors" />
+        <div className="relative pointer-events-none w-full flex flex-col gap-1 px-4 pt-4 pb-2.5 min-w-0">
+          <span className="w-full flex items-center gap-2 min-w-0">
+            {tournamentId ? (
+              <TournamentNameLink id={tournamentId} name={fullTournamentName} />
+            ) : (
+              <span className="t-label-sm text-muted truncate min-w-0">{fullTournamentName}</span>
+            )}
+            {match.stage && !series ? <StagePill stage={match.stage} className="shrink-0" /> : null}
+            <span className="flex-1" />
+            <GamePill game={match.game} />
+            <span className="t-label-lg text-violet whitespace-nowrap">{time}</span>
           </span>
-        ) : null}
-      </button>
+          {line && line.text ? (
+            <span className="block w-full text-[10px] font-semibold tracking-[0.8px] uppercase whitespace-nowrap overflow-hidden text-ellipsis">
+              <span className="text-secondary">{line.text}</span>
+              {line.tag ? <span className={line.tag === "decider" ? "text-violet" : "text-muted"}> · {TAG_TEXT[line.tag]}</span> : null}
+            </span>
+          ) : null}
+        </div>
+      </div>
 
       {/* Team rows — the row hops to the team's page; a hairline between. */}
       <UpcomingTeamRow name={match.team1Name} logo={match.team1LogoURL} id={match.team1Id} game={match.game} wins={wins ? wins[0] : null} leads={!!wins && wins[0] >= wins[1]} />
@@ -190,6 +210,23 @@ export function UpcomingMatchCard({ match, className, defaultExpanded = false, p
         </>
       ) : null}
     </div>
+  );
+}
+
+/** The tournament's name as a link to it: a step brighter than plain, a small › after it. Back returns to this page. */
+function TournamentNameLink({ id, name }: { id: string; name: string }) {
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const query = params.toString();
+  const from = `${pathname}${query ? `?${query}` : ""}`;
+  return (
+    <Link
+      href={`${bracketHref(id)}?from=${encodeURIComponent(from)}`}
+      className="pointer-events-auto inline-flex items-center gap-1 min-w-0 -my-1 py-1 text-secondary hover:text-primary transition-colors"
+    >
+      <span className="t-label-sm truncate min-w-0">{name}</span>
+      <ChevronRight size={10} strokeWidth={2.5} className="shrink-0 text-muted" />
+    </Link>
   );
 }
 

@@ -2,6 +2,7 @@
 // the bell drops a panel under itself: "Notifications" + Mark all read on
 // top, the inbox's own rows (same chapters, same glyphs, same deep links)
 // in a scrollable list, "See all" to the full /notifications page below.
+// The rows are the inbox's (bell.ts: what is yours, read on to a screenful).
 // Closes on an outside click, Esc, or when a row is followed.
 "use client";
 
@@ -9,13 +10,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Bell, BellOff } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
-import { type Json } from "@/lib/types";
 import { useAppState } from "@/store/app-state";
 import { Spinner, ToolButton } from "@/components/ui";
-import { groupNotificationsByDay, NotificationRow } from "./NotificationsInbox";
-import { normalizeNotifications, type NotificationItem } from "./types";
-
-const PAGE_SIZE = 20;
+import { EMPTY_SUBTITLE, EMPTY_TITLE, groupNotificationsByDay, NotificationRow } from "./NotificationsInbox";
+import { loadBellList } from "./bell";
+import { type NotificationItem } from "./types";
 
 export function NotificationsBell({ className }: { className?: string }) {
   const { unreadNotifications, refreshUnread } = useAppState();
@@ -29,8 +28,7 @@ export function NotificationsBell({ className }: { className?: string }) {
     setLoading(true);
     setError(null);
     try {
-      const raw = await api.get<Json>(endpoints.notifications(PAGE_SIZE, 0));
-      setItems(normalizeNotifications(raw));
+      setItems((await loadBellList()).items);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
@@ -92,8 +90,8 @@ export function NotificationsBell({ className }: { className?: string }) {
             ) : items.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-10 text-center px-4">
                 <BellOff size={22} className="text-muted" />
-                <span className="t-label-md text-primary">No notifications yet</span>
-                <span className="t-body-sm text-muted">We&apos;ll let you know about your predictions, followed teams, and leaderboard rank.</span>
+                <span className="t-label-md text-primary">{EMPTY_TITLE}</span>
+                <span className="t-body-sm text-muted">{EMPTY_SUBTITLE}</span>
               </div>
             ) : (
               groups.map((g) => (

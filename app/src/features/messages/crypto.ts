@@ -50,6 +50,15 @@ export interface DMEnvelope {
   dur?: number;
   poster?: string;  // video: upload id of the poster frame (same key)
   pnonce?: string;  // video: the poster blob's nonce
+  // Replies and forwards ride inside the ciphertext, so the server never
+  // learns what was quoted: the replied-to message id, a short preview of
+  // it (≤ 140 characters) and who sent it; `fw` marks a forwarded message.
+  // A reaction is an envelope of its own ({t: "reaction", body: emoji}), a
+  // sealed group key too ({t: "group_key", body: base64 32 bytes}).
+  re?: string;
+  rq?: string;
+  rs?: string;
+  fw?: boolean;
 }
 
 export class DMCryptoError extends Error {
@@ -92,6 +101,18 @@ export async function randomFileKey(): Promise<{ key: CryptoKey; base64: string 
   const raw = crypto.getRandomValues(new Uint8Array(32));
   const key = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
   return { key, base64: b64encode(raw) };
+}
+
+/** A fresh 256-bit group key (DMKeys.newGroupKey): the raw bytes, kept and sealed to each member. */
+export function newGroupKeyBytes(): Uint8Array {
+  return crypto.getRandomValues(new Uint8Array(32));
+}
+
+/** A group key's raw 32 bytes as an AES-256-GCM key: messages, edits and
+ *  reactions in a group are sealed with it directly (no HKDF). */
+export async function importGroupKey(raw: Uint8Array): Promise<CryptoKey> {
+  if (raw.length !== 32) throw new DMCryptoError("badKey");
+  return crypto.subtle.importKey("raw", raw as BufferSource, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
 export async function importFileKey(base64: string): Promise<CryptoKey> {

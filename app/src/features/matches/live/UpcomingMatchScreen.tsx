@@ -30,6 +30,7 @@ import { withFromMatch } from "../from-match";
 import { fetchSeriesOdds, type SeriesOdds } from "@/features/tournaments/series/series-data";
 import { SeriesWinLine } from "@/features/tournaments/series/SeriesOddsCard";
 import { adjustmentsSentence, gameOfText, isGameOpen, previewOpensAfter, readableSides, seriesLeadText } from "@/features/tournaments/series/series-logic";
+import { InsightCallsSection } from "@/features/calls/InsightCallsSection";
 
 interface PreviewState {
   loading: boolean;
@@ -306,6 +307,9 @@ export function UpcomingMatchScreen({ match, back }: { match: Match; /** A serie
           {so && disclaimer ? <span className="t-label-sm text-muted">{disclaimer}</span> : null}
         </div>
       ) : null}
+
+      {/* Insight's calls on this match: Premium sees them now, free sees how many. */}
+      <InsightCallsSection matchId={match.id} variant="section" />
 
       {matchInfo}
 

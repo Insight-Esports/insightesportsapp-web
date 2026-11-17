@@ -26,8 +26,10 @@ export class ApiError extends Error {
   get isForbidden() { return this.status === 403; }
   get isNotFound() { return this.status === 404; }
   get isRateLimited() { return this.status === 429; }
-  /** "we couldn't reach the server at all" vs an honest empty state */
-  get isConnectionProblem() { return this.status === 0 || this.status === 502 || this.status === 503 || this.status === 504; }
+  /** 503 OVERLOADED: the server is up and asked us to come back shortly (Retry-After). */
+  get isServerBusy() { return this.status === 503 && this.code === "OVERLOADED"; }
+  /** "we couldn't reach the server at all" vs an honest empty state (a busy server was reached: not one). */
+  get isConnectionProblem() { return this.status === 0 || this.status === 502 || (this.status === 503 && !this.isServerBusy) || this.status === 504; }
 }
 
 let cachedIsPremium = false;
@@ -39,6 +41,37 @@ const listeners = new Set<Listener>();
 /** AppStatusService hooks (connection health, maintenance hints). */
 export function onApiEvent(l: Listener) { listeners.add(l); return () => { listeners.delete(l); }; }
 function emit(type: Parameters<Listener>[0]["type"], payload?: unknown) { listeners.forEach((l) => l({ type, payload })); }
+
+// ── Server busy (503 OVERLOADED) — AppStatusService.noteOverloaded ────────
+// The server is up and shedding load, and says when to come back
+// (Retry-After). That is reaching it, so it never counts toward "can't reach
+// Insight". Reads (any GET, and the predictions, which are POSTs that change
+// nothing) wait that long plus jitter and ask once more; writes go back to
+// the caller, never repeated. Background re-reads check `isServerBusy()` and
+// hold off until the Retry-After has passed.
+let busyUntilMs = 0;
+/** Epoch ms until which the server asked to be left alone (0 when it never has). */
+export function serverBusyUntil(): number { return busyUntilMs; }
+/** True while the last 503 OVERLOADED's Retry-After is still running. */
+export function isServerBusy(): boolean { return Date.now() < busyUntilMs; }
+/** Notes the Retry-After (3 s when missing or unreadable, clamped 1–30 s) and returns how long a read
+ *  waits before asking again: that, plus up to half as much again, so tabs turned away together don't
+ *  all come back on the same second. */
+function noteOverloaded(retryAfter: string | null): number {
+  const n = retryAfter != null && retryAfter.trim() !== "" ? Number(retryAfter) : NaN;
+  const base = Math.min(Math.max(Number.isFinite(n) ? n : 3, 1), 30);
+  busyUntilMs = Math.max(busyUntilMs, Date.now() + base * 1000);
+  emit("success");
+  return (base + Math.random() * (base / 2)) * 1000;
+}
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new DOMException("Aborted", "AbortError")); return; }
+    const id = setTimeout(() => { signal?.removeEventListener("abort", onAbort); resolve(); }, ms);
+    const onAbort = () => { clearTimeout(id); reject(new DOMException("Aborted", "AbortError")); };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 function codeOf(obj: Record<string, unknown> | null): string | null {
   if (!obj) return null;
@@ -56,7 +89,7 @@ function messageOf(obj: Record<string, unknown> | null): string | null {
   return null;
 }
 
-export async function request<T = unknown>(path: string, method: HttpMethod = "GET", body?: unknown, opts: { signal?: AbortSignal; raw?: boolean } = {}): Promise<T> {
+export async function request<T = unknown>(path: string, method: HttpMethod = "GET", body?: unknown, opts: { signal?: AbortSignal; raw?: boolean; /** internal: this is the one re-ask after a 503 OVERLOADED */ busyRetry?: boolean } = {}): Promise<T> {
   const url = withBase("/api/backend" + (path.startsWith("/") ? path : "/" + path));
   const isForm = typeof FormData !== "undefined" && body instanceof FormData;
   let res: Response;
@@ -111,6 +144,16 @@ export async function request<T = unknown>(path: string, method: HttpMethod = "G
         throw err;
       }
       if (code === "MAINTENANCE") { emit("maintenance"); throw new ApiError(503, m, code); }
+      if (code === "OVERLOADED") {
+        const wait = noteOverloaded(res.headers.get("retry-after"));
+        const p = path.startsWith("/") ? path : "/" + path;
+        const isRead = method === "GET" || p.startsWith("/predictions/");
+        if (isRead && !opts.busyRetry) {
+          await sleep(wait, opts.signal);
+          return request<T>(path, method, body, { ...opts, busyRetry: true });
+        }
+        throw new ApiError(503, msg ?? "Insight is busy right now. Please try again in a moment.", code);
+      }
       emit("failure", { offline: false });
       throw new ApiError(503, `Server error (503). Try again later.`, code);
     }
@@ -308,6 +351,8 @@ export const endpoints = {
   dmSettings: "/dm/settings",
   dmPublishKey: "/dm/keys",
   dmKey: (userId: string, version?: number | null) => `/dm/keys/${p(userId)}${version != null ? `?version=${version}` : ""}`,
+  /** My key versions reported lost (backend/dm-key-backup-contract.md): GET → {versions} · DELETE {versions} → {versions} (an empty list clears ALL). */
+  dmLostKeys: "/dm/keys/lost",
   dmCreateConversation: "/dm/conversations",
   dmMessages: (conversationId: string, before?: string | null, beforeId?: string | null) => {
     let s = `/dm/conversations/${p(conversationId)}/messages?limit=50`;
@@ -325,6 +370,27 @@ export const endpoints = {
   dmUploadCreate: "/dm/uploads",
   dmUpload: (id: string) => `/dm/uploads/${p(id)}`,
   dmUploadComplete: (id: string) => `/dm/uploads/${p(id)}/complete`,
+  // DM message actions (backend/dm-actions-contract.md) and groups (backend/group-chats-contract.md)
+  /** PUT {sealed emoji} · DELETE */
+  dmReaction: (conversationId: string, messageId: string) => `/dm/conversations/${p(conversationId)}/messages/${p(messageId)}/reaction`,
+  /** PUT · DELETE (409 PIN_LIMIT at three) */
+  dmPin: (conversationId: string, messageId: string) => `/dm/conversations/${p(conversationId)}/messages/${p(messageId)}/pin`,
+  /** POST — delete for you */
+  dmHide: (conversationId: string, messageId: string) => `/dm/conversations/${p(conversationId)}/messages/${p(messageId)}/hide`,
+  /** POST {reason, text} */
+  dmReport: (conversationId: string, messageId: string) => `/dm/conversations/${p(conversationId)}/messages/${p(messageId)}/report`,
+  /** PUT {muted} */
+  dmMute: (conversationId: string) => `/dm/conversations/${p(conversationId)}/mute`,
+  /** POST {name?, memberIds, keyVersion: 1, keys} */
+  dmGroups: "/dm/groups",
+  /** GET · PATCH {name} */
+  dmGroup: (id: string) => `/dm/groups/${p(id)}`,
+  /** POST {userIds, keys} */
+  dmGroupMembers: (id: string) => `/dm/groups/${p(id)}/members`,
+  /** DELETE: leave (yourself) or remove (admins) */
+  dmGroupMember: (id: string, userId: string) => `/dm/groups/${p(id)}/members/${p(userId)}`,
+  /** GET my sealed keys, every version · POST {keyVersion, keys} rotation */
+  dmGroupKeys: (id: string) => `/dm/groups/${p(id)}/keys`,
   // Links
   linkPreview: (url: string) => `/links/preview?url=${q(url)}`,
   // Match archive (backend/match-archive-contract.md). Always paged with `cursor`, never offset.
@@ -336,6 +402,8 @@ export const endpoints = {
   alert: (id: string) => `/alerts/${p(id)}`,
   alertsContext: (targetType: string, targetId: string, matchId?: string | null) =>
     `/alerts/context?targetType=${q(targetType)}&targetId=${q(targetId)}${matchId ? `&matchId=${q(matchId)}` : ""}`,
+  /** Insight's calls on a match (backend/premium-features-contract.md §1): free accounts see them once it is over. */
+  alertCalls: (matchId: string) => `/alerts/calls/${p(matchId)}`,
   // Analytics (Events.swift): batched, fire-and-forget, always 202
   events: "/events",
   // Tournament series (sim tournaments): one series with its games, and its odds

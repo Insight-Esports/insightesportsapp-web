@@ -13,6 +13,10 @@
 //   /premium/predict/h2h/result      game, id, name, opponent, opponentName[, map]
 //   /premium/predict/map             game, id, name[, map, liveMap, from=live]  → team map profile
 //                                    (liveMap: the map being played, dotted; from=live: back = history)
+//
+// `back` (target, stat, result, live, live-team): a live read opened from an
+// all-games screen (Nov 5 §7 "THIS MATCH") carries that screen's URL, so its
+// back chevron returns there instead of to the live-mode Analyze page.
 
 import { SELECTABLE_GAMES } from "@/lib/types";
 import type { PredictionDirection, PredictionTargetType } from "./types";
@@ -28,6 +32,14 @@ export interface FlowTarget {
   targetName: string;
   isLive: boolean;
   matchId: string | null;
+  /** The all-games screen a live read was opened from (its back target); predictor paths only. */
+  back?: string | null;
+}
+
+/** Only the predictor's own paths are accepted as a back target. */
+export function readBack(sp: ParamSource): string | null {
+  const v = sp.get("back");
+  return v && (v.startsWith(`${PREDICT_BASE}/`) || v.startsWith(`${PREDICT_BASE}?`)) ? v : null;
 }
 
 export function readGame(sp: ParamSource): string {
@@ -45,6 +57,7 @@ export function readTarget(sp: ParamSource): FlowTarget {
     targetName: sp.get("name") ?? "",
     isLive: sp.get("live") === "1",
     matchId: sp.get("match"),
+    back: readBack(sp),
   };
 }
 export function readDirection(sp: ParamSource): PredictionDirection {
@@ -69,7 +82,12 @@ export function qs(params: Record<string, string | number | boolean | null | und
 }
 
 export function targetParams(t: FlowTarget) {
-  return { game: t.game, type: t.targetType, id: t.targetId, name: t.targetName, live: t.isLive, match: t.matchId };
+  return { game: t.game, type: t.targetType, id: t.targetId, name: t.targetName, live: t.isLive, match: t.matchId, back: t.back ?? null };
+}
+
+/** Where a screen's back chevron goes: the all-games screen it was opened from, else `fallback`. */
+export function backOr(t: Pick<FlowTarget, "back">, fallback: string): string {
+  return t.back ?? fallback;
 }
 
 export const flowHref = {
@@ -79,8 +97,8 @@ export const flowHref = {
   stat: (t: FlowTarget) => `${PREDICT_BASE}/stat${qs(targetParams(t))}`,
   result: (t: FlowTarget, extra: Record<string, string | number | boolean | null | undefined>) => `${PREDICT_BASE}/result${qs({ ...targetParams(t), ...extra })}`,
   breakdown: (t: FlowTarget) => `${PREDICT_BASE}/breakdown${qs({ game: t.game, type: t.targetType, id: t.targetId, name: t.targetName })}`,
-  live: (t: FlowTarget) => `${PREDICT_BASE}/live${qs({ game: t.game, id: t.targetId, name: t.targetName, match: t.matchId })}`,
-  liveTeam: (t: Pick<FlowTarget, "game" | "targetId" | "targetName" | "matchId">) => `${PREDICT_BASE}/live-team${qs({ game: t.game, id: t.targetId, name: t.targetName, match: t.matchId })}`,
+  live: (t: FlowTarget) => `${PREDICT_BASE}/live${qs({ game: t.game, id: t.targetId, name: t.targetName, match: t.matchId, back: t.back })}`,
+  liveTeam: (t: Pick<FlowTarget, "game" | "targetId" | "targetName" | "matchId" | "back">) => `${PREDICT_BASE}/live-team${qs({ game: t.game, id: t.targetId, name: t.targetName, match: t.matchId, back: t.back })}`,
   h2h: (t: FlowTarget, opponentId?: string | null, opponentName?: string | null, map?: string | null) =>
     `${PREDICT_BASE}/h2h${qs({ game: t.game, id: t.targetId, name: t.targetName, opponent: opponentId, opponentName, map })}`,
   h2hResult: (t: FlowTarget, opponentId: string, opponentName: string, map?: string | null) =>

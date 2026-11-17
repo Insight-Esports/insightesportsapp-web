@@ -1,16 +1,16 @@
 // NotificationsInbox — NotificationsView.swift. The persisted feed behind the
-// bell: day chapters (TODAY / YESTERDAY / THIS WEEK / EARLIER), a timeline
-// rail with a filled violet node for unread, one glyph per type. Opening the
-// inbox clears the badge (read-all); tapping a row marks it read and deep
-// links to the match / profile / player / leaderboard / weekly report.
-// Reading marks, never removes — the inbox is your history.
+// bell, kept to what is yours (bell.ts / BELL_ELIGIBLE): day chapters (TODAY /
+// YESTERDAY / THIS WEEK / EARLIER), a timeline rail with a filled violet node
+// for unread, one glyph per type. Opening the inbox clears the badge
+// (read-all); tapping a row marks it read and deep links to the profile /
+// leaderboard / weekly report / alerts. Reading marks, never removes — the
+// inbox is your history.
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Award, BadgeCheck, BarChart3, Clock, ClockAlert, Radio, Trophy, CalendarClock, Newspaper, TrendingUp, Gift, UserPlus, Star, Flag, Zap, Bell, BellDot, BellOff } from "lucide-react";
 import { api, endpoints } from "@/lib/api";
-import { type Json } from "@/lib/types";
 import { clsx, timeAgo } from "@/lib/format";
 import { useAppState } from "@/store/app-state";
 import { AssetIcon, EmptyState, LoadFailure, Page } from "@/components/ui";
@@ -18,9 +18,12 @@ import { SkeletonNotificationRows } from "@/components/ui/skeletons";
 import { NavBar } from "@/components/shell/NavBar";
 import { useReveal } from "@/lib/use-reveal";
 import { alertsListHref } from "@/features/alerts/entry";
-import { normalizeNotifications, type NotificationItem, type NotificationTint } from "./types";
+import { appendOlder, fetchBellPage, loadBellList } from "./bell";
+import { type NotificationItem, type NotificationTint } from "./types";
 
-const PAGE_SIZE = 40;
+/** The empty bell (NotificationsView.emptyState). */
+export const EMPTY_TITLE = "No notifications yet";
+export const EMPTY_SUBTITLE = "Your stat alerts, predictions, polls, weekly report and leaderboard rank show up here.";
 
 /** Where a tapped notification leads (NotificationsView.destination). */
 export function notificationHref(item: NotificationItem): string | null {
@@ -33,10 +36,12 @@ export function notificationHref(item: NotificationItem): string | null {
     case "leaderboard_result": return "/leaderboard";
     case "followed_result":
     case "final_score":
-    case "followed_player_highlight": return id ? `/match/${id}` : null;
+    case "followed_player_standout": return id ? `/match/${id}` : null;
     case "new_follower": return id ? `/profile/${id}` : null;
     case "stat_alert_live":
-    case "stat_alert_result": return alertsListHref();
+    case "stat_alert_result":
+    case "stat_alert_pace":
+    case "stat_alert_slipping": return alertsListHref();
     default: break;
   }
   switch (item.refType) {
@@ -58,15 +63,17 @@ export function NotificationsInbox() {
   const [connectionProblem, setConnectionProblem] = useState(false);
   const [canLoadMore, setCanLoadMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Server cursor: rows FETCHED, not rows kept (the bell drops match traffic, news and DMs).
+  const [fetched, setFetched] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const raw = await api.get<Json>(endpoints.notifications(PAGE_SIZE, 0));
-      const rows = Array.isArray(raw) ? raw : raw?.notifications ?? raw?.data ?? [];
-      setCanLoadMore(Array.isArray(rows) && rows.length >= PAGE_SIZE);
-      setItems(normalizeNotifications(raw));
+      const list = await loadBellList();
+      setItems(list.items);
+      setFetched(list.fetched);
+      setCanLoadMore(list.more);
     } catch (e) {
       setItems([]);
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -89,11 +96,10 @@ export function NotificationsInbox() {
     if (!canLoadMore || loadingMore) return;
     setLoadingMore(true);
     try {
-      const raw = await api.get<Json>(endpoints.notifications(PAGE_SIZE, items.length));
-      const rows = Array.isArray(raw) ? raw : raw?.notifications ?? raw?.data ?? [];
-      setCanLoadMore(Array.isArray(rows) && rows.length >= PAGE_SIZE);
-      const older = normalizeNotifications(raw);
-      setItems((prev) => { const known = new Set(prev.map((i) => i.id)); return [...prev, ...older.filter((o) => !known.has(o.id))]; });
+      const page = await fetchBellPage(fetched);
+      setFetched(page.fetched);
+      setCanLoadMore(page.more);
+      setItems((prev) => appendOlder(prev, page.items));
     } catch { /* keep what we have */ } finally { setLoadingMore(false); }
   }
 
@@ -128,7 +134,7 @@ export function NotificationsInbox() {
         <div className="pt-6"><LoadFailure error={error} connectionProblem={connectionProblem} onRetry={() => void load()} /></div>
       ) : items.length === 0 ? (
         <div className="pt-16">
-          <EmptyState icon={<BellOff />} title="No notifications yet" subtitle="We'll let you know about your predictions, followed teams, and leaderboard rank." />
+          <EmptyState icon={<BellOff />} title={EMPTY_TITLE} subtitle={EMPTY_SUBTITLE} />
         </div>
       ) : (
         <div className="px-4 pt-1 max-w-2xl w-full mx-auto">

@@ -8,31 +8,44 @@
 // MediaViewer (full-screen photo / inline video; an older iOS build may
 // still send a video before its bytes are up, so the receiver holds the
 // poster with a clock and plays on dm:media_ready), TypingBubble.
+//
+// Nov 17 (MessagesView.swift MessageBubble): a group's sender name over the
+// first bubble of their run and their own avatar at its end, the reply's
+// quote, "Forwarded", reaction chips, double-click ❤️ (BubbleContent is
+// shared with the actions sheet). The typing dots carry the typist's avatar.
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowUpRight, Clock, Download, Image as ImageIcon, Link2, MessageSquareText, Music2, Play, SquarePlay, Tv, Video, X, RotateCw } from "lucide-react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { ArrowUpRight, Clock, Download, Forward, Image as ImageIcon, Link2, MessageSquareText, Music2, Play, SquarePlay, Tv, Video, X, RotateCw } from "lucide-react";
 import { clsx } from "@/lib/format";
 import { imageSrc, Spinner } from "@/components/ui";
 import { FlairAvatar, ringBox, type FlairUser } from "@/components/ui/premium-flair";
 import type { RowMenuProps } from "@/features/moderation/ActionMenu";
 import { DMMediaError, imageURL, videoURL } from "./media";
 import { onDM } from "./service";
+import { ReactionChips } from "./actions";
 import { openURLFor, previewIsEmpty, useLinkPreview } from "./link-preview";
 import { clock, durationClock } from "./format-dm";
 import { isPendingId, mediaAspect, type DMMedia, type DMMessage } from "./types";
 
 // ── MessageBubble ─────────────────────────────────────────────────────────
-// Their bubbles carry their avatar in its ring box at the end of a run; the
-// menu (Copy · Edit · Delete) opens from the bubble itself: the hover "⋯",
-// a right-click, or a long press. "Edited" sits under an edited bubble
+// Their bubbles carry the sender's avatar in its ring box at the end of a
+// run (in a group, each sender's own, with their name over the first
+// bubble of the run); the actions sheet opens from the bubble itself: the
+// hover "⋯", a right-click, or a long press; a double-click is ❤️. A reply
+// shows what it answers over it, a forward says so, and the reactions sit
+// on the bubble's inner bottom corner. "Edited" sits under an edited bubble
 // ("Edited · Seen 2h ago" on your last one).
-export function MessageBubble({ message, seenLabel, endsRun, other, showTime, onToggleTime, onOpenMedia, onRetry, rowProps, more }: {
+export function MessageBubble({ message, seenLabel, endsRun, sender, senderName, quote, showTime, onToggleTime, onOpenMedia, onRetry, rowProps, more, onDoubleTap, onReaction, flash }: {
   message: DMMessage;
   seenLabel: string | null;
   endsRun: boolean;
-  /** The other person, as UserIdentity draws them (their bubble's avatar). */
-  other: FlairUser;
+  /** Whoever sent it, as UserIdentity draws them (their bubble's avatar). */
+  sender: FlairUser;
+  /** A group: the sender's name over the first bubble of their run. */
+  senderName?: string | null;
+  /** The message this one answers, drawn over it. */
+  quote?: ReactNode;
   showTime: boolean;
   onToggleTime: () => void;
   onOpenMedia: (m: DMMessage) => void;
@@ -41,38 +54,33 @@ export function MessageBubble({ message, seenLabel, endsRun, other, showTime, on
   rowProps?: RowMenuProps;
   /** The hover "⋯" beside the bubble. */
   more?: ReactNode;
+  /** Two clicks on the words: ❤️ (Instagram). */
+  onDoubleTap?: () => void;
+  /** A reaction chip: toggle that emoji. */
+  onReaction?: (emoji: string) => void;
+  /** Just jumped to (a quote or a pin): a brief glow. */
+  flash?: boolean;
 }) {
   const mine = message.isMine;
   const failed = !!message.failed;
   const status = !failed ? [message.editedAt ? "Edited" : null, seenLabel].filter(Boolean).join(" · ") : "";
   const gutter = ringBox(24) + 8;   // their avatar's box + the gap
+  const reactions = message.reactions ?? [];
   return (
     <div className={clsx("flex flex-col gap-[3px]", mine ? "items-end" : "items-start")}>
+      {senderName ? <span className="t-label-sm text-muted pt-0.5" style={{ paddingLeft: gutter }}>{senderName}</span> : null}
+      {quote}
+      {message.forwarded ? (
+        <span className="flex items-center gap-1 t-label-sm text-muted" style={mine ? { paddingRight: 4 } : { paddingLeft: gutter }}><Forward size={10} strokeWidth={2.5} />Forwarded</span>
+      ) : null}
       <div className={clsx("flex items-end gap-2 max-w-full", mine && "flex-row-reverse")}>
         {!mine ? (
-          endsRun ? <FlairAvatar user={other} size={24} /> : <span className="shrink-0" style={{ width: ringBox(24) }} />
+          endsRun ? <span className={clsx(reactions.length > 0 && "mb-[13px]")}><FlairAvatar user={sender} size={24} /></span> : <span className="shrink-0" style={{ width: ringBox(24) }} />
         ) : null}
         <div {...rowProps} className={clsx("group flex items-center gap-1 min-w-0 [-webkit-touch-callout:none]", mine ? "ml-[70px] flex-row-reverse" : "mr-[70px]")}>
-          <div className="min-w-0">
-            {message.media ? (
-              <MediaBubble message={message} onOpen={onOpenMedia} onRetry={onRetry} />
-            ) : message.linkURL ? (
-              <LinkPreviewBubble url={message.linkURL} isMine={mine} />
-            ) : (
-              <button
-                type="button"
-                onClick={failed ? () => onRetry(message.id) : onToggleTime}
-                className={clsx(
-                  "block text-left px-3.5 py-[9px] rounded-[18px] t-body-md whitespace-pre-wrap break-words",
-                  mine ? "bg-violet text-white" : "bg-surface text-primary",
-                  !message.decrypted && "italic !text-muted",
-                  isPendingId(message.id) && !failed && "opacity-70",
-                  failed && "opacity-60",
-                )}
-              >
-                {message.text}
-              </button>
-            )}
+          <div data-bubble-content className={clsx("relative min-w-0 rounded-[18px] transition-shadow duration-500", reactions.length > 0 && "mb-[13px]", flash && "dm-flash")}>
+            <BubbleContent message={message} onOpenMedia={onOpenMedia} onRetry={onRetry} onToggleTime={onToggleTime} onDoubleTap={onDoubleTap} />
+            {reactions.length > 0 && onReaction ? <ReactionChips reactions={reactions} onTap={onReaction} align={mine ? "left" : "right"} /> : null}
           </div>
           {more}
         </div>
@@ -86,6 +94,45 @@ export function MessageBubble({ message, seenLabel, endsRun, other, showTime, on
       {status ? <span className="t-label-sm text-muted" style={mine ? { paddingRight: 4 } : { paddingLeft: gutter }}>{status}</span> : null}
     </div>
   );
+}
+
+/** The bubble alone — words, a link card or media — drawn in the thread and
+ *  again, lifted, on the actions sheet (`still`: nothing in it responds). */
+export function BubbleContent({ message, onOpenMedia, onRetry, onToggleTime, onDoubleTap, still = false }: {
+  message: DMMessage;
+  onOpenMedia?: (m: DMMessage) => void;
+  onRetry?: (id: string) => void;
+  onToggleTime?: () => void;
+  onDoubleTap?: () => void;
+  still?: boolean;
+}) {
+  const mine = message.isMine;
+  const failed = !!message.failed;
+  // One click shows the time, a second one ❤️: the single waits a beat for the double to miss.
+  const single = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (single.current) clearTimeout(single.current); }, []);
+  const onClick = (e: MouseEvent<HTMLButtonElement>) => {
+    if (failed) { onRetry?.(message.id); return; }
+    if (e.detail >= 2 && onDoubleTap) {
+      if (single.current) { clearTimeout(single.current); single.current = null; }
+      if (e.detail === 2) onDoubleTap();
+      return;
+    }
+    if (!onDoubleTap) { onToggleTime?.(); return; }
+    if (single.current) clearTimeout(single.current);
+    single.current = setTimeout(() => { single.current = null; onToggleTime?.(); }, 240);
+  };
+  if (message.media) return still ? <div className="pointer-events-none"><MediaBubble message={message} onOpen={() => {}} onRetry={() => {}} /></div> : <MediaBubble message={message} onOpen={onOpenMedia ?? (() => {})} onRetry={onRetry ?? (() => {})} />;
+  if (message.linkURL) return still ? <div className="pointer-events-none"><LinkPreviewBubble url={message.linkURL} isMine={mine} /></div> : <LinkPreviewBubble url={message.linkURL} isMine={mine} />;
+  const cls = clsx(
+    "block text-left px-3.5 py-[9px] rounded-[18px] t-body-md whitespace-pre-wrap break-words",
+    mine ? "bg-violet text-white" : "bg-surface text-primary",
+    !message.decrypted && "italic !text-muted",
+    isPendingId(message.id) && !failed && "opacity-70",
+    failed && "opacity-60",
+  );
+  if (still) return <div className={cls}>{message.text}</div>;
+  return <button type="button" onClick={onClick} className={cls}>{message.text}</button>;
 }
 
 // ── Link preview ──────────────────────────────────────────────────────────
@@ -426,6 +473,7 @@ export function MediaViewer({ message, onClose }: { message: DMMessage; onClose:
 
 // ── Typing indicator (three dots, Instagram's) ────────────────────────────
 export function TypingBubble({ other }: { other: FlairUser }) {
+  // In a group, the typist's own avatar.
   return (
     <div className="flex items-end gap-2 mr-[70px]">
       <FlairAvatar user={other} size={24} />

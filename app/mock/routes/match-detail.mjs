@@ -11,7 +11,8 @@
 // match:<id> rooms. Payloads follow backend/services/socketService.js +
 // liveDataWriter.js: match_update {team1Maps, team2Maps, team1InhibitorsUp,
 // team2InhibitorsUp, team1Gold, team2Gold} (no matchId; 2 s gold tick),
-// stats_update {matchId, stats} (the GET /stats rows). /progress carries no
+// stats_update {matchId, stats} (the GET /stats rows), gold_update {matchId,
+// points (newest ≤ 10), prevMinute}. /progress carries no
 // team gold. A cup game (the row's `series`): the pushes' maps are THIS
 // game's score (0 until it's won); /progress's are the series score while
 // live and this game's once completed.
@@ -173,7 +174,9 @@ function tick(s, h) {
       const [g1, g2] = teamGold(s);
       const diff = g1 - g2;
       s.gold.push({ minute: +minute.toFixed(3), diff });
-      events.push(["gold_update", { matchId: s.id }]);
+      // The newest points ride the push (liveDataWriter.goldPayload): up to ten, and the minute before them.
+      const from = Math.max(0, s.gold.length - 10);
+      events.push(["gold_update", { matchId: s.id, points: s.gold.slice(from), prevMinute: from > 0 ? s.gold[from - 1].minute : 0 }]);
       events.push(["stats_update", { matchId: s.id, stats: statsRows(s) }]);
       s.odds = Math.max(5, Math.min(95, 50 + Math.round(diff / 120)));
       events.push(["odds_update", { matchId: s.id, team1WinProbability: s.odds, team2WinProbability: 100 - s.odds, decided: false, model: "live-v2" }]);

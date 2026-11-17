@@ -19,6 +19,9 @@
 //   setCupBreak(game, on)         mock switch: the game's live cup steps aside
 //                                 so /sim/current serves its last completed one
 //                                 (the break: "Champion: X" on the list)
+//   setTemplate(game, template)   mock switch: /sim/current serves the game's
+//                                 staged tournament of that template (swiss16,
+//                                 groups16, major32); null/"cup" = the cup again
 //
 // What is in it (times relative to now, deterministic otherwise):
 //   Insight VALORANT Cup 3  live: QFs done, Semifinal 1 game 3 live (decider)
@@ -26,10 +29,14 @@
 //   Insight LoL Cup 1       live: Quarterfinal 1 game 2 live (Gen.G lead 1–0, Bo5)
 //   Insight VALORANT Cup 2  completed ~6 h ago, champion Fnatic
 //   Insight CS2 Cup 1       completed ~5 h ago, champion Team Spirit
+// Plus the staged tournaments and a 16-team cup (_tournament-stages-data.mjs:
+// Swiss, GSL groups, double elimination, a Major; stages[] on the bracket).
 // Ids: tournaments 5e1a0000-0000-4000-a000-000000<key>00, series
 // 5e1a5e21-<key>-4000-a000-0000000000<round><position>, games
 // m-t-<key>-<round><position>-g<n> (key: a103 c202 1e01 a102 c201).
 // Team ids are players-teams.mjs's, so crests link to real team pages.
+
+import { buildStaged, stagedOdds, stagedRating, stagesPayload } from "./_tournament-stages-data.mjs";
 
 const rand = (seed) => { const x = Math.sin(seed * 9301 + 49297) * 233280; return x - Math.floor(x); };
 const MIN = 60e3;
@@ -107,7 +114,7 @@ const clamp = (p) => Math.min(0.95, Math.max(0.05, p));
 const pct = (p) => Math.round(p * 1000) / 10;
 const ratingOf = (id) => {
   for (const g of GAME_ORDER) for (const t of Object.values(TOURNAMENT_TEAMS[g])) if (t.id === id) return t.rating;
-  return 1600;
+  return stagedRating(id) ?? 1600;
 };
 const baseGameProb = (a, b) => clamp(1 / (1 + 10 ** ((ratingOf(b) - ratingOf(a)) / 400)));
 const gameProbAtState = (base, bestOf, w1, w2, lastWinner) => {
@@ -273,12 +280,20 @@ function build(spec, now) {
   return { spec, tournament, series, abs, champion };
 }
 
+// What the staged builder borrows: the odds model, the clock, the ids.
+const STAGED_HELPERS = {
+  tournamentId: (key) => tournamentId(key), baseGameProb: (a, b) => baseGameProb(a, b), seriesWalk: (...a) => seriesWalk(...a),
+  needOf, perGame, GAME_MIN, SERIES_GAP, MAP_POOL, seriesOddsOf: (b, s) => seriesOddsOf(b, s),
+};
+/** A staged tournament's title odds, worked out once per build. */
+const oddsOfStaged = (b) => (b.oddsMemo ??= stagedOdds(b, STAGED_HELPERS));
+
 let memo = { at: 0, list: null };
 function built() {
   // Rebuilt at most every 20 s so "now"-relative times stay put between polls.
   const now = Date.now();
   if (memo.list && now - memo.at < 20e3) return memo.list;
-  memo = { at: now, list: SPECS.map((s) => build(s, now)) };
+  memo = { at: now, list: [...SPECS.map((s) => build(s, now)), ...buildStaged(now, STAGED_HELPERS)] };
   return memo.list;
 }
 const byTournament = (id) => built().find((b) => b.tournament.id === id) ?? null;
@@ -365,7 +380,8 @@ function seriesOddsOf(b, s) {
 }
 
 function tournamentOddsOf(b) {
-  const rounds = 3;
+  const rounds = Math.max(...b.series.map((s) => s.round));
+  const roundNames = Array.from({ length: rounds }, (_, i) => b.series.find((s) => s.round === i + 1)?.round_name ?? ROUND_NAMES[i]);
   const teams = new Map();
   for (const s of b.series.filter((x) => x.round === 1)) {
     teams.set(s.team1.id, { t: s.team1, seed: s.team1_seed, reach: {}, win: {} });
@@ -409,7 +425,7 @@ function tournamentOddsOf(b) {
   const out = [...teams.values()].map((x) => ({
     team: { id: x.t.id, name: x.t.name, logo_url: x.t.logo_url, seed: x.seed },
     champion: pct(x.win[rounds] || 0),
-    rounds: Array.from({ length: rounds }, (_, i) => ({ round: i + 1, name: ROUND_NAMES[i], reach: pct(x.reach[i + 1] || 0), win: pct(x.win[i + 1] || 0) })),
+    rounds: Array.from({ length: rounds }, (_, i) => ({ round: i + 1, name: roundNames[i], reach: pct(x.reach[i + 1] || 0), win: pct(x.win[i + 1] || 0) })),
     eliminated: false,
   })).sort((p, q) => q.champion - p.champion || (p.team.seed || 99) - (q.team.seed || 99));
   for (const row of out) row.eliminated = row.champion === 0;
@@ -422,6 +438,7 @@ export function tournamentList() { return built().map((b) => b.tournament); }
 export function bracketFor(id) {
   const b = byTournament(String(id));
   if (!b) return null;
+  if (b.staged) return stagedBracket(b);
   const odds = tournamentOddsOf(b);
   const rounds = [];
   for (const s of b.series) {
@@ -433,7 +450,7 @@ export function bracketFor(id) {
   const t = b.tournament;
   return {
     tournament: {
-      id: t.id, name: t.name, game: t.game, status: t.status, is_sim: true, edition: t.edition, teams: 8,
+      id: t.id, name: t.name, game: t.game, status: t.status, is_sim: true, edition: t.edition, teams: t.format?.teams ?? 8,
       start_date: t.start_date, end_date: t.end_date,
       champion: b.champion ? { id: b.champion.id, name: b.champion.name, logo_url: b.champion.logo_url } : null,
     },
@@ -443,13 +460,42 @@ export function bracketFor(id) {
   };
 }
 
+/** A staged tournament's bracket: stages[] (Swiss standings and rounds, groups,
+ *  the playoffs), rounds = the playoff rounds, tournament.template (stagesService.decorate). */
+function stagedBracket(b) {
+  const odds = oddsOfStaged(b);
+  const shaped = (s) => ({ ...shapeSeries(b, s), odds: odds.series[s.id] || null, stage_id: s.stage_id, bracket: s.bracket || null, group: s.group_name || null });
+  const { stages, rounds } = stagesPayload(b, shaped);
+  const current = b.series.find((s) => s.status === "live") || b.series.find((s) => s.status !== "completed" && s.team1 && s.team2) || null;
+  const t = b.tournament;
+  return {
+    tournament: {
+      id: t.id, name: t.name, game: t.game, status: t.status, is_sim: true, edition: t.edition, teams: t.format.teams,
+      start_date: t.start_date, end_date: t.end_date,
+      champion: b.champion ? { id: b.champion.id, name: b.champion.name, logo_url: b.champion.logo_url } : null,
+      template: t.format.template ?? null,
+    },
+    rounds,
+    current_series_id: current ? current.id : null,
+    odds: { teams: odds.teams },
+    stages,
+  };
+}
+
 const onBreak = new Set();
 /** Mock switch (POST /api/mock/cup-break): the game's active cup steps aside, as between editions. */
 export function setCupBreak(game, on) { if (on) onBreak.add(game); else onBreak.delete(game); }
 
+const templates = new Map();
+/** Mock switch (POST /api/mock/tournament-template): the game's staged tournament of that template is its current one. */
+export function setTemplate(game, template) { if (template && template !== "cup") templates.set(game, template); else templates.delete(game); }
+
 export function currentForGame(game) {
   const list = built().filter((b) => b.tournament.game === game);
-  const active = onBreak.has(game) ? null : list.find((b) => b.tournament.status === "live" || b.tournament.status === "upcoming");
+  const staged = templates.has(game) ? list.find((b) => b.staged && b.spec.template === templates.get(game)) : null;
+  if (staged) return bracketFor(staged.tournament.id);
+  // The 8-team cups are the current ones; the staged tournaments only by switch.
+  const active = onBreak.has(game) ? null : list.find((b) => !b.staged && (b.tournament.status === "live" || b.tournament.status === "upcoming"));
   if (active) return bracketFor(active.tournament.id);
   const last = list.filter((b) => b.tournament.status === "completed").sort((a, c) => (a.tournament.end_date < c.tournament.end_date ? 1 : -1))[0];
   return last ? bracketFor(last.tournament.id) : null;
@@ -464,7 +510,8 @@ export function completedForGame(game) {
 export function tournamentOddsFor(id) {
   const b = byTournament(String(id));
   if (!b) return null;
-  return { ...tournamentOddsOf(b), disclaimer: "For entertainment purposes only. This is not financial advice." };
+  const { series: _series, ...odds } = b.staged ? oddsOfStaged(b) : tournamentOddsOf(b);
+  return { ...odds, series: _series, disclaimer: "For entertainment purposes only. This is not financial advice." };
 }
 
 export function seriesDetail(id) {
@@ -513,6 +560,9 @@ export function tournamentMatchRows() {
             id: s.id, tournament_id: t.id, tournament_name: t.name, round: s.round, round_name: s.round_name, position: s.position, best_of: s.best_of,
             game_number: g.number, if_necessary: g.number > needOf(s.best_of),
             team1_wins: s.team1_wins, team2_wins: s.team2_wins, status: s.status, winner_id: s.winner ? s.winner.id : null,
+            // The stage, for "Swiss · Round 3 · Game 1" (null in a cup).
+            stage: b.staged ? { id: s.stage.id, kind: s.stage.kind, name: s.stage.name } : null,
+            bracket: s.bracket || null, group: s.group_name || null,
           },
         });
       }
@@ -526,6 +576,10 @@ const PLACEMENT = { 1: "quarterfinalist", 2: "semifinalist", 3: "runner_up" };
 export function honorsFor(teamId) {
   const rows = [];
   for (const b of built()) {
+    if (b.placements) {
+      for (const p of b.placements) if (p.teamId === teamId) rows.push({ b, placement: p.placement, seed: p.seed, at: p.at });
+      continue;
+    }
     for (const s of b.series) {
       if (!s.loser) continue;
       if (s.loser.id === teamId) rows.push({ b, placement: PLACEMENT[s.round], seed: s.loser_seed, at: b.abs(s.completedAt) });

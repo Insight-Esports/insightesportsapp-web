@@ -29,7 +29,7 @@ export function MessagesShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const linkState = useDMLink();
-  const standalone = pathname === "/messages/new" || pathname.startsWith("/messages/link");
+  const standalone = pathname === "/messages/new" || pathname.startsWith("/messages/new/") || pathname.startsWith("/messages/link");
   const selectedId = selectedConversationId(pathname);
 
   // Fill the viewport below whatever the shell draws above us (banners).

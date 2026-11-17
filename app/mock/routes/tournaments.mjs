@@ -9,7 +9,10 @@
 // Mock switch (no backend twin): POST /api/mock/cup-break?game=CS2&on=1 puts
 // the game between editions (its live cup steps aside, so the list's ON NOW
 // row is the last edition with "Champion: X"); on=0 brings it back.
-import { bracketFor, completedForGame, currentForGame, setCupBreak, tournamentOddsFor } from "./_tournaments-data.mjs";
+// POST /api/mock/tournament-template?game=CS2&template=major32 makes the game's
+// staged tournament (swiss16 LoL, groups16 VALORANT, major32 CS2) its current
+// one, so the list's ON NOW row opens it; template=cup goes back to the cup.
+import { bracketFor, completedForGame, currentForGame, setCupBreak, setTemplate, tournamentOddsFor } from "./_tournaments-data.mjs";
 
 const VALID_GAMES = ["VALORANT", "CS2", "League"];
 
@@ -20,6 +23,14 @@ export function register(app) {
     const on = String(req.query.on ?? "1") !== "0";
     setCupBreak(game, on);
     res.json({ game, break: on });
+  });
+
+  app.post("/api/mock/tournament-template", (req, res) => {
+    const game = String(req.query.game ?? "");
+    if (!VALID_GAMES.includes(game)) return res.status(400).json({ error: `game must be one of: ${VALID_GAMES.join(", ")}` });
+    const template = String(req.query.template ?? "cup");
+    setTemplate(game, template);
+    res.json({ game, template });
   });
 
   app.get("/api/tournaments/sim/current", (req, res) => {

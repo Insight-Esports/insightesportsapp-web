@@ -14,7 +14,7 @@ import { useInterval } from "@/lib/use-fetch";
 import { liveMatchById, refreshLiveMatches, useLiveMatches } from "@/lib/live-matches";
 import { InitialAvatar, LoadFailure, SkeletonLedger, TeamMark, Toast } from "@/components/ui";
 import { alertsNewHref } from "./entry";
-import { callText, dayText, isLiveAlert, PREMIUM_UPGRADE_HREF, type ActiveAlert, type AlertBase, type HistoryAlert } from "./model";
+import { callText, chanceLine, dayText, isLiveAlert, PREMIUM_UPGRADE_HREF, type ActiveAlert, type AlertBase, type HistoryAlert } from "./model";
 import { clearAllHistory, clearHistoryRow, deleteAlert, refreshAlerts, useAlerts } from "./store";
 import { AlertList, alertRowClass, AlertsFrame, AlertsOff, ConfirmPopover, HistoryReadout, LiveReadout, ProgressLine, RowMenu, SectionLabel, WhenReadout } from "./ui";
 
@@ -97,6 +97,8 @@ export function TargetAvatar({ a, size = 40 }: { a: Pick<AlertBase, "targetType"
 
 function ActiveRow({ a, live, onRemove }: { a: ActiveAlert; live: ReturnType<typeof liveMatchById>; onRemove: () => void }) {
   const call = callText(a, a.match?.bestOf);
+  // Premium: the chance when it was set, and now ("50% → 85% chance").
+  const chance = chanceLine(a);
   return (
     <div className={alertRowClass}>
       <Link href={alertHref(a.id)} aria-label={`${a.targetName}: ${call}`} className="absolute inset-0" />
@@ -104,6 +106,7 @@ function ActiveRow({ a, live, onRemove }: { a: ActiveAlert; live: ReturnType<typ
       <span className="flex flex-col gap-0.5 min-w-0 flex-1">
         <span className="t-body-md font-semibold text-primary truncate">{a.targetName}</span>
         <span className="t-label-md text-secondary truncate">{call}</span>
+        {chance ? <span className="t-label-sm text-muted truncate">{chance}</span> : null}
       </span>
       {isLiveAlert(a) ? <LiveReadout a={a} live={live} /> : <WhenReadout a={a} />}
       <RowMenu label={`More for ${a.targetName}`} items={[{ label: "Remove", destructive: true, onSelect: onRemove }]} />

@@ -5,7 +5,10 @@
 // returns here), UPCOMING by day as Upcoming cards, or SCHEDULE while the
 // series waits on its teams. Polled 10 s while a game is live, 20 s
 // otherwise, until decided. Back goes to `from` (the bracket it came from),
-// else the bracket of its tournament.
+// else the bracket of its tournament. A series decided without games of its
+// own (fast-forwarded: completed, no game with a match) shows the final
+// score and "Decided without games of its own." and nothing else. Its
+// Upcoming cards don't link back to the tournament (this is its screen).
 "use client";
 
 import Link from "next/link";
@@ -18,7 +21,7 @@ import { team1Color, team2Color } from "@/lib/types";
 import { teamLetters } from "@/lib/team-letters";
 import { useReveal } from "@/lib/use-reveal";
 import { UpcomingMatchCard, teamHref } from "@/features/matches/cards";
-import { pagePathFrom } from "@/features/matches/from-match";
+import { matchOpenedFrom, pagePathFrom, useBackToScreen } from "@/features/matches/from-match";
 import { bracketHref, matchFromSeriesHref, seriesHref, tournamentsHref } from "@/features/tournaments/routes";
 import { gameScoreFromSeries, seriesDecided, seriesGameMatch, useSeriesPage, type SeriesDetail, type SeriesGame, type SeriesInfo, type SeriesTeam } from "./series-data";
 import { SeriesOddsCard, SeriesSectionTitle } from "./SeriesOddsCard";
@@ -44,7 +47,7 @@ export function SeriesScreen({ id, from }: { id: string; from: string | null }) 
         <NavBar title={vm.loading || !vm.error ? title : "Series"} back={back} centered />
         {!vm.loading && vm.error ? (
           <div className="px-4 pt-4">
-            <LoadFailure error={vm.notFound ? "This series couldn't be found." : vm.error} connectionProblem={vm.connectionProblem} onRetry={vm.reload} />
+            <LoadFailure error={vm.notFound ? "This series couldn't be found." : "Couldn't load this series"} connectionProblem={vm.connectionProblem} onRetry={vm.reload} />
           </div>
         ) : (
           <SeriesSkeleton />
@@ -69,6 +72,10 @@ function SeriesBody({ detail, keyRow, odds, selfPath }: { detail: SeriesDetail; 
   const tbd = s.games.filter((g) => g.status === "tbd" || (g.status === "upcoming" && !g.matchId));
   const linkState = useLiveMatchLink({ matchId: live?.matchId ?? null });
   const showLive = !!live?.matchId && !!linkState.matchId && (!!linkState.match || linkState.ended);
+  // Opened from this live game's match: its Watch row goes back to it (never a second copy).
+  const behind = matchOpenedFrom(selfPath);
+  const returns = !!behind && !!live?.matchId && behind.id === live.matchId;
+  const backToMatch = useBackToScreen(returns && behind ? behind.path : null, returns);
 
   // Series colours from the key game's row, flipped when it seats the series' team2 first.
   const keyFlipped = !!keyRow && !!s.team2 && keyRow.team1Id === s.team2.id;
@@ -79,6 +86,17 @@ function SeriesBody({ detail, keyRow, odds, selfPath }: { detail: SeriesDetail; 
 
   const empty = played.length === 0 && upcoming.length === 0 && tbd.length === 0;
   const withOdds = !!odds && odds.available && !odds.decided;
+  // Fast-forwarded: decided, and no game of its own (called-off games are already left out).
+  const settled = seriesDecided(s) && !s.games.some((g) => g.matchId);
+
+  if (settled) {
+    return (
+      <div className="px-4 pt-3 flex flex-col gap-5 max-w-[820px] mx-auto">
+        <ScoreCard series={s} live={null} selfPath={selfPath} />
+        <p className="t-label-md text-muted text-center">Decided without games of its own.</p>
+      </div>
+    );
+  }
 
   return (
     <div className={clsx("px-4 pt-3 grid grid-cols-[minmax(0,1fr)] gap-6", withOdds ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)] lg:grid-rows-[auto_1fr] lg:gap-x-8 lg:items-start" : "max-w-[820px] mx-auto")}>
@@ -86,8 +104,8 @@ function SeriesBody({ detail, keyRow, odds, selfPath }: { detail: SeriesDetail; 
       <div className="flex flex-col gap-3 lg:col-start-1 lg:row-start-1">
         <ScoreCard series={s} live={live} selfPath={selfPath} />
         {showLive ? (
-          <div className="rounded-xl bg-card border border-border-subtle overflow-hidden">
-            <LiveMatchLink state={linkState} from={selfPath} />
+          <div className="rounded-xl bg-card border border-border-subtle overflow-hidden" onClickCapture={returns ? backToMatch : undefined}>
+            <LiveMatchLink state={linkState} from={returns && behind ? behind.from : selfPath} />
           </div>
         ) : null}
       </div>
@@ -236,7 +254,7 @@ function UpcomingByDay({ detail, games, keyRow, selfPath }: { detail: SeriesDeta
           <div className="flex flex-col gap-3">
             {grp.games.map((g) => {
               const m = seriesGameMatch(detail, g, keyRow);
-              return m ? <UpcomingMatchCard key={g.number} match={m} previewHref={matchFromSeriesHref(m.id, selfPath)} /> : null;
+              return m ? <UpcomingMatchCard key={g.number} match={m} previewHref={matchFromSeriesHref(m.id, selfPath)} linksTournament={false} /> : null;
             })}
           </div>
         </section>

@@ -4,12 +4,16 @@
 // and the link banner when the phone holds a newer key. People wear their
 // flair (ring, shine, diamond, ORACLE); blocked people's threads are
 // hidden (parity Oct 28 §2, §3, §5).
+//
+// Nov 17 (parity N5-4): a group's row — its people stacked, its name (or
+// "karlo, aina, leah"), "karlo: text" / "You: text", and Leave in its menu
+// instead of Remove chat · Block.
 "use client";
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { SquarePen, Ellipsis, Hand, Trash2, TriangleAlert } from "lucide-react";
+import { SquarePen, Ellipsis, Hand, LogOut, Trash2, TriangleAlert } from "lucide-react";
 import { clsx } from "@/lib/format";
 import { useReveal } from "@/lib/use-reveal";
 import { AssetIcon, ConfirmDialog, EmptyState, LoadFailure, TabHeaderTitle, Toast } from "@/components/ui";
@@ -19,17 +23,19 @@ import { SkeletonThreadRows } from "@/components/ui/skeletons";
 import { BackButton } from "@/components/shell/NavBar";
 import { readLedger, type LinkState } from "./service";
 import { useInbox, threadUnread, type InboxThread } from "./use-inbox";
+import { useAppState } from "@/store/app-state";
+import { GroupAvatar } from "./groups";
 import { useNow } from "./hooks";
 import { relativeAgo, relativeShort } from "./format-dm";
 import { startConversation, startConversationMessage } from "./start-conversation";
 import { onInboxToast, takeInboxToast } from "./dm-local";
-import { isPendingId, otherFlair, searchUserFlair, type SearchUser } from "./types";
+import { conversationTitle, isGroupRow, isPendingId, othersOf, otherFlair, searchUserFlair, type SearchUser } from "./types";
 
 export function MessagesInbox({ selectedId, linkState }: { selectedId: string | null; linkState: LinkState }) {
   const router = useRouter();
   const enabled = linkState.kind === "linked" || linkState.kind === "stale";
   const inbox = useInbox(enabled);
-  const { isLoading, error, connectionProblem, load, remove, block } = inbox;
+  const { isLoading, error, connectionProblem, load, remove, block, leave } = inbox;
   // Blocked people's threads (and suggestions) are hidden.
   const blockedIds = useBlockedIds();
   const threads = inbox.threads.filter((t) => !blockedIds.has(t.row.otherId));
@@ -54,7 +60,7 @@ export function MessagesInbox({ selectedId, linkState }: { selectedId: string | 
   // load settle and the first page of avatars is warm.
   const checking = linkState.kind === "checking";
   const revealed = useReveal(checking || (isLoading && threads.length === 0 && suggested.length === 0), () => [
-    ...threads.map((t) => t.row.otherAvatarURL), ...suggested.map((u) => u.avatarURL),
+    ...threads.flatMap((t) => (isGroupRow(t.row) ? t.row.members.slice(0, 3).map((m) => m.avatarURL) : [t.row.otherAvatarURL])), ...suggested.map((u) => u.avatarURL),
   ]);
 
   return (
@@ -87,7 +93,7 @@ export function MessagesInbox({ selectedId, linkState }: { selectedId: string | 
             {threads.length > 0 ? (
               <div className="flex flex-col">
                 {threads.map((t) => (
-                  <InboxRow key={t.row.id} thread={t} now={now} selected={t.row.id === selectedId} onRemove={() => remove(t)} onBlock={() => block(t)} />
+                  <InboxRow key={t.row.id} thread={t} now={now} selected={t.row.id === selectedId} onRemove={() => remove(t)} onBlock={() => block(t)} onLeave={() => leave(t)} />
                 ))}
               </div>
             ) : null}
@@ -126,6 +132,13 @@ function secondLine(t: InboxThread, now: Date): { text: string; bold: boolean } 
   const when = t.row.lastMessageAt ?? t.row.createdAt ?? now.toISOString();
   const unread = threadUnread(t);
   if (unread > 1) return { text: `${unread} new messages`, bold: true };
+  // A group names who said it; "Seen" is per person there, so the line stays on the words.
+  if (isGroupRow(t.row)) {
+    if (!t.preview) return { text: "Say hi to the group", bold: false };
+    if (t.previewIsMine && t.newestId && isPendingId(t.newestId)) return { text: "Sending…", bold: false };
+    const who = t.previewIsMine ? "You" : t.previewSender ?? "";
+    return { text: who ? `${who}: ${t.preview}` : t.preview, bold: unread === 1 };
+  }
   if (unread === 1) return { text: t.preview || "Sent you a message", bold: true };
   if (t.previewIsMine) {
     // Still going up (a photo/video isn't sent until its bytes are in).
@@ -155,12 +168,15 @@ function otherSeenAt(t: InboxThread): string | null {
   return null;
 }
 
-function InboxRow({ thread, now, selected, onRemove, onBlock }: { thread: InboxThread; now: Date; selected: boolean; onRemove: () => void; onBlock: () => void }) {
+function InboxRow({ thread, now, selected, onRemove, onBlock, onLeave }: { thread: InboxThread; now: Date; selected: boolean; onRemove: () => void; onBlock: () => void; onLeave: () => void }) {
+  const { user } = useAppState();
+  const me = user?.id ?? null;
+  const group = isGroupRow(thread.row);
   const line = secondLine(thread, now);
   const unread = threadUnread(thread);
   const when = thread.row.lastMessageAt ?? thread.row.createdAt;
   const [menu, setMenu] = useState(false);
-  const [confirm, setConfirm] = useState<"remove" | "block" | null>(null);
+  const [confirm, setConfirm] = useState<"remove" | "block" | "leave" | null>(null);
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(false);
@@ -173,9 +189,13 @@ function InboxRow({ thread, now, selected, onRemove, onBlock }: { thread: InboxT
   return (
     <div className={clsx("relative group hairline-b", selected ? "bg-surface/60" : "hover:bg-surface/40", "transition-colors")}>
       <Link href={`/messages/${encodeURIComponent(thread.row.id)}`} className="flex items-center gap-3.5 pl-4 pr-14 py-2.5">
-        <FlairAvatar user={otherFlair(thread.row)} size={48} />
+        {group ? <GroupAvatar members={othersOf(thread.row, me)} size={48} /> : <FlairAvatar user={otherFlair(thread.row)} size={48} />}
         <span className="flex flex-col gap-1 min-w-0 flex-1">
-          <FlairName user={otherFlair(thread.row)} className={clsx("self-start", unread > 0 ? "t-label-lg" : "t-body-md")} />
+          {group ? (
+            <span className={clsx("truncate text-primary", unread > 0 ? "t-label-lg" : "t-body-md")}>{conversationTitle(thread.row, me)}</span>
+          ) : (
+            <FlairName user={otherFlair(thread.row)} className={clsx("self-start", unread > 0 ? "t-label-lg" : "t-body-md")} />
+          )}
           <span className={clsx("truncate", line.bold ? "t-label-md text-primary" : "t-body-sm text-muted")}>{line.text}</span>
         </span>
         <span className="flex flex-col items-end gap-1.5 shrink-0">
@@ -194,8 +214,14 @@ function InboxRow({ thread, now, selected, onRemove, onBlock }: { thread: InboxT
         </button>
         {menu ? (
           <div className="absolute right-0 top-9 z-20 min-w-44 ledger py-1" role="menu">
-            <MenuItem onClick={() => setConfirm("remove")} icon={<Trash2 size={15} />} className="text-primary">Remove chat</MenuItem>
-            <MenuItem onClick={() => setConfirm("block")} icon={<Hand size={15} />} className="text-error">Block</MenuItem>
+            {group ? (
+              <MenuItem onClick={() => setConfirm("leave")} icon={<LogOut size={15} />} className="text-error">Leave</MenuItem>
+            ) : (
+              <>
+                <MenuItem onClick={() => setConfirm("remove")} icon={<Trash2 size={15} />} className="text-primary">Remove chat</MenuItem>
+                <MenuItem onClick={() => setConfirm("block")} icon={<Hand size={15} />} className="text-error">Block</MenuItem>
+              </>
+            )}
           </div>
         ) : null}
       </span>
@@ -203,6 +229,11 @@ function InboxRow({ thread, now, selected, onRemove, onBlock }: { thread: InboxT
         open={confirm === "remove"} title="Remove chat?"
         message="This conversation leaves your inbox. A new message from either side brings it back."
         confirmTitle="Remove" onConfirm={() => { setConfirm(null); onRemove(); }} onCancel={() => setConfirm(null)}
+      />
+      <ConfirmDialog
+        open={confirm === "leave"} title="Leave this group?"
+        message="You'll stop getting its messages. Someone can add you back."
+        confirmTitle="Leave" destructive onConfirm={() => { setConfirm(null); onLeave(); }} onCancel={() => setConfirm(null)}
       />
       <ConfirmDialog
         open={confirm === "block"} title={`Block @${thread.row.otherUsername}?`}

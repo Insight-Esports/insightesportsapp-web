@@ -69,6 +69,8 @@ function roster(h, ctx) {
       // League gold once the feed has it (rev 2: `gold`).
       gold: ctx.game === "League" ? Math.round(7000 + h.rand(i * 13 + 1) * 7500) : null,
       agent: ctx.game === "CS2" ? null : agent,
+      // Round stats (VALORANT / CS2) once the feed has counted them; League never sends them.
+      ...(ctx.game === "League" ? {} : { firstBloods: Math.round(h.rand(i * 17 + ctx.own) * 4), clutchWins: i === 3 ? null : Math.round(h.rand(i * 19 + ctx.opp) * 1.6) }),
     };
   }).sort((a, b) => b.plusMinus - a.plusMinus || b.kills - a.kills);
 }
@@ -77,8 +79,8 @@ const MAP_POOL = { VALORANT: ["Ascent", "Lotus", "Bind", "Haven", "Split", "Iceb
 // Rev 2 team line: every stat that matters for the game, with `good` (is the
 // pace good news — ahead on deaths isn't).
 const TEAM_AVG = {
-  VALORANT: { kills: 68, deaths: 62, assists: 24, plus_minus: 5, acs: 214, adr: 141, headshots: 27 },
-  CS2: { kills: 72, deaths: 66, assists: 20, plus_minus: 4, adr: 80, headshots: 34 },
+  VALORANT: { kills: 68, deaths: 62, assists: 24, plus_minus: 5, acs: 214, adr: 141, headshots: 27, first_bloods: 11.5, clutch_wins: 2.4 },
+  CS2: { kills: 72, deaths: 66, assists: 20, plus_minus: 4, adr: 80, headshots: 34, first_bloods: 12.2, clutch_wins: 2.1 },
   League: { kills: 15, deaths: 11, assists: 34, plus_minus: 3, gold_earned: 61000 },
 };
 const AVERAGE_STATS = ["acs", "adr"];
@@ -89,6 +91,7 @@ function teamLines(ctx, players) {
     kills: sum("kills"), deaths: sum("deaths"), assists: sum("assists"), plus_minus: sum("plusMinus"),
     acs: ctx.game === "VALORANT" ? Math.round(mean("acs")) : undefined, adr: ctx.game === "CS2" ? round1(mean("adr")) : ctx.game === "VALORANT" ? 138 : undefined,
     headshots: ctx.game === "League" ? undefined : Math.round(sum("kills") * 0.38), gold_earned: ctx.game === "League" ? sum("gold") : undefined,
+    first_bloods: ctx.game === "League" ? undefined : sum("firstBloods"), clutch_wins: ctx.game === "League" ? undefined : sum("clutchWins"),
   };
   return Object.entries(TEAM_AVG[ctx.game]).flatMap(([stat, avg]) => {
     const current = live[stat];
@@ -163,17 +166,20 @@ export function register(app, h) {
     const ctx = liveCtx(req, res);
     if (!ctx) return;
     const { stat, baseline, direction = "over" } = req.body ?? {};
-    if (!["kills", "plus_minus"].includes(stat)) return res.status(400).json({ error: `stat must be one of kills, plus_minus for ${ctx.game} teams` });
+    const teamStats = ctx.game === "League" ? ["kills", "plus_minus"] : ["kills", "plus_minus", "first_bloods", "clutch_wins"];
+    if (!teamStats.includes(stat)) return res.status(400).json({ error: `stat must be one of ${teamStats.join(", ")} for ${ctx.game} teams` });
     const line = Number(baseline);
     if (!Number.isFinite(line)) return res.status(400).json({ error: "baseline must be a number" });
     const players = roster(h, ctx);
-    const current = stat === "kills" ? players.reduce((a, p) => a + p.kills, 0) : players.reduce((a, p) => a + p.plusMinus, 0);
+    const field = { kills: "kills", plus_minus: "plusMinus", first_bloods: "firstBloods", clutch_wins: "clutchWins" }[stat];
+    const word = { kills: "kills", plus_minus: "+/−", first_bloods: "first bloods", clutch_wins: "clutches" }[stat];
+    const current = players.reduce((a, p) => a + (p[field] ?? 0), 0);
     const under = direction === "under";
     if (stat !== "plus_minus") {
-      if (!under && current > line) return res.status(400).json({ error: `${ctx.teamName} already have ${current} kills, so this line is already settled. Try a line of ${current} or higher.` });
-      if (under && current >= line) return res.status(400).json({ error: `${ctx.teamName} already have ${current} kills, so this line is already settled. Try a line above ${current}.` });
+      if (!under && current > line) return res.status(400).json({ error: `${ctx.teamName} already have ${current} ${word}, so this line is already settled. Try a line of ${current} or higher.` });
+      if (under && current >= line) return res.status(400).json({ error: `${ctx.teamName} already have ${current} ${word}, so this line is already settled. Try a line above ${current}.` });
     }
-    const avgK = stat === "kills" ? TEAM_KILLS[ctx.game] : 5;
+    const avgK = stat === "kills" ? TEAM_KILLS[ctx.game] : stat === "plus_minus" ? 5 : TEAM_AVG[ctx.game][stat] ?? 5;
     const projected = round1(current + avgK * (1 - ctx.fractionDone));
     const z = (line - projected) / Math.max(1.5, avgK * 0.18);
     const pUnder = 0.5 * (1 + Math.tanh(z * 0.85));
@@ -185,13 +191,13 @@ export function register(app, h) {
       targetType: "team", live: true, matchId: ctx.m.id, teamId: req.body.teamId, team: ctx.teamName, game: ctx.game, stat,
       baseline: line, direction, confidence: whole, probabilityExact: Math.round(p * 1000) / 10,
       prediction: whole > 60 ? "LIKELY" : whole < 40 ? "UNLIKELY" : "TOSS UP",
-      summary: `${ctx.teamName} have ${current} ${stat === "kills" ? "kills" : "+/−"} at ${ctx.own} to ${ctx.opp} vs ${ctx.opponentName}, ${Math.round(ctx.fractionDone * 100)}% done. Projecting about ${projected} by the end. Their live chance of ${under ? "under" : "over"} ${line} is ${whole}%.`,
+      summary: `${ctx.teamName} have ${current} ${word} at ${ctx.own} to ${ctx.opp} vs ${ctx.opponentName}, ${Math.round(ctx.fractionDone * 100)}% done. Projecting about ${projected} by the end. Their live chance of ${under ? "under" : "over"} ${line} is ${whole}%.`,
       trend: "STABLE", careerAverage: avgK, last10Average: round1(last10Games.reduce((a, g) => a + g.statValue, 0) / 10), last10Games,
       opponentName: ctx.opponentName, opponentId: ctx.opponentId, opponentLogoUrl: ctx.opponentLogoUrl,
       vsOpponentGames: vs, vsOpponentAverage: round1(vs.reduce((a, g) => a + g.statValue, 0) / vs.length),
       vsOpponentSummary: `${vs.length} prior games vs ${ctx.opponentName}`,
       lowHistory: false, historyWarning: null, liveCurrentValue: current,
-      probabilityDisplay: `${whole}% chance of ${under ? "under" : "over"} ${line} ${stat === "kills" ? "kills" : "+/−"} (live)`,
+      probabilityDisplay: `${whole}% chance of ${under ? "under" : "over"} ${line} ${word} (live)`,
       projection: { currentValue: current, projectedFinal: projected, kind: "total", value: projected },
       disclaimer: DISCLAIMER, cached: false,
     });

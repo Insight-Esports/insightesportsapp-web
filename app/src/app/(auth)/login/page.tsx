@@ -71,7 +71,7 @@ export default function LoginPage() {
     <div className="min-h-dvh flex flex-col items-center px-6 pt-[60px] pb-10">
       <div className="flex flex-col items-center gap-3">
         <BrandMark size={80} />
-        <span className="t-headline-lg text-brand-gradient">Insight</span>
+        <span className="t-headline-lg text-violet">Insight</span>
         <span className="t-body-md text-muted">Live Esports Stats</span>
       </div>
 

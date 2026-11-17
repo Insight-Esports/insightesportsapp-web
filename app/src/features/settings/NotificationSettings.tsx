@@ -16,11 +16,14 @@ import { useAppState } from "@/store/app-state";
 import { featureState } from "@/features/matches/live/feature-status";
 import { SettingsFrame, SettingsSection, SettingsToggleRow } from "./components";
 
-const STAT_ALERT_TYPES = new Set<NotificationTypeId>(["stat_alert_live", "stat_alert_result"]);
+const STAT_ALERT_TYPES = new Set<NotificationTypeId>(["stat_alert_live", "stat_alert_pace", "stat_alert_slipping", "stat_alert_result"]);
 
+// The same groups as NotificationSettingsView.swift. Like iOS, no row for Player Highlights
+// (`followed_player_standout`), final scores, pre-game or the big-match / big-news types:
+// those pushes follow the server's defaults.
 const GROUPS: { title: string; types: NotificationTypeId[] }[] = [
   { title: "Match Alerts", types: ["followed_starting_soon", "mid_match", "followed_result"] },
-  { title: "Your Activity", types: ["prediction_resolved", "poll_resolved", "weekly_report", "streak_milestone", "badge_earned", "stat_alert_live", "stat_alert_result"] },
+  { title: "Your Activity", types: ["prediction_resolved", "poll_resolved", "weekly_report", "streak_milestone", "badge_earned", "stat_alert_live", "stat_alert_pace", "stat_alert_slipping", "stat_alert_result"] },
   { title: "Leaderboard", types: LEADERBOARD_TYPES },
   { title: "Social", types: ["new_follower", "followed_news"] },
 ];
@@ -35,7 +38,7 @@ const HOURS = Array.from({ length: 24 }, (_, h) => `${String(h).padStart(2, "0")
 const deviceTZ = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return "UTC"; } };
 
 export function NotificationSettings() {
-  // The two Stat Alerts toggles follow the stat_alerts switch.
+  // The Stat Alerts toggles (Live, On Pace, Falling Behind, Results) follow the stat_alerts switch.
   const alertsOff = featureState(useAppState().status, "stat_alerts").off;
   const fetched = useFetch(async (signal) => normalizePreferences(await api.get<Json>(endpoints.notificationPreferences, { signal })), []);
   const [prefs, setPrefs] = useState<NotificationPreferences | null>(null);

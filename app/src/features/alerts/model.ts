@@ -51,6 +51,14 @@ export interface ActiveAlert extends AlertBase {
   createdAt: string | null;
   /** Present while the alert's match is live: the live value, and when the live push went out. */
   live: { value: number | null; firedAt: string | null } | null;
+  /** Premium (smartAlertService.decorate): the chance this call had when it
+   *  was set and, while its match is live, the chance now (0–100). Free
+   *  accounts get `chance: null` → both null. */
+  chanceAtSet: number | null;
+  chanceNow: number | null;
+  /** Premium: when the "on pace" / "falling behind" pushes went out for this match. */
+  onPaceAt: string | null;
+  fallingBehindAt: string | null;
 }
 
 export interface HistoryAlert extends AlertBase {
@@ -107,7 +115,14 @@ function normalizeBase(raw: Json): AlertBase {
 
 export function normalizeActive(raw: Json): ActiveAlert {
   const live = raw?.live && typeof raw.live === "object" ? { value: num(raw.live.value), firedAt: iso(raw.live.fired_at) } : null;
-  return { ...normalizeBase(raw), id: String(raw.id), repeat: raw.repeat === true || raw.repeat === "true", createdAt: iso(raw.created_at), live };
+  const chance = raw?.chance && typeof raw.chance === "object" ? raw.chance : null;
+  const smart = raw?.smart && typeof raw.smart === "object" ? raw.smart : null;
+  const pct = (v: Json) => { const n = num(v); return n == null ? null : Math.round(n); };
+  return {
+    ...normalizeBase(raw), id: String(raw.id), repeat: raw.repeat === true || raw.repeat === "true", createdAt: iso(raw.created_at), live,
+    chanceAtSet: pct(chance?.at_set), chanceNow: pct(chance?.now),
+    onPaceAt: iso(smart?.on_pace_at), fallingBehindAt: iso(smart?.falling_behind_at),
+  };
 }
 
 export function normalizeHistory(raw: Json): HistoryAlert {
@@ -276,6 +291,17 @@ export function isReached(a: ActiveAlert): boolean {
   const v = a.live.value, t = a.target;
   return a.direction !== "under" && v != null && t != null && CUMULATIVE.has(a.stat ?? "") && v >= t;
 }
+
+/** "50% → 85% chance" while the match is live, "50% chance" before it; null without a chance (free). */
+export function chanceLine(a: Pick<ActiveAlert, "chanceAtSet" | "chanceNow">): string | null {
+  const steps = [a.chanceAtSet, a.chanceNow].filter((x): x is number => x != null).map((x) => `${x}%`);
+  return steps.length ? `${steps.join(" → ")} chance` : null;
+}
+
+/** The later of the two smart pushes is where the call stands. */
+const stamp = (s: string | null) => (s ? new Date(s).getTime() : -Infinity);
+export const isOnPace = (a: Pick<ActiveAlert, "onPaceAt" | "fallingBehindAt">) => !!a.onPaceAt && stamp(a.onPaceAt) > stamp(a.fallingBehindAt);
+export const isFallingBehind = (a: Pick<ActiveAlert, "onPaceAt" | "fallingBehindAt">) => !!a.fallingBehindAt && stamp(a.fallingBehindAt) > stamp(a.onPaceAt);
 
 /** "12 – 9" from a pair. */
 export const scorePair = (a: number | null | undefined, b: number | null | undefined) => (a == null || b == null ? null : `${a} – ${b}`);

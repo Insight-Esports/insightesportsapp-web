@@ -63,7 +63,10 @@ const BASE = {
   CS2: { kills: [18, 5], deaths: [15, 3], assists: [4, 2], adr: [81, 14], headshots: [9, 3.5], plus_minus: [3, 8], kills_t_side: [9, 3], kills_ct_side: [9, 3], first_bloods: [2, 1.4], clutch_wins: [0.5, 0.7] },
   League: { kills: [3.6, 2], deaths: [2.1, 1.4], assists: [6.5, 3], cs_per_min: [8.7, 1.1], gold_earned: [13800, 2400], vision_score: [36, 10], plus_minus: [1.5, 3], damage_dealt: [19500, 5000], gold_diff_at_15: [320, 500] },
 };
-const TEAM_BASE = { VALORANT: { kills: [68, 12], plus_minus: [5, 12] }, CS2: { kills: [72, 12], plus_minus: [4, 12] }, League: { kills: [15, 6], plus_minus: [3, 6] } };
+// Round stats (round-stats-contract): a team's first bloods / clutches are the roster's totals; League has neither.
+const TEAM_BASE = { VALORANT: { kills: [68, 12], plus_minus: [5, 12], first_bloods: [11.5, 3], clutch_wins: [2.4, 1.2] }, CS2: { kills: [72, 12], plus_minus: [4, 12], first_bloods: [12.2, 3], clutch_wins: [2.1, 1.1] }, League: { kills: [15, 6], plus_minus: [3, 6] } };
+// The team overview's avgStats / bestGame keys are camelCase (predictionService getTeamOverview).
+const TEAM_KEY = { plus_minus: "plusMinus", first_bloods: "firstBloods", clutch_wins: "clutchWins" };
 const STAT_COLUMNS = {
   VALORANT: ["kills", "deaths", "assists", "acs", "adr", "headshots", "plus_minus", "first_bloods", "clutch_wins"],
   CS2: ["kills", "deaths", "assists", "adr", "headshots", "plus_minus", "kills_t_side", "kills_ct_side", "first_bloods", "clutch_wins"],
@@ -166,13 +169,14 @@ function period(h, seed, game, labelText, n, team, columns) {
   const wins = Math.round(n * (0.45 + h.rand(seed) * 0.3));
   const losses = n - wins;
   const avgStats = {};
+  const keyOf = (c) => (team ? TEAM_KEY[c] ?? c : c === "plus_minus" ? "plusMinus" : c);
   for (const c of columns) {
     const [mean, spread] = (team ? TEAM_BASE[game] : BASE[game])[c] ?? [10, 3];
-    const key = c === "plus_minus" ? "plusMinus" : c;
-    avgStats[key] = fmt(mean + (h.rand(seed + hash(c)) - 0.5) * spread * 0.6);
+    avgStats[keyOf(c)] = fmt(mean + (h.rand(seed + hash(c)) - 0.5) * spread * 0.6);
   }
+  // The best game carries the full stat line (nine stats in the round-based games).
   const bestStats = {};
-  for (const c of columns.slice(0, 5)) bestStats[c === "plus_minus" ? "plusMinus" : c] = fmt((avgStats[c === "plus_minus" ? "plusMinus" : c] ?? 1) * 1.45);
+  for (const c of columns) bestStats[keyOf(c)] = fmt((avgStats[keyOf(c)] ?? 1) * 1.45);
   const form = Array.from({ length: Math.min(10, n) }, (_, i) => (h.rand(seed + i * 17) > 0.42 ? "W" : "L")).join("");
   return {
     label: labelText, gamesPlayed: n, wins, losses, winRate: `${Math.round((wins / n) * 100)}%`, record: `${wins}-${losses}`,

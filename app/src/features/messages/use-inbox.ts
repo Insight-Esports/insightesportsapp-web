@@ -5,19 +5,31 @@
 // read ledger, and anything the socket delivered since the last load. A
 // row changes the moment something happens (preview, time, position,
 // dot) and the list reloads after, never the other way round.
+//
+// Nov 17: a message this browser can't open is never the preview and never
+// counted (the newest that does open stands in, service.serverPreview), and
+// opening the inbox takes back key versions reported lost that this browser
+// holds (at most every 10 s), reloading when any came back.
+//
+// Nov 17 (parity N5-4, N12-5): group rows (their key context, "karlo: text"
+// previews, Leave instead of Remove / Block, a group's changes over the
+// socket), and the re-read behind the personal socket: every 5 s while it's
+// down, once when it comes back, every 30 s while it's up; never while the
+// tab is hidden or the server is busy.
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, endpoints } from "@/lib/api";
+import { api, ApiError, endpoints, isServerBusy } from "@/lib/api";
 import { normalizePremiumStyle, normalizeTitle, type Json } from "@/lib/types";
 import { useAppState } from "@/store/app-state";
 import {
-  blockUser, decrypt, expireStalePending, messages as fetchMessages, newestFor, noteLatest, onDM, refreshUnread, removeConversation, conversations as fetchConversations, unreadFor,
+  blockUser, contextForRow, decryptIn, expireStalePending, keyContextOf, leaveGroup, messages as fetchMessages, newestFor, noteLatest, onDM, reclaimHeldVersions, refreshUnread, removeConversation,
+  conversations as fetchConversations, serverPreview, socketConnected, unreadFor,
 } from "./service";
 import { forgetRow, onReadLocal, onRemovedLocal, openConversationId, rememberRows } from "./dm-local";
 import { onBlockChange } from "@/features/moderation/blocked";
 import { laterOf } from "./format-dm";
-import { isPendingId, type DMConversationRow, type DMMessage, type DMMessageRow, type SearchUser } from "./types";
+import { isGroupRow, isPendingId, memberOf, type DMConversationRow, type DMMessage, type DMMessageRow, type SearchUser } from "./types";
 
 export interface InboxThread {
   row: DMConversationRow;
@@ -25,7 +37,12 @@ export interface InboxThread {
   previewIsMine: boolean;
   /** The message the preview shows — makes live updates idempotent. */
   newestId: string | null;
+  /** A group: who said the preview, when it wasn't you. */
+  previewSender: string | null;
 }
+/** A group's preview line names who said it. */
+const senderName = (row: DMConversationRow, mine: boolean, senderId: string | null): string | null =>
+  isGroupRow(row) && !mine && senderId ? memberOf(row, senderId)?.username ?? null : null;
 export const threadUnread = (t: InboxThread) => t.row.unreadCount ?? 0;
 
 interface FollowRowLite { id?: string | null; target_id?: string | null; username?: string | null; avatar_url?: string | null; is_premium?: boolean | null; premium_style?: unknown; title?: string | null }
@@ -67,7 +84,8 @@ export function useInbox(enabled: boolean) {
     try { newest = (await fetchMessages(row.id)).messages[0]; } catch { /* keep the row as is */ }
     if (!newest) { verifiedAt.current.set(row.id, stamp); return; }
     verifiedAt.current.set(row.id, laterOf(stamp, newest.createdAt) ?? stamp);
-    const m = await decrypt(newest, row.otherId, row.otherPublicKey, row.otherKeyVersion);
+    const m = await decryptIn(newest, keyContextOf(row));
+    if (!m.decrypted) return;   // hidden: the row's preview finds one that opens
     const have = newestFor(row)?.local;
     if (have && isPendingId(have.id)) {
       // A send is in flight: only its own confirmation may replace it.
@@ -107,16 +125,20 @@ export function useInbox(enabled: boolean) {
       for (const row of rows.slice(0, 20)) await verifyLatest(row);
       const built: InboxThread[] = [];
       for (const row of rows) {
+        // Preview: the newest this browser knows — local when newer than the
+        // server's last_message, else the server's; one that won't open here
+        // is skipped for the newest that does.
+        const opened = await serverPreview(row);
         const newest = newestFor(row);
         let preview = "";
         let mine = false;
+        let from: string | null = null;
         if (newest?.local) {
-          preview = newest.local.text; mine = newest.local.isMine;
-        } else if (row.lastMessage) {
-          const m = await decrypt(row.lastMessage, row.otherId, row.otherPublicKey, row.otherKeyVersion);
-          preview = m.text; mine = m.isMine;
+          preview = newest.local.text; mine = newest.local.isMine; from = newest.local.senderId;
+        } else if (opened) {
+          preview = opened.text; mine = opened.isMine; from = opened.senderId;
         }
-        const t: InboxThread = { row: { ...row }, preview, previewIsMine: mine, newestId: newest?.id ?? null };
+        const t: InboxThread = { row: { ...row }, preview, previewIsMine: mine, newestId: newest?.id ?? null, previewSender: senderName(row, mine, from) };
         if (newest) t.row.lastMessageAt = laterOf(t.row.lastMessageAt, newest.at);
         t.row.unreadCount = unreadFor(row);
         built.push(t);
@@ -147,7 +169,7 @@ export function useInbox(enabled: boolean) {
     // Apply only if this is now the newest we know.
     if (newestFor(cur.row)?.local?.id !== message.id) return;
     if (cur.newestId === message.id) return;
-    const t: InboxThread = { ...cur, row: { ...cur.row }, newestId: message.id, preview: message.text, previewIsMine: message.isMine };
+    const t: InboxThread = { ...cur, row: { ...cur.row }, newestId: message.id, preview: message.text, previewIsMine: message.isMine, previewSender: senderName(cur.row, message.isMine, message.senderId) };
     t.row.lastMessageAt = laterOf(t.row.lastMessageAt, message.createdAt);
     if (message.isMine) t.row.unreadCount = 0;
     else if (openConversationId() !== conversationId) t.row.unreadCount = (t.row.unreadCount ?? 0) + 1;
@@ -160,8 +182,8 @@ export function useInbox(enabled: boolean) {
   /** Socket row → decrypt → the row updates now; a brand-new conversation only exists on the server. */
   const noteIncoming = useCallback(async (conversationId: string, row: DMMessageRow) => {
     const other = threadsRef.current.find((t) => t.row.id === conversationId)?.row;
-    const m = await decrypt(row, other?.otherId ?? row.senderId, other?.otherPublicKey ?? null, other?.otherKeyVersion ?? null);
-    noteLocal(conversationId, m);
+    const m = await decryptIn(row, other ? keyContextOf(other) : contextForRow(row, conversationId));
+    if (m.decrypted) noteLocal(conversationId, m);    // hidden: no preview, no count
     if (!other) await load();
   }, [load, noteLocal]);
 
@@ -182,12 +204,17 @@ export function useInbox(enabled: boolean) {
 
   const remove = useCallback((t: InboxThread) => { drop(t.row.id); void removeConversation(t.row.id).then(() => { void refreshUnread(); syncUnread(); }); }, [drop, syncUnread]);
   const block = useCallback((t: InboxThread) => { drop(t.row.id); void blockUser(t.row.otherId).then(() => { void refreshUnread(); syncUnread(); }); }, [drop, syncUnread]);
+  /** Out of a group: the row goes now; the others rotate their key. */
+  const leave = useCallback((t: InboxThread) => { drop(t.row.id); void leaveGroup(t.row).catch(() => {}).then(() => { void refreshUnread(); syncUnread(); }); }, [drop, syncUnread]);
 
   // ── Lifecycle ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!enabled) return;
     void load();
+    // Take back what another device of mine hid that this browser can open.
+    void reclaimHeldVersions();
     const offs = [
+      onDM("keysReclaimed", () => { void load(); }),
       onDM("message", ({ conversationId, message }) => { void noteIncoming(conversationId, message); }),
       onDM("localMessage", ({ conversationId, message }) => noteLocal(conversationId, message)),
       onDM("read", () => { setTimeout(() => setTick((t) => t + 1), 150); }),   // the ledger is written first; redraw after
@@ -195,6 +222,8 @@ export function useInbox(enabled: boolean) {
       // An unsent or edited message: the preview falls back / follows (re-read).
       onDM("deleted", () => { void load(); }),
       onDM("edited", () => { void load(); }),
+      // A group's name or people changed (or I'm out of it): the row is read again.
+      onDM("groupUpdated", ({ conversationId, removed }) => { if (removed) drop(conversationId); else void load(); }),
       // Blocked anywhere in the app: their thread leaves the inbox now.
       onBlockChange((userId, blocked) => {
         if (!blocked) return;
@@ -207,8 +236,21 @@ export function useInbox(enabled: boolean) {
     const onFocus = () => { if (document.visibilityState === "visible") void load(); };
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onFocus);
-    // Fallback freshness: previews and new threads land even if a socket event is missed.
-    const poll = setInterval(() => { if (document.visibilityState === "visible") void load(); }, 15_000);
+    // The socket brings previews and new threads as they happen; this
+    // re-read is the safety net behind it (N12-5): every 5 s while the
+    // socket is down, once when it comes back, every 30 s while it's up, and
+    // not while the server is asking for room (503 OVERLOADED).
+    let sinceRead = 0;
+    let wasConnected = socketConnected();
+    const poll = setInterval(() => {
+      sinceRead += 5;
+      const connected = socketConnected();
+      const due = !connected || !wasConnected || sinceRead >= 30;
+      wasConnected = connected;
+      if (!due || document.visibilityState !== "visible" || isServerBusy()) return;
+      sinceRead = 0;
+      void load();
+    }, 5000);
     return () => {
       offs.forEach((off) => off());
       window.removeEventListener("focus", onFocus);
@@ -217,5 +259,5 @@ export function useInbox(enabled: boolean) {
     };
   }, [enabled, load, noteIncoming, noteLocal, drop, noteRead, syncUnread]);
 
-  return { threads, suggested, isLoading, error, connectionProblem, tick, load, remove, block, drop };
+  return { threads, suggested, isLoading, error, connectionProblem, tick, load, remove, block, leave, drop };
 }

@@ -12,6 +12,9 @@
 // Storage: IndexedDB, origin-bound. Nothing is ever published from here —
 // the phone owns the key; this file only verifies that what arrived is
 // the account's current key (GET /dm/keys/:me) and remembers its version.
+// Each link files the key twice: as "current" and as "v<N>". A relink with
+// a newer key leaves the older "v<N>" rows in place, so the browser keeps
+// every version it was ever handed (what /dm/keys/lost asks about).
 "use client";
 
 import { b64decode, b64encode, publicKeyFor } from "./crypto";
@@ -106,13 +109,80 @@ export async function loadKeyForVersion(userId: string, version: number): Promis
   }
 }
 
+/** Every key this browser holds for the account (the current one and each
+ *  `v<N>` kept from earlier links), whatever number it is filed under. */
+export async function allKeys(userId: string): Promise<StoredKey[]> {
+  try {
+    const rows = (await tx<StoredKey[]>("readonly", (s) => s.getAll())) ?? [];
+    return rows.filter((k) => k && String(k.userId) === String(userId) && k.privateKey?.length === 32);
+  } catch {
+    return [];
+  }
+}
+
+/** One of my keys, matched by its public half (base64 raw), or null. */
+export async function heldKeyForPublic(userId: string, publicKeyB64: string): Promise<StoredKey | null> {
+  for (const k of await allKeys(userId)) {
+    if (publicKeyBase64(k.privateKey) === publicKeyB64) return k;
+  }
+  return null;
+}
+
+/** Files a key under another version number too (DMKeys.remember): a key
+ *  the server knows by a number this browser hadn't filed it under. The
+ *  current key is left as it is. */
+export async function rememberVersion(k: StoredKey, version: number): Promise<void> {
+  try { await tx("readwrite", (s) => s.put({ ...k, version }, `v${version}`)); } catch { /* best effort */ }
+}
+
 export async function saveKey(k: StoredKey): Promise<void> {
   await tx("readwrite", (s) => s.put(k, CURRENT));
   await tx("readwrite", (s) => s.put(k, `v${k.version}`));
   memo = k; memoFor = String(k.userId);
 }
 
+// ── Group keys (DMKeys.groupKey / storeGroupKey / groupKeyVersions) ────────
+// One random 32-byte key a group and version, sealed to every member with
+// the pair's key. Once opened here it is kept in the same store, under
+// "group-<account>-<conversation>-v<N>" (never read by allKeys: no privateKey).
+export interface StoredGroupKey { kind: "group"; userId: string; conversationId: string; version: number; key: Uint8Array }
+const groupSlot = (userId: string, conversationId: string, version: number) => `group-${userId}-${conversationId}-v${version}`;
+const groupMemo = new Map<string, Uint8Array>();
+
+export async function loadGroupKey(userId: string, conversationId: string, version: number): Promise<Uint8Array | null> {
+  const slot = groupSlot(userId, conversationId, version);
+  const hit = groupMemo.get(slot);
+  if (hit) return hit;
+  try {
+    const k = (await tx<StoredGroupKey | undefined>("readonly", (s) => s.get(slot))) ?? null;
+    if (!k || String(k.userId) !== String(userId) || k.key?.length !== 32) return null;
+    groupMemo.set(slot, k.key);
+    return k.key;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveGroupKey(userId: string, conversationId: string, version: number, key: Uint8Array): Promise<void> {
+  const slot = groupSlot(userId, conversationId, version);
+  groupMemo.set(slot, key);
+  try { await tx("readwrite", (s) => s.put({ kind: "group", userId, conversationId, version, key } satisfies StoredGroupKey, slot)); } catch { /* kept in memory for this tab */ }
+}
+
+/** The versions held for a group, oldest first. */
+export async function groupKeyVersions(userId: string, conversationId: string): Promise<number[]> {
+  const prefix = `group-${userId}-${conversationId}-v`;
+  const out = new Set<number>();
+  for (const slot of groupMemo.keys()) if (slot.startsWith(prefix)) out.add(Number(slot.slice(prefix.length)));
+  try {
+    const keys = (await tx<IDBValidKey[]>("readonly", (s) => s.getAllKeys())) ?? [];
+    for (const k of keys) if (typeof k === "string" && k.startsWith(prefix)) out.add(Number(k.slice(prefix.length)));
+  } catch { /* the memo is what there is */ }
+  return [...out].filter((v) => Number.isInteger(v) && v >= 1).sort((a, b) => a - b);
+}
+
 export async function clearKeys(): Promise<void> {
+  groupMemo.clear();
   memo = undefined; memoFor = null;
   try { await tx("readwrite", (s) => s.clear()); } catch { /* nothing to clear */ }
 }

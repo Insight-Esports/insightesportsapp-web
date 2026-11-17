@@ -39,7 +39,7 @@ export function TabHeader({ title, tools, className, brand }: { title: string; t
       {brand ? (
         <span className="md:hidden flex items-center gap-2 shrink-0">
           <BrandMark size={28} />
-          <span className="text-[20px] font-bold tracking-[-0.5px] text-brand-gradient leading-none">Insight</span>
+          <span className="text-[20px] font-bold tracking-[-0.5px] text-violet leading-none">Insight</span>
         </span>
       ) : <TabHeaderTitle text={title} className="md:hidden" />}
       <div className="flex-1 min-w-2" />

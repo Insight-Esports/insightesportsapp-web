@@ -2,12 +2,17 @@
 //
 // Data strategy (identical to the app):
 //   INSTANT (socket):   round score, map score, current round, game time,
-//                       odds, chat messages, poll vote counts, scoreboard
-//                       rows (stats_update), League team gold (match_update)
-//   POLLED (8s REST):   player stats table, League objectives + gold
-//                       timeline, AND match progress as a socket fallback —
-//                       score and round coloring keep working even if the
-//                       socket can't connect; sockets just make them instant.
+//                       odds, chat messages, poll vote counts, the
+//                       scoreboard (stats_update carries the rows: no
+//                       refetch), gold points (gold_update carries the
+//                       newest: appended when nothing was missed), League
+//                       team gold (match_update)
+//   POLLED (REST):      /progress + /stats (+ League objectives), the
+//                       socket's fallback: every 30 s while the socket is up
+//                       (a reconcile, so a crowd doesn't hit them in step),
+//                       8 s while it's down (then it IS the feed). Both are
+//                       fetched on open and once per reconnect (pushes sent
+//                       while down are lost).
 //
 // The HUD's dots: a cup game's (the row carries `series`) are the SERIES,
 // read from /progress only — its pushes' team1Maps/team2Maps are this game's
@@ -24,7 +29,7 @@ import { applyChatChange, onChatLocal } from "@/features/moderation/chat-actions
 import { liveSeriesInfo } from "@/features/tournaments/series/series-logic";
 import {
   chatDeletedPayload, chatEditedPayload, formatGameTime, mapTeamRows, normalizeChatHistory, normalizeChatMessage,
-  normalizeMatchDetail, normalizePoll, normalizeProgress, normalizeStatRows, placeholderStat,
+  normalizeGoldTimeline, normalizeMatchDetail, normalizePoll, normalizeProgress, normalizeStatRows, placeholderStat,
   resolvedLockedPayout, splitStatRows, teamGoldTotal, viewerLabel, voteCountMap,
   type FanPoll, type GoldTimelinePoint, type LeagueObjective, type LiveChatMessage, type LivePlayerStat, type LiveRound, type MatchStatRow,
 } from "./types";
@@ -66,7 +71,9 @@ export interface LiveMatchState {
   railLoaded: boolean;
 }
 
-const STATS_POLL_MS = 8000;
+/** The /progress + /stats poll: a reconcile while the socket is up, the feed while it's down. */
+const POLL_SOCKET_UP_MS = 30_000;
+const POLL_SOCKET_DOWN_MS = 8_000;
 
 // Last known state per match: reopening a match shows the previous
 // scoreboard/poll/chat at once while the first-screen requests refresh it.
@@ -146,9 +153,14 @@ export function useLiveMatch(match: Match) {
     displayedSeconds: 0,
     lastServerRefresh: 0,
     refreshInFlight: false,
+    /** L: the minute of the newest server gold point held (null until /progress serves a timeline). */
+    lastServerGoldMinute: null as number | null,
+    /** This screen has seen the socket connect: a later connect is a reconnect. */
+    socketHasConnected: false,
+    /** Re-arms the poll at the cadence the connection calls for (set by the polling effect). */
+    rearmPoll: null as (() => void) | null,
     pollId: null as string | null,
     socket: null as Socket | null,
-    stopped: false,
   });
   const isLeague = match.game === "League";
 
@@ -308,6 +320,7 @@ export function useLiveMatch(match: Match) {
         const seeded = p.goldTimeline[0].minute > 0.01 ? [{ minute: 0, goldDiff: 0 }, ...p.goldTimeline] : p.goldTimeline;
         next.goldTimeline = seeded;
         const last = seeded[seeded.length - 1];
+        r.lastServerGoldMinute = last.minute;
         anchorClock(Math.max(r.displayedSeconds, last.minute * 60));
       }
       patch(next);
@@ -361,6 +374,31 @@ export function useLiveMatch(match: Match) {
     r.refreshInFlight = true;
     try { await loadProgress(); } finally { r.refreshInFlight = false; r.lastServerRefresh = Date.now(); }
   }, [loadProgress]);
+
+  /** gold_update {matchId, points, prevMinute} (backend live-push-payloads
+   *  contract): up to ten of the newest points, oldest first, and the minute
+   *  of the point before them. prevMinute <= L (the newest server point held)
+   *  → nothing was missed: the points past L append. A gap, a bare push, or no
+   *  server timeline yet → read /progress (the served array, verbatim). */
+  const applyGoldPush = useCallback((d: Json) => {
+    const r = ref.current;
+    const L = r.lastServerGoldMinute;
+    const raw = d?.prevMinute;
+    const prev = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : NaN;
+    if (L === null || !Array.isArray(d?.points) || !Number.isFinite(prev) || prev > L + 0.001) {
+      void refreshFromServer();
+      return;
+    }
+    const fresh = normalizeGoldTimeline(d.points).filter((p) => p.minute > L + 0.001);
+    const newest = fresh[fresh.length - 1];
+    if (!newest) return;
+    r.lastServerGoldMinute = newest.minute;
+    anchorClock(Math.max(r.displayedSeconds, newest.minute * 60));
+    patch((prevState) => ({
+      goldTimeline: [...prevState.goldTimeline.filter((p) => p.minute <= L + 0.001), ...fresh],
+      liveGoldDiff: newest.goldDiff,
+    }));
+  }, [anchorClock, patch, refreshFromServer]);
 
   const loadDetail = useCallback(async () => {
     const r = ref.current;
@@ -442,16 +480,25 @@ export function useLiveMatch(match: Match) {
   // ── Socket ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const r = ref.current;
-    r.stopped = false;
+    // Per run (not on the ref): a run cleaned up before its socket arrived never attaches.
+    let stopped = false;
     let socket: Socket | null = null;
+    r.socketHasConnected = false;
 
     const onConnect = () => {
       if (!socket) return;
       rooms.joinMatch(socket, match.id);
       if (r.pollId) rooms.joinPoll(socket, r.pollId);
       patch({ socketConnected: true });
+      // Pushes sent while the socket was down are lost: read both once on
+      // every reconnect (the opening fetch covers the first connect).
+      if (r.socketHasConnected && !r.isMatchComplete) {
+        void (async () => { await loadProgress(); await loadStats(true); })();
+      }
+      r.socketHasConnected = true;
+      r.rearmPoll?.();
     };
-    const onDisconnect = () => patch({ socketConnected: false });
+    const onDisconnect = () => { patch({ socketConnected: false }); r.rearmPoll?.(); };
     const pctOf = (v: Json): number | null => (typeof v === "number" ? Math.round(v <= 1 ? v * 100 : v) : null);
 
     const onRoundUpdate = (d: Json) => {
@@ -480,7 +527,10 @@ export function useLiveMatch(match: Match) {
       const decided = d.decided === true;
       patch({ team1WinProbability: decided ? (t1 >= 50 ? 100 : 0) : t1 });
     };
-    const onGold = () => { void refreshFromServer(); };
+    const onGold = (d: Json) => {
+      if (d && typeof d === "object" && d.matchId && String(d.matchId) !== match.id) return;
+      applyGoldPush(d);
+    };
     const goldOf = (v: Json): number | null => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)) ? Math.round(Number(v)) : null);
     // match_update {team1Maps, team2Maps, team1InhibitorsUp, team2InhibitorsUp, team1Gold, team2Gold}
     // (liveDataWriter): the 2s gold tick between scoreboards.
@@ -557,7 +607,7 @@ export function useLiveMatch(match: Match) {
     (async () => {
       try {
         const sock = await getSocket();
-        if (r.stopped) return;
+        if (stopped) return;
         socket = sock;
         r.socket = sock;
         sock.on("connect", onConnect);
@@ -574,11 +624,11 @@ export function useLiveMatch(match: Match) {
         sock.on("match_completed", onMatchCompleted);
         sock.on("stats_update", onStatsUpdate);
         if (sock.connected) onConnect();
-      } catch { /* the 8s REST polling keeps the screen current */ }
+      } catch { /* the 8 s REST poll keeps the screen current */ }
     })();
 
     return () => {
-      r.stopped = true;
+      stopped = true;
       if (socket) {
         if (socket.connected) {
           rooms.leaveMatch(socket, match.id);
@@ -600,7 +650,7 @@ export function useLiveMatch(match: Match) {
       }
       r.socket = null;
     };
-  }, [match.id, applyRoundScore, applyStatRows, isLeague, loadStats, loadWinProbability, patch, rebuildRounds, refreshFromServer, syncGameClock, updateSeriesInfo]);
+  }, [match.id, applyGoldPush, applyRoundScore, applyStatRows, isLeague, loadProgress, loadStats, loadWinProbability, patch, rebuildRounds, refreshFromServer, syncGameClock, updateSeriesInfo]);
 
   // Your own edits and deletes show up at once (moderation/chat-actions.ts),
   // and come back as they were if the server refuses.
@@ -625,18 +675,34 @@ export function useLiveMatch(match: Match) {
       if (active) patch({ initialLoaded: true });
     })();
 
-    const poll = setInterval(() => {
+    // The poll, re-armed at the connection's cadence whenever the socket
+    // connects or drops (LiveMatchView.startPolling): 30 s up, 8 s down.
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    const pollTick = () => {
       const r = ref.current;
-      if (r.isMatchComplete || Date.now() < r.rateLimitedUntil) return;
-      if (document.visibilityState !== "visible") return;
-      r.pollCycle += 1;
-      void (async () => {
-        await loadProgress();
-        // Team gold comes from the pushes while the socket is up; the poll feeds it only when it's down.
-        await loadStats(!r.socket?.connected);
-        if (isLeague && r.pollCycle % 3 === 0) await loadDetail();
-      })();
-    }, STATS_POLL_MS);
+      if (!active || r.isMatchComplete) return;
+      if (Date.now() >= r.rateLimitedUntil && document.visibilityState === "visible") {
+        r.pollCycle += 1;
+        const up = !!r.socket?.connected;
+        void (async () => {
+          await loadProgress();
+          // Team gold comes from the pushes while the socket is up; the poll feeds it only when it's down.
+          await loadStats(!up);
+          // League objectives change slowly: every slow cycle, or every 3rd fast one.
+          if (isLeague && (up || r.pollCycle % 3 === 0)) await loadDetail();
+        })();
+      }
+      armPoll();
+    };
+    const armPoll = () => {
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = null;
+      if (!active || ref.current.isMatchComplete) return;
+      pollTimer = setTimeout(pollTick, ref.current.socket?.connected ? POLL_SOCKET_UP_MS : POLL_SOCKET_DOWN_MS);
+    };
+    const book = ref.current;
+    book.rearmPoll = armPoll;
+    armPoll();
 
     if (isLeague) anchorClock(ref.current.displayedSeconds);
     const clock = isLeague
@@ -658,7 +724,8 @@ export function useLiveMatch(match: Match) {
 
     return () => {
       active = false;
-      clearInterval(poll);
+      if (pollTimer) clearTimeout(pollTimer);
+      if (book.rearmPoll === armPoll) book.rearmPoll = null;
       if (clock) clearInterval(clock);
       document.removeEventListener("visibilitychange", onVis);
     };

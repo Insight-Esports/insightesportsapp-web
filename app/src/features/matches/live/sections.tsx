@@ -11,7 +11,7 @@
 import { flowHref } from "@/features/predictions/flow";
 import { LiveTeamPredictRows } from "@/features/predictions/LiveTeamRows";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Clock, Eye, Flag, MessageCircle, MoveHorizontal } from "lucide-react";
 import { AssetIcon, GamePill, InitialAvatar, LiveBadge, TeamMark } from "@/components/ui";
 import { clsx } from "@/lib/format";
@@ -19,6 +19,8 @@ import { team1Color, team2Color, teamStub, type Match } from "@/lib/types";
 import { prefetchPlayer, prefetchTeam, rememberTeam } from "@/features/entity-cache";
 import { withFromMatch } from "../from-match";
 import { readableSides } from "@/features/tournaments/series/series-logic";
+import { hasNumbers } from "@/features/statcard/model";
+import { cardHref, rememberCardSeed } from "@/features/statcard/seed";
 import type { FanPoll, FanPollOption, LeagueObjective, LivePlayerStat, LiveRound } from "./types";
 
 export function teamHref(id: string | null, name: string): string {
@@ -62,6 +64,8 @@ export interface ScoreHUDProps {
   isLive?: boolean;
   /** Trailing control in the top row (LiveMatchView's Watch pill); the live screen passes it while the match is on. */
   watch?: ReactNode;
+  /** A tournament game on the live screen: the bottom line opens its series (match-links.ts). */
+  seriesLink?: { href: string; onClick?: (e: MouseEvent) => void } | null;
 }
 
 function sideLabel(match: Match, isRoundBased: boolean, raw: string | null | undefined, isTeam1: boolean, team1Score: number, team2Score: number): string | null {
@@ -198,7 +202,22 @@ export function ScoreHUD(p: ScoreHUDProps) {
         </div>
         <HUDTeamColumn p={p} side={2} />
       </div>
-      {p.seriesInfo ? <span className="t-label-sm text-muted text-center">{p.seriesInfo}</span> : null}
+      {p.seriesInfo ? (
+        p.seriesLink ? (
+          // "Quarterfinal · Game 2 of 5 ›": one step brighter, the padding is the tap area.
+          <Link
+            href={p.seriesLink.href}
+            onClick={p.seriesLink.onClick}
+            className="self-center inline-flex items-center gap-1 px-3 py-2 -my-2 rounded-md t-label-sm text-secondary hover:text-primary transition-colors active:opacity-60"
+            title="Open the series"
+          >
+            {p.seriesInfo}
+            <ChevronRight size={10} strokeWidth={3} className="text-muted shrink-0" aria-hidden />
+          </Link>
+        ) : (
+          <span className="t-label-sm text-muted text-center">{p.seriesInfo}</span>
+        )
+      ) : null}
     </SectionBox>
   );
 }
@@ -364,7 +383,7 @@ export function statColumns(game: string): StatColumn[] {
 const NAME_COL = 150;
 const AGENT_COL = 76;
 
-export function StatsTableSection({ team1Color: c1, team2Color: c2, game, team1Name, team2Name, team1Stats, team2Stats, matchId }: { team1Color: string; team2Color: string; game: string; team1Name: string; team2Name: string; team1Stats: LivePlayerStat[]; team2Stats: LivePlayerStat[]; matchId?: string }) {
+export function StatsTableSection({ team1Color: c1, team2Color: c2, game, team1Name, team2Name, team1Stats, team2Stats, matchId, match }: { team1Color: string; team2Color: string; game: string; team1Name: string; team2Name: string; team1Stats: LivePlayerStat[]; team2Stats: LivePlayerStat[]; matchId?: string; /** A live or finished match's scoreboard: a line with numbers opens the player's stat card for it. */ match?: Match }) {
   const columns = statColumns(game);
   const showAgent = game === "VALORANT" || game === "League";
   const agentLabel = game === "VALORANT" ? "Agent" : game === "League" ? "Champ" : "";
@@ -400,7 +419,7 @@ export function StatsTableSection({ team1Color: c1, team2Color: c2, game, team1N
     <div className="flex flex-col">
       <span className="t-label-md py-1.5" style={{ color }}>{name}</span>
       {stats.map((st, i) => (
-        <LivePlayerRow key={st.id || `${name}-${i}`} stat={st} columns={columns} showAgent={showAgent} matchId={matchId} />
+        <LivePlayerRow key={st.id || `${name}-${i}`} stat={st} columns={columns} showAgent={showAgent} matchId={matchId} match={match} teamName={name} />
       ))}
     </div>
   );
@@ -422,7 +441,12 @@ export function StatsTableSection({ team1Color: c1, team2Color: c2, game, team1N
   );
 }
 
-function LivePlayerRow({ stat, columns, showAgent, matchId }: { stat: LivePlayerStat; columns: StatColumn[]; showAgent: boolean; matchId?: string }) {
+function LivePlayerRow({ stat, columns, showAgent, matchId, match, teamName }: { stat: LivePlayerStat; columns: StatColumn[]; showAgent: boolean; matchId?: string; match?: Match; teamName: string }) {
+  // In a match, a line with numbers opens their stat card for it (with the
+  // way on to their page). A lineup row before the first stats: their page.
+  const opensCard = !!match && !!stat.id && hasNumbers(stat);
+  const nameHref = opensCard && match ? cardHref(match.id, stat.id, true) : withFromMatch(playerHref(stat.id, stat.name), matchId);
+  const onNameClick = opensCard && match ? () => rememberCardSeed({ match, stat, teamName }) : undefined;
   const colorFor = (c: StatColumn) => {
     if (c.kind === "primary") return "text-violet";
     if (c.kind === "plusMinus") return stat.plusMinus > 0 ? "text-success" : stat.plusMinus < 0 ? "text-error" : "text-muted";
@@ -443,7 +467,7 @@ function LivePlayerRow({ stat, columns, showAgent, matchId }: { stat: LivePlayer
           ) : null}
         </span>
         {stat.id ? (
-          <Link href={withFromMatch(playerHref(stat.id, stat.name), matchId)} onMouseEnter={() => prefetchPlayer(stat.id)} className="flex flex-col min-w-0 hover:underline underline-offset-2">
+          <Link href={nameHref} onClick={onNameClick} onMouseEnter={opensCard ? undefined : () => prefetchPlayer(stat.id)} title={opensCard ? `${stat.name}'s stat card` : undefined} className="flex flex-col min-w-0 hover:underline underline-offset-2">
             <span className="t-body-sm text-primary truncate">{stat.name}</span>
             {stat.role ? <span className="t-label-sm text-muted truncate">{stat.role}</span> : null}
           </Link>

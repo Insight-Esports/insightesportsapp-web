@@ -2,8 +2,9 @@
 // composer). Reads the query `entry.ts` builds (type, id, name, game, stat,
 // direction, target, match) or `?edit=<id>` for an alert that exists.
 //
-//   Header → the target's existing alerts → STAT chips (players: the
-//   predictor's stats) or WHAT (teams: Result · Maps · Stats) → TARGET
+//   Header → the target's existing alerts → STAT (players: the predictor's
+//   stats) or WHAT (teams: Result · Maps · Stats), each a two-column grid of
+//   equal boxes so nothing scrolls sideways → TARGET
 //   (At least / Under, a stepper from the last-10 average, the chance) →
 //   the already-settled check on a live match → WHEN → Set.
 "use client";
@@ -27,13 +28,22 @@ import {
 } from "./model";
 import { alertsForTarget, createAlert, updateAlert, useAlerts } from "./store";
 import { alertHref } from "./AlertsList";
-import { AlertList, alertRowClass, AlertsFrame, AlertsOff, Chip, LiveReadout, SectionLabel, Segment, WhenReadout } from "./ui";
+import { AlertList, alertRowClass, AlertsFrame, AlertsOff, ChoiceGrid, GridCell, LiveReadout, SectionLabel, Segment, WhenReadout } from "./ui";
 
 type When = "match" | "every";
 
-/** Where the stepper starts when there's no last-10 average to read. */
+/** Where the stepper starts when there's no last-10 average to read. First bloods
+ *  and clutches (VALORANT / CS2 round stats) are small: about one first blood a
+ *  round shared out (a player 2–5 a map, a roster about 12), clutches rare. */
 function defaultTarget(stat: string, targetType: AlertTargetType, game: string): number {
-  if (targetType === "team") return stat === "kills" ? (game === "League" ? 15 : 60) : 5;
+  if (targetType === "team") {
+    switch (stat) {
+      case "kills": return game === "League" ? 15 : 60;
+      case "first_bloods": return 12;
+      case "clutch_wins": return 3;
+      default: return 5;
+    }
+  }
   switch (stat) {
     case "kills": return game === "League" ? 4 : 15;
     case "deaths": return game === "League" ? 3 : 14;
@@ -41,6 +51,8 @@ function defaultTarget(stat: string, targetType: AlertTargetType, game: string):
     case "acs": return 200;
     case "adr": return game === "CS2" ? 80 : 140;
     case "headshots": return 7;
+    case "first_bloods": return 3;
+    case "clutch_wins": return 1;
     case "plus_minus": return 3;
     case "cs_per_min": return 8.5;
     case "gold_earned": return 12000;
@@ -54,6 +66,7 @@ function rowValue(r: MatchStatRow, stat: string): number | null {
   switch (stat) {
     case "kills": return r.kills; case "deaths": return r.deaths; case "assists": return r.assists;
     case "acs": return r.acs; case "adr": return r.adr; case "headshots": return r.headshots;
+    case "first_bloods": return r.firstBloods; case "clutch_wins": return r.clutchWins;
     case "plus_minus": return r.plusMinus; case "cs_per_min": return r.csPerMin;
     case "gold_earned": return r.goldEarned; case "vision_score": return r.visionScore;
     default: return null;
@@ -392,25 +405,26 @@ function Composer(p: ComposerProps) {
       {targetType === "player" ? (
         <section className="flex flex-col gap-2.5">
           <SectionLabel>STAT</SectionLabel>
-          <div className="flex flex-wrap gap-2">
-            {playerStats.map((s) => <Chip key={s} label={statLabel(s)} selected={key === s} onClick={() => setKey(s)} />)}
-          </div>
+          <ChoiceGrid>
+            {playerStats.map((s) => <GridCell key={s} label={statLabel(s)} selected={key === s} onClick={() => setKey(s)} />)}
+          </ChoiceGrid>
         </section>
       ) : (
         <section className="flex flex-col gap-3">
           <SectionLabel>WHAT</SectionLabel>
           <ChipGroup label="Result">
-            {(bestOf === 1 ? (["win", "lose"] as const) : RESULT_EVENTS).map((e) => (
-              <Chip key={e} label={e === "win" ? "Wins" : e === "lose" ? "Loses" : e === "sweep" ? "Sweep" : "Goes the distance"} selected={key === e} onClick={() => setKey(e)} />
-            ))}
+            {resultOptions(bestOf).map(([e, label]) => <GridCell key={e} label={label} selected={key === e} onClick={() => setKey(e)} />)}
           </ChipGroup>
-          <ChipGroup label="Maps">
-            {Array.from({ length: Math.min(5, Math.max(1, bestOf ?? 3)) }, (_, i) => i + 1).map((n) => (
-              <Chip key={n} label={`Wins map ${n}`} selected={key === `map_${n}`} onClick={() => setKey(`map_${n}`)} />
-            ))}
-          </ChipGroup>
+          {/* A Bo1 has no maps to call. */}
+          {(bestOf ?? 3) > 1 ? (
+            <ChipGroup label="Maps">
+              {Array.from({ length: Math.min(5, bestOf ?? 3) }, (_, i) => i + 1).map((n) => (
+                <GridCell key={n} label={`Wins map ${n}`} selected={key === `map_${n}`} onClick={() => setKey(`map_${n}`)} />
+              ))}
+            </ChipGroup>
+          ) : null}
           <ChipGroup label="Stats">
-            {teamStats.map((s) => <Chip key={s} label={statLabel(s)} selected={key === s} onClick={() => setKey(s)} />)}
+            {teamStats.map((s) => <GridCell key={s} label={statLabel(s)} selected={key === s} onClick={() => setKey(s)} />)}
           </ChipGroup>
         </section>
       )}
@@ -486,11 +500,20 @@ function Composer(p: ComposerProps) {
   );
 }
 
+/** Sweep and distance only make sense in a series; a Bo1 keeps Wins / Loses (StatAlerts.swift resultOptions). */
+function resultOptions(bestOf: number | null): [string, string][] {
+  const out: [string, string][] = [["win", "Wins"], ["lose", "Loses"]];
+  if ((bestOf ?? 3) <= 1) return out;
+  if (bestOf) return [...out, ["sweep", `Wins ${mapsToWin(bestOf)}–0`], ["distance", `Goes to map ${bestOf}`]];
+  return [...out, ["sweep", "Sweep"], ["distance", "Goes the distance"]];
+}
+
+/** A team's Result / Maps / Stats group: a muted label over a two-column grid. */
 function ChipGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-2">
-      <span className="t-label-sm text-secondary">{label}</span>
-      <div className="flex flex-wrap gap-2">{children}</div>
+    <div className="flex flex-col gap-1.5">
+      <span className="t-label-sm text-muted">{label}</span>
+      <ChoiceGrid>{children}</ChoiceGrid>
     </div>
   );
 }

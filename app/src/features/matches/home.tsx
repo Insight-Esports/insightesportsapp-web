@@ -3,9 +3,14 @@
 // (tournament / series matches first) → Upcoming. A 20s silent auto-refresh keeps live matches appearing and
 // disappearing on their own; explicit loads show skeletons, silent ones
 // never touch what's on screen.
+//
+// Nov 12 §7: a load that fails keeps the rows already here. Both feeds are
+// held unfiltered and shown through the game filter, so a game switch only
+// ever shows that game's rows; the error view shows only when the selected
+// game has nothing to show.
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, Trophy } from "lucide-react";
 import { ConnectionErrorView, EmptyState, GameTabBar, LoadFailure, Page, SectionHeader, SkeletonMatchCard, TabHeader } from "@/components/ui";
@@ -41,18 +46,21 @@ export function HomeScreen() {
   const live = useFetch<Match[]>(async (signal) => normalizeMatches(await api.get(endpoints.liveMatches, { signal })), [], { cacheKey: "home:live" });
   const upcoming = useFetch<Match[]>(async (signal) => normalizeMatches(await api.get(endpoints.upcomingMatches, { signal })), [], { cacheKey: "home:upcoming" });
 
-  // Silent refresh: keep whatever's on screen on a transient failure.
+  // Silent refresh: keep whatever's on screen on a transient failure. One that
+  // succeeds after a failed load clears that load's error (the list is fresh,
+  // even if empty) until the next explicit load.
   const { setData: setLive } = live;
   const { setData: setUpcoming } = upcoming;
+  const [recovered, setRecovered] = useState({ live: false, upcoming: false });
   const refreshing = useRef(false);
   const silentRefresh = useCallback(async (both: boolean) => {
     if (refreshing.current) return;
     refreshing.current = true;
     try {
       const tasks: Promise<void>[] = [
-        api.get(endpoints.liveMatches).then((raw) => setLive(normalizeMatches(raw))).catch(() => {}),
+        api.get(endpoints.liveMatches).then((raw) => { setLive(normalizeMatches(raw)); setRecovered((r) => (r.live ? r : { ...r, live: true })); }).catch(() => {}),
       ];
-      if (both) tasks.push(api.get(endpoints.upcomingMatches).then((raw) => setUpcoming(normalizeMatches(raw))).catch(() => {}));
+      if (both) tasks.push(api.get(endpoints.upcomingMatches).then((raw) => { setUpcoming(normalizeMatches(raw)); setRecovered((r) => (r.upcoming ? r : { ...r, upcoming: true })); }).catch(() => {}));
       await Promise.all(tasks);
     } finally {
       refreshing.current = false;
@@ -78,14 +86,19 @@ export function HomeScreen() {
     [...liveAll, ...(upcoming.data ?? [])].flatMap((m) => [m.team1LogoURL, m.team2LogoURL]));
   const showSkeleton = !revealed;
 
-  const reload = () => { live.reload(); upcoming.reload(); };
+  const reloadLive = () => { setRecovered((r) => ({ ...r, live: false })); live.reload(); };
+  const reloadUpcoming = () => { setRecovered((r) => ({ ...r, upcoming: false })); upcoming.reload(); };
+  const reload = () => { reloadLive(); reloadUpcoming(); };
+  const liveError = recovered.live ? null : live.error;
+  const upcomingError = recovered.upcoming ? null : upcoming.error;
   const viewSchedule = () => {
     // Carry the game filter across: "no live CS2" → Schedule opens already on CS2.
     setPendingScheduleGame(game === "all" ? null : game);
     router.push(`/schedule${gameQuery(game)}`);
   };
 
-  const connectionFailed = !live.loading && live.connectionProblem && liveAll.length === 0 && (upcoming.data?.length ?? 0) === 0;
+  // HomeView: the connection screen only when the selected game has nothing to show in either list.
+  const connectionFailed = !live.loading && !!liveError && live.connectionProblem && liveMatches.length === 0 && upcomingMatches.length === 0;
 
   return (
     <Page>
@@ -105,9 +118,11 @@ export function HomeScreen() {
             <SectionHeader title="Live Now" className="!px-0 lg:col-span-2 mb-1" />
             {showSkeleton ? (
               [0, 1].map((i) => <SkeletonMatchCard key={`ls${i}`} />)
-            ) : live.error ? (
-              <div className="lg:col-span-2"><LoadFailure error={live.error} connectionProblem={live.connectionProblem} onRetry={live.reload} /></div>
-            ) : liveMatches.length === 0 ? (
+            ) : liveMatches.length > 0 ? (
+              liveMatches.map((m) => <LiveMatchCard key={m.id} match={m} className="h-full" />)
+            ) : liveError ? (
+              <div className="lg:col-span-2"><LoadFailure error={liveError} connectionProblem={live.connectionProblem} onRetry={reloadLive} /></div>
+            ) : (
               <div className="lg:col-span-2">
                 <EmptyState
                   icon={<Trophy />}
@@ -118,17 +133,17 @@ export function HomeScreen() {
                   className="!mx-0"
                 />
               </div>
-            ) : (
-              liveMatches.map((m) => <LiveMatchCard key={m.id} match={m} className="h-full" />)
             )}
 
             {/* ── Upcoming ── */}
             <SectionHeader title="Upcoming" className="!px-0 lg:col-span-2 mt-3 mb-1" />
             {showSkeleton ? (
               [0, 1, 2].map((i) => <SkeletonMatchCard key={`us${i}`} />)
-            ) : upcoming.error ? (
-              <div className="lg:col-span-2"><LoadFailure error={upcoming.error} connectionProblem={upcoming.connectionProblem} onRetry={upcoming.reload} /></div>
-            ) : upcomingMatches.length === 0 ? (
+            ) : upcomingMatches.length > 0 ? (
+              upcomingMatches.map((m) => <UpcomingMatchCard key={m.id} match={m} className="h-full" />)
+            ) : upcomingError ? (
+              <div className="lg:col-span-2"><LoadFailure error={upcomingError} connectionProblem={upcoming.connectionProblem} onRetry={reloadUpcoming} /></div>
+            ) : (
               <div className="lg:col-span-2">
                 <EmptyState
                   icon={<Calendar />}
@@ -139,8 +154,6 @@ export function HomeScreen() {
                   className="!mx-0"
                 />
               </div>
-            ) : (
-              upcomingMatches.map((m) => <UpcomingMatchCard key={m.id} match={m} className="h-full" />)
             )}
           </div>
         )}

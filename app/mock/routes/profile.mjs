@@ -190,7 +190,7 @@ export function register(app, h) {
   // ── Notification preferences ───────────────────────────────────────────
   const prefs = {
     enabled: true, scope: "followed",
-    types: { prediction_resolved: true, poll_resolved: true, weekly_report: true, mid_match: false, prediction_window: false, streak_milestone: true, followed_live: true, followed_result: true, followed_starting_soon: true, followed_news: true, leaderboard_rank: true, leaderboard_reset: true, new_follower: false, direct_message: true, badge_earned: true, leaderboard_result: true },
+    types: { prediction_resolved: true, poll_resolved: true, weekly_report: true, mid_match: false, prediction_window: false, streak_milestone: true, followed_live: true, followed_result: true, followed_starting_soon: true, followed_news: true, leaderboard_rank: true, leaderboard_reset: true, new_follower: false, direct_message: true, badge_earned: true, leaderboard_result: true, stat_alert_live: true, stat_alert_result: true, stat_alert_pace: true, stat_alert_slipping: true, followed_player_standout: true },
     quiet_hours_enabled: true, quiet_start: "22:00:00", quiet_end: "08:00:00", timezone: "America/Los_Angeles", morning_digest: true,
   };
   app.get("/api/users/me/notification-preferences", protect, (_req, res) => res.json(prefs));
@@ -213,7 +213,10 @@ export function register(app, h) {
   const notifications = [
     // Badges / leaderboard close (backend: badgeService, leaderboardService; ref_type 'user' = the recipient).
     // Stat alerts (statAlertService.sendAlertNotification: ref_type 'match', link insight://alerts).
+    // Smart alerts (smartAlertService: stat_alert_pace / stat_alert_slipping, extra.smart on_pace / falling_behind).
+    { id: "n-sa-3", type: "stat_alert_pace", title: "Stat alert", body: "leaf is on pace for 20 kills vs Team Liquid: 85% chance now", ref_type: "match", ref_id: "m-live-1", is_read: false, created_at: isoAgo(3 * 6e4) },
     { id: "n-sa-1", type: "stat_alert_live", title: "Stat alert", body: "valyn just hit 15 kills vs Team Liquid", ref_type: "match", ref_id: "m-live-1", is_read: false, created_at: isoAgo(4 * 6e4) },
+    { id: "n-sa-4", type: "stat_alert_slipping", title: "Stat alert", body: "trent is falling behind +5 +/− vs Team Liquid: 12% chance now", ref_type: "match", ref_id: "m-live-1", is_read: false, created_at: isoAgo(5 * 6e4) },
     { id: "n-sa-2", type: "stat_alert_result", title: "Stat alert", body: "Alert hit: Derke 22 kills vs Team Heretics (target 18)", ref_type: "match", ref_id: "m-done-3", is_read: true, created_at: isoAgo(20 * 36e5) },
     { id: "n-13", type: "badge_earned", title: "Badge earned: On Fire", body: "Five correct predictions in a row.", ref_type: "user", ref_id: "user-1", is_read: false, created_at: isoAgo(12 * 6e4) },
     { id: "n-1", type: "prediction_resolved", title: "Prediction correct", body: "TenZ went over 22.5 kills vs NRG. +180 pts", ref_type: "match", ref_id: "match-1", is_read: false, created_at: isoAgo(25 * 6e4) },
@@ -223,7 +226,7 @@ export function register(app, h) {
     { id: "n-5", type: "poll_resolved", title: "Poll settled", body: "NAVI vs Vitality — first blood: you picked NAVI. +95 pts", ref_type: "match", ref_id: "match-2", is_read: true, created_at: isoAgo(28 * 36e5) },
     { id: "n-6", type: "streak_milestone", title: "4 in a row", body: "You're on a 4-prediction win streak. Keep it going.", ref_type: null, ref_id: null, is_read: true, created_at: isoAgo(3 * 864e5) },
     { id: "n-7", type: "weekly_report", title: "Your weekly report is ready", body: "VALORANT, CS2 and LoL — what mattered this week.", ref_type: "report", ref_id: "report-1", is_read: true, created_at: isoAgo(4 * 864e5) },
-    { id: "n-8", type: "followed_player_highlight", title: "s1mple popped off", body: "41 kills · 1.62 rating vs FaZe on Mirage.", ref_type: "player", ref_id: "player-s1mple", is_read: true, created_at: isoAgo(5 * 864e5) },
+    { id: "n-8", type: "followed_player_standout", title: "s1mple popped off", body: "41 kills · 1.62 rating vs FaZe on Mirage.", ref_type: "player", ref_id: "player-s1mple", is_read: true, created_at: isoAgo(5 * 864e5) },
     { id: "n-9", type: "featured_news", title: "Roster move", body: "Sentinels sign a new IGL ahead of Champions.", ref_type: "article", ref_id: "article-1", is_read: true, created_at: isoAgo(9 * 864e5) },
     { id: "n-10", type: "leaderboard_reset", title: "Monthly reset in 3 days", body: "Lock in your rank — the September board closes soon.", ref_type: null, ref_id: null, is_read: true, created_at: isoAgo(12 * 864e5) },
     { id: "n-11", type: "direct_message", title: "New message", body: "tarik: gg last night", ref_type: "conversation", ref_id: "conv-1", is_read: false, created_at: isoAgo(40 * 6e4) },

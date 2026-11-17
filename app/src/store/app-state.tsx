@@ -14,6 +14,7 @@ import { clearEntityCaches } from "@/features/entity-cache";
 import { clearPagedCache } from "@/features/players/usePagedList";
 import { resetFollows } from "@/features/profile/follow-store";
 import { loadPodium, resetPodium } from "@/lib/premium-style";
+import { noteDMUnread, refreshBellUnread, subscribeBellUnread } from "@/features/notifications/bell";
 
 export type ProfileRoute = "profile" | "messages" | "leaderboard" | "weeklyReport" | "settings" | "premium";
 
@@ -122,11 +123,13 @@ export function AppStateProvider({ children, initialUser = null }: { children: R
     }
   }, []);
 
+  // The bell's number: what its list shows (features/notifications/bell.ts). It
+  // arrives through this subscription, from a loaded list or a count read.
+  useEffect(() => subscribeBellUnread(setUnreadNotifications), []);
+  useEffect(() => { noteDMUnread(unreadDMs); }, [unreadDMs]);
+
   const refreshUnread = useCallback(async () => {
-    try {
-      const n = await api.get<{ count?: number; unread?: number }>(endpoints.notificationsUnreadCount);
-      setUnreadNotifications(Number(n?.count ?? n?.unread ?? 0));
-    } catch { /* ignore */ }
+    await refreshBellUnread();
     // DMs: the service's ledger-aware count (unread conversations) when the
     // browser is linked; the server's raw count otherwise.
     const link = currentLinkState().kind;

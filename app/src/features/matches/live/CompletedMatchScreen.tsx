@@ -1,13 +1,15 @@
 // CompletedMatchScreen.tsx — CompletedMatchView (ResultsView.swift): the
-// final score HUD, the round tracker (real per-round winners when the
-// backend persisted them, neutral otherwise — no fabricated winners) or
-// League objectives + the persisted gold curve, the final scoreboard, and
-// the match discussion.
+// final score HUD, Insight's Calls and how they went, the round tracker
+// (real per-round winners when the backend persisted them, neutral
+// otherwise — no fabricated winners) or League objectives + the persisted
+// gold curve, the final scoreboard (a name opens the player's stat card for
+// this match), and the match discussion.
 "use client";
 
 import { useEffect, useState } from "react";
 import { Page, SplitLayout } from "@/components/ui";
 import { api, endpoints } from "@/lib/api";
+import { InsightCallsSection } from "@/features/calls/InsightCallsSection";
 import { team1Color, team2Color, type Json, type Match } from "@/lib/types";
 import { useReveal } from "@/lib/use-reveal";
 import { FollowTeamsRow } from "./FollowTeams";
@@ -140,6 +142,8 @@ export function CompletedMatchScreen({ match, back }: { match: Match; /** A seri
         winnerSide={winnerSide}
       />
       <FollowTeamsRow match={match} team1Id={vm.team1Id} team2Id={vm.team2Id} />
+      {/* What Insight called before the match, and how it went. */}
+      <InsightCallsSection matchId={match.id} />
       {isRoundBased ? (
         <RoundTracker team1Color={c1} team2Color={c2} rounds={vm.rounds} isComplete />
       ) : (
@@ -148,7 +152,8 @@ export function CompletedMatchScreen({ match, back }: { match: Match; /** A seri
           {vm.goldTimeline.length ? <GoldChart team1Color={c1} team2Color={c2} team1Name={match.team1Name} team2Name={match.team2Name} timeline={vm.goldTimeline} /> : null}
         </>
       )}
-      <StatsTableSection team1Color={c1} team2Color={c2} game={match.game} team1Name={match.team1Name} team2Name={match.team2Name} team1Stats={vm.team1Stats} team2Stats={vm.team2Stats} matchId={match.id} />
+      <StatsTableSection team1Color={c1} team2Color={c2} game={match.game} team1Name={match.team1Name} team2Name={match.team2Name} team1Stats={vm.team1Stats} team2Stats={vm.team2Stats} matchId={match.id}
+        match={{ ...match, status: "completed", team1Score: vm.team1Score, team2Score: vm.team2Score, team1Id: vm.team1Id, team2Id: vm.team2Id }} />
     </div>
   );
 

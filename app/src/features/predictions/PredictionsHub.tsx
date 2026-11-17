@@ -1,17 +1,20 @@
 // predictions/PredictionsHub.tsx — the Premium tab root, laid out like the
 // other tabs: the game bar, then ANALYZE (Players · Teams → the predictor's
 // target picker), STAT ALERTS and YOUR REPORT. Whole tab is premium-gated.
+// Nov 5 §10: the Weekly Report row is a row like the others — the report
+// glyph in violet on the surface tile, "Weekly Report", one-line blurb.
 "use client";
 
 import Link from "next/link";
 import { useState } from "react";
 import { BellDot, ChevronRight, User, Users } from "lucide-react";
 import { SELECTABLE_GAMES, type GameId } from "@/lib/types";
-import { AssetIcon, GameTabBar, Page, TabHeader } from "@/components/ui";
+import { GameTabBar, Page, TabHeader } from "@/components/ui";
 import { HeaderTools } from "@/components/shell/AppShell";
 import { PremiumGate } from "@/features/premium/PremiumGate";
 import { alertsListHref } from "@/features/alerts/entry";
 import { useAlerts } from "@/features/alerts/store";
+import { ReportGlyph } from "@/features/reports/ReportMark";
 import { flowHref } from "./flow";
 import { DotKicker } from "./shared";
 
@@ -50,18 +53,7 @@ function PredictionFlow() {
         <section className="flex flex-col gap-3 min-w-0">
           <DotKicker>YOUR REPORT</DotKicker>
           <div>
-            <Link href="/weekly-report" className="pressable row-in flex items-center gap-3 p-4 rounded-[14px] bg-card border border-border-subtle hover:border-border-strong hover:bg-surface/40 transition-colors" style={stagger(3)}>
-              <span className="relative grid place-items-center size-11 rounded-xl bg-violet-gradient shrink-0">
-                <span className="absolute inset-0 rounded-xl bg-white/14" />
-                <AssetIcon name="weeklyreport" height={24} className="relative" />
-              </span>
-              <span className="flex flex-col gap-0.5 min-w-0">
-                <span className="t-headline-sm text-primary">Your Weekly Report</span>
-                <span className="t-label-sm text-muted truncate">Weekly recap of your teams, players, and predictions</span>
-              </span>
-              <span className="flex-1" />
-              <ChevronRight size={13} className="text-muted shrink-0" />
-            </Link>
+            <HubRow index={3} href="/weekly-report" icon={<ReportGlyph size={20} />} title="Weekly Report" blurb="Your teams, players and calls, each week" />
           </div>
         </section>
       </div>
